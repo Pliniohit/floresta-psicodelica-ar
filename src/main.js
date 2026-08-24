@@ -249,19 +249,25 @@ function bindPreview() {
   const dom = renderer.domElement;
   let px = 0, py = 0;
   dom.addEventListener('pointerdown', (e) => {
-    // No modo câmera com giroscópio quem manda na rotação é o aparelho;
-    // arrastar só é liberado se a orientação não estiver disponível.
-    if (state.mode === 'camera' && magic.hasOrientation) { orbit.moved = false; return; }
-    orbit.active = true; orbit.moved = false; px = e.clientX; py = e.clientY;
+    orbit.moved = false;
+    // Com giroscópio quem manda na rotação é o aparelho.
+    if (state.mode === 'camera' && magic.hasOrientation) return;
+    orbit.active = true; px = e.clientX; py = e.clientY;
     dom.setPointerCapture(e.pointerId);
   });
   dom.addEventListener('pointermove', (e) => {
     if (!orbit.active) return;
     const dx = e.clientX - px, dy = e.clientY - py;
     if (Math.abs(dx) + Math.abs(dy) > 4) orbit.moved = true;
+    px = e.clientX; py = e.clientY;
+
+    if (state.mode === 'camera') {
+      // A câmera é o aparelho na sua mão: ela olha em volta, não orbita.
+      magic.look(dx * 0.005, dy * 0.005);
+      return;
+    }
     orbit.theta -= dx * 0.006;
     orbit.phi = MathUtils.clamp(orbit.phi - dy * 0.006, 0.15, 1.55);
-    px = e.clientX; py = e.clientY;
     applyOrbit();
   });
   dom.addEventListener('pointerup', (e) => {
@@ -355,14 +361,31 @@ function roomAroundUser(size = 5.0) {
   room.source = 'em volta de você';
 }
 
+const SENSOR_AVISO = {
+  negado: 'Sensor de movimento bloqueado. Ajustes → Safari → <b>Movimento e '
+    + 'Orientação</b> e recarregue. Por ora, arraste para olhar em volta.',
+  ausente: 'Este aparelho não expõe sensor de orientação. Arraste para olhar em volta.',
+  silencioso: 'O sensor foi liberado mas não está respondendo — comum em navegador '
+    + 'embutido de outro app. Abra no Safari, ou arraste para olhar em volta.',
+};
+
 async function startCameraMode() {
   const btn = el('camera');
   btn.disabled = true;
+
+  // ORDEM IMPORTA. No iOS 13+ requestPermission exige ativação por gesto, e
+  // ela morre no primeiro await. Pedir a câmera antes consome a ativação e o
+  // sensor é recusado em silêncio — o sintoma é exatamente "a câmera abre,
+  // o giroscópio não".
+  btn.textContent = 'Pedindo acesso ao sensor…';
+  let sensor = 'ausente';
+  try { sensor = await magic.requestOrientation(); } catch { sensor = 'negado'; }
+
   btn.textContent = 'Pedindo acesso à câmera…';
   try {
     audio.start();
     const feed = el('feed');
-    const { orientation } = await magic.start(feed);
+    await magic.startCamera(feed);
     feed.classList.add('on');
 
     state.mode = 'camera';
@@ -371,7 +394,7 @@ async function startCameraMode() {
     // Sem a classe 'preview' de propósito: ela esconde o #exit, e aqui o
     // usuário precisa conseguir desligar a câmera.
     overlay.classList.remove('preview');
-    overlay.classList.add('on', 'touch');
+    overlay.classList.add('on', 'touch', 'camera');
     el('exit').textContent = 'Fechar câmera';
     touchUI = true;
 
@@ -381,15 +404,25 @@ async function startCameraMode() {
     commitRoom();
     camera.position.set(0, 1.55, 0);
 
-    toast(orientation
-      ? 'Gire o aparelho para olhar em volta · toque para plantar'
-      : 'Sem giroscópio: arraste para olhar em volta', palettes[0].swatch);
+    // O desfecho do sensor pode chegar depois: permissão concedida não
+    // garante evento, e o watchdog avisa se ficar mudo.
+    magic.onSensorResult = (estado) => {
+      if (estado === 'ok') toast('Giroscópio ativo — gire o aparelho', palettes[state.paletteIndex].swatch);
+      else toast('Sem giroscópio — arraste para olhar em volta');
+    };
+
+    if (sensor === 'concedido') {
+      toast('Gire o aparelho para olhar em volta · toque para plantar', palettes[0].swatch);
+    } else {
+      toast('Sem giroscópio — arraste para olhar em volta');
+      status(SENSOR_AVISO[sensor] ?? SENSOR_AVISO.ausente);
+    }
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Abrir com a câmera';
     const negado = /NotAllowed|Permission/i.test(String(err?.name || err));
     status(negado
-      ? '<b>Câmera negada.</b> Libere o acesso em Ajustes → Safari → Câmera e recarregue.'
+      ? '<b>Câmera negada.</b> Libere em Ajustes → Safari → Câmera e recarregue.'
       : `<b>Não deu para abrir a câmera:</b> ${err?.message ?? err}`);
   }
 }
@@ -400,7 +433,7 @@ function stopCameraMode() {
   el('exit').textContent = 'Sair do AR';
   state.mode = 'none';
   previewMode = false;
-  overlay.classList.remove('on', 'preview', 'touch');
+  overlay.classList.remove('on', 'preview', 'touch', 'camera');
   touchUI = null;
   gate.classList.remove('gone');
   forest.visible = false;
@@ -464,6 +497,7 @@ const PAD = {
   seed: reseed,
   smaller: () => { state.scale = MathUtils.clamp(state.scale * 0.85, 0.35, 2.4); },
   bigger: () => { state.scale = MathUtils.clamp(state.scale * 1.18, 0.35, 2.4); },
+  recenter: () => { magic.recenter(); toast('Frente recentrada'); },
 };
 el('pad').addEventListener('click', (e) => {
   const btn = e.target.closest('button');

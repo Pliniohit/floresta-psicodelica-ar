@@ -73,7 +73,7 @@ mouse. Ali valem as teclas `P` (paleta), `T` (viagem), `R` (semear) e `M` (mudo)
 | Aparelho | O que acontece |
 | --- | --- |
 | **Android com ARCore** | AR com rastreamento real. Aponte a câmera para o chão até o anel aparecer e toque para plantar. |
-| **iPhone / iPad** | **Modo câmera**: feed da câmera traseira ao fundo e giroscópio girando a cena. Toque em *Abrir com a câmera*. |
+| **iPhone / iPad** | **Modo câmera**: feed da traseira ao fundo e giroscópio girando a cena. Toque em *Abrir com a câmera*. Sem sensor, arraste na tela. |
 | **Qualquer navegador** | Modo 3D: arraste para orbitar, pince para aproximar, toque para plantar. |
 
 Sem controle físico não existe gatilho nem analógico, então paleta, viagem,
@@ -89,6 +89,31 @@ que a página faça vai pedir a câmera por esse caminho.
 O que dá para fazer é o **modo câmera**: `getUserMedia` para o feed da traseira
 e `DeviceOrientationEvent` para a orientação. Ele pede permissão de câmera, sim,
 e permite olhar em volta girando o aparelho.
+
+#### A ordem das permissões importa
+
+No iOS 13+, `DeviceOrientationEvent.requestPermission()` exige **ativação
+transitória** do usuário — e essa ativação morre no primeiro `await`. Pedir a
+câmera antes, que é o que parece natural já que a câmera é o principal, consome
+a ativação e faz o pedido de orientação ser rejeitado **sem diálogo nenhum**.
+
+O sintoma é específico e enganoso: a câmera abre normalmente e o giroscópio
+simplesmente não liga. Por isso `requestOrientation()` é a primeira chamada do
+manipulador do clique, antes de qualquer `await`, e só depois vem a câmera.
+
+Permissão concedida também não garante evento — navegador embutido de outro app
+às vezes aceita e nunca emite nada. Um watchdog de 1,8 s detecta esse caso e
+troca para arrasto, avisando na tela em vez de deixar você girando o telefone
+à toa.
+
+#### Se o giroscópio não ligar
+
+| Situação | O que fazer |
+| --- | --- |
+| Diálogo apareceu e você negou | Ajustes → Safari → **Movimento e Orientação**, e recarregue |
+| Nenhum diálogo apareceu | Confira se está em `https://` — fora disso o iOS não pergunta |
+| Abriu de dentro de outro app | Webview embutida costuma não emitir. Abra no Safari |
+| Nada funciona | O arrasto na tela continua girando a cena; 🧭 **Centrar** redefine a frente |
 
 A diferença honesta: **não há rastreamento de posição.** Girar funciona; andar
 com o telefone não move você dentro da cena. Por isso, nesse modo, a floresta
