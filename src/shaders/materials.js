@@ -328,6 +328,61 @@ export const orbMaterial = make('orbes', {
 });
 
 // ---------------------------------------------------------------------------
+// MÃOS — juntas rastreadas desenhadas como contas luminosas. Aditivo, porque
+// sobre o passthrough a mão precisa ler como energia, não como plástico.
+// ---------------------------------------------------------------------------
+export const handMaterial = make('maos', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  uniforms: { uGlow: { value: 1.0 } },
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uGlow;
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float core = pow(max(dot(N, V), 0.0), 1.2);
+      float rim  = pow(1.0 - abs(dot(N, V)), 2.0);
+      vec3 col = palette(vSeed * 0.4 + uTime * 0.15);
+      gl_FragColor = vec4(trippy(col) * (0.35 + core * 1.3 + rim * 0.9) * uGlow, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// REALCE — contorno pulsante do objeto que a mão está prestes a pegar.
+// ---------------------------------------------------------------------------
+export const highlightMaterial = make('realce', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  blending: AdditiveBlending,
+  vert: /* glsl */ `
+    void main(){
+      vSeed = 0.0;
+      // infla ao longo da normal para virar uma casca em volta do objeto
+      vec3 p = position + normal * (0.035 + sin(uTime * 6.0) * 0.012);
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float rim = pow(1.0 - abs(dot(N, V)), 1.6);
+      vec3 col = palette(uTime * 0.25 + 0.5);
+      gl_FragColor = vec4(trippy(col) * rim * 1.8, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
 // RETÍCULO — anel de posicionamento antes de plantar.
 // ---------------------------------------------------------------------------
 export const reticleMaterial = make('reticulo', {

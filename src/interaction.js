@@ -18,21 +18,33 @@ const DEAD = 0.35;
  *   onScale(delta)        onRotate(delta)
  */
 export class Interaction {
-  constructor(renderer, scene, handlers = {}) {
+  constructor(renderer, scene, camera, handlers = {}) {
     this.renderer = renderer;
     this.scene = scene;
+    this.camera = camera;
     this.on = handlers;
     this.groundY = 0;
     this.enabled = false;
+    this.touchMode = false;  // celular: entrada por toque na tela, sem controle
     this.prev = new Map();   // handedness -> estado anterior dos botões
 
     this.controllers = [0, 1].map((i) => {
       const c = renderer.xr.getController(i);
       c.userData.index = i;
-      c.add(this.#beam());
+      const beam = this.#beam();
+      c.add(beam);
+      c.userData.beam = beam;
       c.addEventListener('selectstart', () => this.#select(c));
       c.addEventListener('squeezestart', () => this.enabled && this.on.onPalette?.());
-      c.addEventListener('connected', (e) => { c.userData.source = e.data; c.visible = true; });
+      c.addEventListener('connected', (e) => {
+        c.userData.source = e.data;
+        c.visible = true;
+        // Numa entrada de tela o raio nasce na câmera: desenhar um feixe saindo
+        // do olho do usuário fica estranho e atrapalha a leitura da cena.
+        const screen = e.data?.targetRayMode === 'screen';
+        beam.visible = !screen;
+        if (screen) this.touchMode = true;
+      });
       c.addEventListener('disconnected', () => { c.userData.source = null; c.visible = false; });
       scene.add(c);
       return c;
@@ -57,24 +69,43 @@ export class Interaction {
     return m;
   }
 
+  /** Interseção de um raio qualquer com o plano do chão. */
+  #castToGround(origin, dir) {
+    if (dir.y > -0.02) return null;                  // apontando para cima
+    const t = (this.groundY - origin.y) / dir.y;
+    if (t < 0 || t > 12) return null;                // atrás do usuário ou longe demais
+    return origin.clone().addScaledVector(dir, t);
+  }
+
   /**
-   * Interseção do raio do controle com o plano do chão. Devolve null se o
-   * usuário estiver apontando para cima ou longe demais.
+   * Onde o usuário está mirando, no chão. Devolve null se a mira não cruza
+   * o piso à frente.
    */
   aim(controller) {
     controller.getWorldPosition(_origin);
     controller.getWorldQuaternion(_quat);
     _dir.copy(FORWARD).applyQuaternion(_quat);
-    if (_dir.y > -0.02) return null;                 // apontando para cima
-    const t = (this.groundY - _origin.y) / _dir.y;
-    if (t < 0 || t > 12) return null;                // atrás do usuário ou longe demais
-    return _origin.clone().addScaledVector(_dir, t);
+    return this.#castToGround(_origin, _dir);
+  }
+
+  /**
+   * Reserva para entrada por toque. Fontes de entrada de tela são transitórias
+   * — nascem e morrem no mesmo toque — e a pose pode ainda não ter sido
+   * atualizada quando o selectstart chega. Aí vale mirar pela câmera, que no
+   * celular é literalmente para onde a pessoa apontou o aparelho.
+   */
+  aimFromCamera() {
+    if (!this.camera) return null;
+    this.camera.getWorldPosition(_origin);
+    this.camera.getWorldQuaternion(_quat);
+    _dir.copy(FORWARD).applyQuaternion(_quat);
+    return this.#castToGround(_origin, _dir);
   }
 
   // Sempre emite: durante o mapeamento o select confirma o cômodo, depois
   // passa a plantar árvores. Por isso não olha para `enabled`.
   #select(controller) {
-    this.on.onSelect?.(this.aim(controller), controller);
+    this.on.onSelect?.(this.aim(controller) ?? this.aimFromCamera(), controller);
   }
 
   /** Retorno háptico, quando o runtime expõe atuadores. */
@@ -88,13 +119,15 @@ export class Interaction {
   update(dt) {
     if (!this.enabled) return;
 
-    // Marcador segue o controle que estiver mirando o chão.
+    // Marcador segue o controle que estiver mirando o chão. No celular ele
+    // segue o centro da tela, que é a mira efetiva do aparelho.
     let aimed = null;
     for (const c of this.controllers) {
       if (!c.visible) continue;
       const p = this.aim(c);
       if (p) { aimed = p; break; }
     }
+    if (!aimed && this.touchMode) aimed = this.aimFromCamera();
     if (aimed) { this.marker.position.copy(aimed); this.marker.visible = true; }
     else { this.marker.visible = false; }
 

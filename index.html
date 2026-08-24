@@ -62,6 +62,12 @@
     margin-top:30px;padding-top:22px;border-top:1px solid var(--edge);
     display:grid;grid-template-columns:auto 1fr;gap:9px 16px;text-align:left;font-size:13.5px;color:var(--dim);
   }
+  /* Aparelho de toque não tem gatilho nem analógico: mostra os gestos. */
+  .keys-touch{display:none}
+  @media (pointer: coarse){
+    .keys-xr{display:none}
+    .keys-touch{display:grid}
+  }
   .keys kbd{
     font:inherit;font-size:12px;color:var(--ink);white-space:nowrap;
     background:rgba(190,150,255,.13);border:1px solid var(--edge);border-radius:7px;padding:3px 9px;
@@ -100,6 +106,25 @@
     0%{transform:scale(.35);opacity:1}
     100%{transform:scale(1.25);opacity:0}
   }
+  #pad{
+    position:absolute;left:50%;bottom:calc(9% + 58px);transform:translateX(-50%);
+    display:none;gap:8px;pointer-events:auto;
+    padding:8px;border-radius:20px;
+    background:rgba(10,4,22,.72);border:1px solid var(--edge);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    box-shadow:0 8px 40px -10px rgba(160,80,255,.6);
+  }
+  #overlay.touch #pad{display:flex}
+  #pad button{
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    min-width:62px;padding:9px 6px;border-radius:14px;
+    font-size:11px;color:var(--dim);line-height:1;
+    transition:background .15s, color .15s;
+  }
+  #pad button i{font-style:normal;font-size:20px;line-height:1}
+  #pad button:active{background:rgba(190,150,255,.2);color:var(--ink)}
+  #overlay.preview #exit{display:none}
+
   #exit{
     position:absolute;top:22px;right:22px;pointer-events:auto;
     padding:10px 18px;border-radius:999px;font-size:14px;
@@ -115,7 +140,7 @@
     <div class="mark">🍄</div>
     <h1>Floresta Psicodélica</h1>
     <p class="sub">Realidade aumentada &middot; low poly &middot; texturas animadas por shader</p>
-    <p class="sub" style="margin-top:-20px">A floresta cresce dentro do <b style="color:#c07bff;font-weight:500">seu cômodo mapeado</b>, com espaço para você caminhar entre as árvores.</p>
+    <p class="sub" style="margin-top:-20px">A floresta cresce dentro do <b style="color:#c07bff;font-weight:500">seu espaço real</b>, com passagem entre as árvores. Funciona no Quest 3 e em celular Android com ARCore.</p>
 
     <button id="enter" disabled>Procurando headset…</button>
     <button id="preview">Ver prévia no navegador (sem AR)</button>
@@ -140,6 +165,13 @@
     <p id="scan-info"></p>
   </div>
   <div id="toast"><span class="sw"></span><span id="toast-text"></span></div>
+  <div id="pad">
+    <button data-act="palette"><i>🎨</i>Paleta</button>
+    <button data-act="trip"><i>✨</i>Viagem</button>
+    <button data-act="seed"><i>🌱</i>Semear</button>
+    <button data-act="smaller"><i>➖</i>Menor</button>
+    <button data-act="bigger"><i>➕</i>Maior</button>
+  </div>
 </div>
 
 <script type="importmap">

@@ -33,6 +33,26 @@ existir, cai para uma área de 4 × 4 m à sua frente.
 
 Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão insegura.
 
+## Mãos livres (Quest 3)
+
+Se o headset estiver com **hand tracking** ligado, largue os controles.
+
+| Gesto | O que faz |
+| --- | --- |
+| **Pinça perto de uma planta** | Arranca ela do chão; ela encolhe e segue sua mão |
+| **Soltar a pinça** | Replanta ali. Se não couber, ela volta sozinha para onde estava |
+| **Pinça no vazio, perto do chão** | Brota uma árvore nova naquele ponto |
+| **Palma esquerda para cima** | Abre três orbes flutuando sobre o pulso |
+| **Cutucar um orbe com o indicador** | 🔶 paleta · 🔷 viagem · 🔺 semear de novo |
+
+Árvore, cogumelo e cristal são todos pegáveis. A árvore se agarra **pelo
+tronco**, na altura que você quiser; cogumelo e cristal, pelo corpo. Quando sua
+mão chega perto, o objeto ganha um contorno pulsante — é o que confirma o que
+você vai pegar antes de fechar os dedos.
+
+Soltar uma árvore colada em outra é recusado: ela volta ao lugar de origem em
+vez de fechar a sua passagem.
+
 ## Controles
 
 | Entrada | Ação |
@@ -47,6 +67,18 @@ Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão inse
 
 Sem headset, o botão **Ver prévia no navegador** abre a mesma cena com órbita de
 mouse. Ali valem as teclas `P` (paleta), `T` (viagem), `R` (semear) e `M` (mudo).
+
+## No celular
+
+| Aparelho | O que acontece |
+| --- | --- |
+| **Android com ARCore** | AR de verdade. Aponte a câmera para o chão até o anel aparecer e toque para plantar. |
+| **iPhone / iPad** | Safari não implementa WebXR. Abre no modo 3D: arraste para orbitar, pince para aproximar, toque para plantar. |
+
+Sem controle físico não existe gatilho nem analógico, então paleta, viagem,
+semear e escala aparecem numa **barra na tela**. No celular a área vem de um
+toque no chão (3,5 × 3,5 m), não do Space Setup — `plane-detection` é coisa de
+headset; no telefone o que existe é `hit-test`.
 
 ## Rodando localmente
 
@@ -68,8 +100,10 @@ index.html              tela inicial, HUD de dom-overlay e importmap
 src/
   main.js               renderizador, estado, fases, laço de render, prévia
   xr.js                 ciclo de vida da sessão immersive-ar
-  room.js               plane-detection, polígono do cômodo, móveis, desenho
-  interaction.js        controles, mãos, mira no chão, botões, háptico
+  room.js               plane-detection, hit-test, polígono do cômodo, móveis
+  interaction.js        controles, toque na tela, mira no chão, háptico
+  hands.js              juntas rastreadas, pinça, normal da palma
+  menu.js               três orbes no pulso, acionados com o indicador
   forest.js             semeadura no polígono, instancing, animação de brotar
   geometry.js           construtores das malhas low poly
   audio.js              drone ambiente gerado por WebAudio
@@ -80,9 +114,10 @@ src/
 vendor/three/           Three.js r180 embutido (sem CDN)
 test-geometry.mjs       geometrias válidas, sem NaN
 test-layout.mjs         a floresta cabe no cômodo E sobra passagem
+test-grab.mjs           pegar, carregar e soltar se comportam
 ```
 
-Rode os dois com `npm test`.
+Rode os três com `npm test`.
 
 ### Como a floresta decide onde plantar
 
@@ -130,6 +165,14 @@ A cena fica entre **8 e 16 mil triângulos** (depende do tamanho do cômodo) e
 Uma consequência assumida: em teto baixo, as árvores mais altas atravessam o
 forro. Preferi manter a escala de floresta a espremer as copas na altura da sua
 cabeça — atravessar o teto parece mágico, esbarrar em galho parece defeito.
+
+### Uma nota sobre a normal da palma
+
+O menu de pulso decide se a palma está virada para cima a partir do produto
+vetorial entre punho→metacarpo do indicador e punho→metacarpo do mínimo. O sinal
+depende da lateralidade, e é a única coisa aqui que eu não consegui verificar
+sem um headset na mão. Se em uso o menu aparecer com a palma virada para baixo,
+é só trocar o sinal em `PALM_SIGN`, no topo de `src/hands.js`.
 
 ## Licença
 

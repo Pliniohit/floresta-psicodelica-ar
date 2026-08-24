@@ -1,7 +1,11 @@
 import {
   Group, Mesh, BufferGeometry, BufferAttribute, Matrix4, Vector2, Vector3,
 } from 'three';
+import { reticleRing } from './geometry.js';
 import { reticleMaterial } from './shaders/materials.js';
+
+/** Lado da área quadrada criada quando o espaço vem de um toque no chão. */
+const TAP_AREA = 3.5;
 
 // ---------------------------------------------------------------------------
 // Geometria de polígono (tudo no plano XZ, em metros)
@@ -131,22 +135,85 @@ export class RoomScan {
 
     this._signature = '';
     this._boundedSpace = null;
+    this._hitTestSource = null;
+    this.hitPoint = null;      // pose viva do retículo, enquanto não confirmado
+
+    // Retículo de mira: no celular é ele que diz onde a floresta vai nascer.
+    this.reticle = new Mesh(reticleRing(0.26), reticleMaterial);
+    this.reticle.matrixAutoUpdate = false;
+    this.reticle.visible = false;
+    this.reticle.frustumCulled = false;
+    this.reticle.renderOrder = 10;
+    this.view.add(this.reticle);
   }
 
-  /** Pede o espaço bounded-floor uma vez; usado só se não houver planos. */
+  /**
+   * Prepara as fontes que precisam de await. Nenhuma é obrigatória: um Quest
+   * com Space Setup usa planos, um celular Android usa hit-test, e o que
+   * sobrar cai no bounded-floor ou na área padrão.
+   */
   async prepare(session) {
     try {
       this._boundedSpace = await session.requestReferenceSpace('bounded-floor');
     } catch {
       this._boundedSpace = null;
     }
+    try {
+      const viewer = await session.requestReferenceSpace('viewer');
+      this._hitTestSource = await session.requestHitTestSource({ space: viewer });
+    } catch {
+      this._hitTestSource = null;
+    }
   }
 
-  /** Chamado a cada frame durante a fase de mapeamento. */
+  /**
+   * Chamado a cada frame durante o mapeamento. A ordem é deliberada: planos
+   * primeiro porque descrevem a sala inteira, hit-test depois porque só dá um
+   * ponto, e bounded-floor por último porque costuma ser mais largo que o
+   * cômodo real.
+   */
   update(frame, refSpace) {
     if (!frame || !refSpace) return false;
-    return this.#fromPlanes(frame, refSpace) || this.#fromBounds(frame, refSpace);
+    if (this.#fromPlanes(frame, refSpace)) return true;
+    this.#updateReticle(frame, refSpace);
+    if (this.hitPoint) return false;       // esperando o toque do usuário
+    return this.#fromBounds(frame, refSpace);
   }
+
+  /** Mira do hit-test: só desenha o anel, não decide nada sozinha. */
+  #updateReticle(frame, refSpace) {
+    if (!this._hitTestSource) { this.hitPoint = null; return; }
+    const hits = frame.getHitTestResults(this._hitTestSource);
+    const pose = hits.length ? hits[0].getPose(refSpace) : null;
+    if (!pose) {
+      this.reticle.visible = false;
+      this.hitPoint = null;
+      return;
+    }
+    this.reticle.matrix.fromArray(pose.transform.matrix);
+    this.reticle.visible = true;
+    const p = pose.transform.position;
+    this.hitPoint = new Vector3(p.x, p.y, p.z);
+  }
+
+  /** Converte o ponto mirado num quadrado de piso. Devolve false se não há mira. */
+  commitFromReticle() {
+    if (!this.hitPoint) return false;
+    this.footprint = fallbackRoom(new Vector2(this.hitPoint.x, this.hitPoint.z), TAP_AREA, TAP_AREA);
+    this.floorY = this.hitPoint.y;
+    this.obstacles = [];
+    this.source = 'toque no chão';
+    this.reticle.visible = false;
+    this.#rebuildView([]);
+    this.revision++;
+    return true;
+  }
+
+  /** Há mira viva esperando confirmação? */
+  get aiming() { return !!this.hitPoint && !this.footprint; }
+
+  /** O runtime concedeu hit-test? Muda o que pedimos ao usuário. */
+  get hasHitTest() { return !!this._hitTestSource; }
 
   #fromPlanes(frame, refSpace) {
     const planes = frame.detectedPlanes;
@@ -237,6 +304,7 @@ export class RoomScan {
 
   #rebuildView(verticals) {
     for (const child of [...this.view.children]) {
+      if (child === this.reticle) continue;   // o retículo é permanente
       child.geometry.dispose();
       this.view.remove(child);
     }
@@ -266,5 +334,6 @@ export class RoomScan {
   dispose() {
     for (const c of [...this.view.children]) c.geometry.dispose();
     this.view.clear();
+    this._hitTestSource = null;
   }
 }

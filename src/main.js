@@ -6,6 +6,8 @@ import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
 import { RoomScan, fallbackRoom, polygonArea } from './room.js';
 import { Interaction } from './interaction.js';
+import { Hands } from './hands.js';
+import { WristMenu } from './menu.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
@@ -91,12 +93,21 @@ function updateScanPanel() {
       `${room.area.toFixed(1)} m² · ${room.source}` +
       (room.obstacles.length ? ` · ${room.obstacles.length} móvel(is)` : '') +
       '<br><b>Aperte o gatilho para plantar a floresta</b>';
+  } else if (room.aiming) {
+    scanTitle.textContent = 'Chão encontrado';
+    scanInfo.innerHTML = interaction.touchMode
+      ? '<b>Toque na tela</b> para plantar a floresta aqui'
+      : '<b>Aperte o gatilho</b> para plantar a floresta aqui';
+  } else if (room.hasHitTest) {
+    scanTitle.textContent = 'Procurando o chão…';
+    scanInfo.innerHTML = 'Aponte a câmera para o piso e mova o aparelho devagar'
+      + '<br>até o anel aparecer.';
   } else {
     scanTitle.textContent = 'Mapeando seu espaço…';
     scanInfo.innerHTML = room.planeCount
       ? `${room.planeCount} superfície(s) lida(s) — olhe ao redor`
       : 'Nenhum espaço encontrado. Rode o <b>Space Setup</b> do Quest para um encaixe perfeito,'
-        + '<br>ou aperte o gatilho para usar uma área padrão de 4 × 4 m.';
+        + '<br>ou confirme para usar uma área padrão de 4 × 4 m.';
   }
 }
 
@@ -182,11 +193,23 @@ function aheadOfCamera(distance = 2.0) {
 // ---------------------------------------------------------------------------
 // Controles XR
 // ---------------------------------------------------------------------------
-const interaction = new Interaction(renderer, scene, {
+const interaction = new Interaction(renderer, scene, camera, {
   onSelect: (aimPoint, controller) => {
+    // Com mão rastreada o three.js dispara select na pinça também. Quem manda
+    // nesse caso é a lógica de mãos, senão a pinça planta e pega ao mesmo tempo.
+    if (controller?.userData?.source?.hand) return;
     if (state.phase === 'mapping') {
-      if (!room.ready) room.useFallback(aheadOfCamera());
-      commitRoom();
+      if (room.ready || room.commitFromReticle()) {
+        commitRoom();
+      } else if (!room.hasHitTest) {
+        room.useFallback(aheadOfCamera());
+        commitRoom();
+      } else {
+        // Há hit-test, mas o chão ainda não foi achado: insistir é melhor do
+        // que largar a floresta num lugar arbitrário.
+        toast('Aponte para o chão até o anel aparecer');
+        return;
+      }
       interaction.pulse(controller, 0.8, 60);
     } else if (state.phase === 'growing' && aimPoint) {
       if (plantAt(aimPoint) === 'ok') interaction.pulse(controller, 0.6, 40);
@@ -275,6 +298,8 @@ function startPreview() {
   room.source = 'sala de demonstração';
   commitRoom();
   applyOrbit();
+  overlay.classList.add('on', 'preview');
+  syncTouchUI();
   toast('Prévia: arraste para orbitar · clique planta · P paleta · T viagem · R semear', palettes[0].swatch);
 }
 
@@ -291,6 +316,7 @@ async function enterXR(mode) {
     await room.prepare(xr.session);
 
     gate.classList.add('gone');
+    overlay.classList.remove('preview');
     overlay.classList.add('on');
     scanEl?.classList.add('on');
     room.view.visible = true;
@@ -304,7 +330,8 @@ async function enterXR(mode) {
 }
 
 xr.onEnd = () => {
-  overlay.classList.remove('on');
+  overlay.classList.remove('on', 'touch');
+  touchUI = null;
   scanEl?.classList.remove('on');
   gate.classList.remove('gone');
   interaction.enabled = false;
@@ -317,6 +344,103 @@ xr.onEnd = () => {
 
 el('exit').addEventListener('click', () => xr.end());
 el('preview').addEventListener('click', startPreview);
+
+// Barra de ações na tela: é o único caminho para paleta / viagem / semear
+// em aparelho sem controle físico.
+const PAD = {
+  palette: cyclePalette,
+  trip: toggleTrip,
+  seed: reseed,
+  smaller: () => { state.scale = MathUtils.clamp(state.scale * 0.85, 0.35, 2.4); },
+  bigger: () => { state.scale = MathUtils.clamp(state.scale * 1.18, 0.35, 2.4); },
+};
+el('pad').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (btn) PAD[btn.dataset.act]?.();
+});
+
+// ---------------------------------------------------------------------------
+// Mãos livres
+// ---------------------------------------------------------------------------
+const grabbed = new Map();   // HandState -> alça devolvida por forest.lift
+
+/** Ponto da mão em coordenadas locais da floresta. */
+function toLocal(worldPoint) { return forest.worldToLocal(worldPoint.clone()); }
+
+const hands = new Hands(renderer, {
+  onPinchStart: (hand) => {
+    if (state.phase === 'mapping') {
+      if (room.ready || room.commitFromReticle()) commitRoom();
+      else if (!room.hasHitTest) { room.useFallback(aheadOfCamera()); commitRoom(); }
+      else toast('Aponte para o chão até o anel aparecer');
+      return;
+    }
+    if (state.phase !== 'growing') return;
+
+    const local = toLocal(hand.pinch);
+    const target = forest.pick(local);
+    if (target) {
+      grabbed.set(hand, forest.lift(target));
+      audio.chime(19, 0.1);
+      return;
+    }
+    // Pinça no vazio, perto do chão: brota uma árvore ali.
+    if (hand.pinch.y - forest.position.y < 1.3) {
+      const ground = new Vector3(hand.pinch.x, forest.position.y, hand.pinch.z);
+      plantAt(ground);
+    }
+  },
+
+  onPinchEnd: (hand) => {
+    const handle = grabbed.get(hand);
+    if (!handle) return;
+    grabbed.delete(hand);
+    const result = forest.drop(handle, toLocal(hand.pinch));
+    ping(0.5);
+    audio.chime(result === 'plantado' ? 7 : -7, 0.14);
+    if (result === 'devolvido') toast('Não coube ali — voltou para o lugar');
+  },
+});
+scene.add(hands);
+
+const wristMenu = new WristMenu({
+  onPalette: () => { cyclePalette(); },
+  onTrip: () => { toggleTrip(); },
+  onReseed: () => { reseed(); },
+});
+scene.add(wristMenu);
+
+/** Roda a cada frame: carregar o que está na mão e realçar o que está ao alcance. */
+function updateHands(dt) {
+  hands.update();
+
+  if (state.phase !== 'growing') { forest.highlight(null); return; }
+
+  let spin = 0;
+  let hover = null;
+  for (const st of hands.states) {
+    if (!st.tracked) continue;
+    const handle = grabbed.get(st);
+    if (handle) {
+      spin = clock.elapsedTime * 1.6;
+      forest.carry(handle, toLocal(st.pinch), spin);
+    } else if (!hover) {
+      hover = forest.pick(toLocal(st.pinch));
+    }
+  }
+  forest.highlight(hover);
+
+  wristMenu.update(dt, hands.byHandedness('left'), hands.byHandedness('right'));
+}
+
+const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+let touchUI = null;
+function syncTouchUI() {
+  const on = interaction.touchMode || (previewMode && coarsePointer);
+  if (on === touchUI) return;
+  touchUI = on;
+  overlay.classList.toggle('touch', on);
+}
 
 // ---------------------------------------------------------------------------
 // Laço de renderização
@@ -340,11 +464,12 @@ renderer.setAnimationLoop((time, frame) => {
   if (state.phase === 'mapping' && renderer.xr.isPresenting) {
     room.update(frame, xr.refSpace);
     scanTick += dt;
-    if (scanTick > 0.4) { scanTick = 0; updateScanPanel(); }
+    if (scanTick > 0.3) { scanTick = 0; syncTouchUI(); updateScanPanel(); }
   }
 
   interaction.groundY = forest.position.y;
   interaction.update(dt);
+  updateHands(dt);
   forest.update(dt);
 
   if (state.phase === 'growing') {
@@ -388,9 +513,11 @@ detect().then((res) => {
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = { forest, room, hands, wristMenu, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
 
 window.addEventListener('beforeunload', () => {
+  hands.dispose();
+  wristMenu.dispose();
   forest.dispose();
   room.dispose();
   interaction.dispose();

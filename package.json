@@ -9,6 +9,6 @@
     "dev": "node serve.mjs",
     "dev:http": "node serve.mjs --http",
     "pretest": "node scripts/link-three.mjs",
-    "test": "node test-geometry.mjs && node test-layout.mjs"
+    "test": "node test-geometry.mjs && node test-layout.mjs && node test-grab.mjs"
   }
 }

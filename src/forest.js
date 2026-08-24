@@ -65,6 +65,12 @@ class InstanceSet {
     return i;
   }
 
+  /** Lê a transformação de uma instância de volta para objetos Three. */
+  read(i, pos, quat, scale) {
+    this.meshes[0].getMatrixAt(i, _m);
+    _m.decompose(pos, quat, scale);
+  }
+
   clear() { this.count = 0; for (const m of this.meshes) m.count = 0; }
   flush() { for (const m of this.meshes) m.instanceMatrix.needsUpdate = true; }
   dispose() { for (const m of this.meshes) { m.geometry.dispose(); m.removeFromParent(); } }
@@ -79,7 +85,9 @@ export class Forest extends Group {
     this.obstacles = [];
     this.seedValue = 1;
 
+    this.geo = {};
     this.species = [G.speciesTower(), G.speciesUmbrella(), G.speciesPagoda()].map((sp) => {
+      this.geo.trunk ??= sp.trunk;
       const trunkMesh = new InstancedMesh(sp.trunk, M.barkMaterial, CAPACITY.tree);
       const canopyMesh = new InstancedMesh(sp.canopy, M.canopyMaterial, CAPACITY.tree);
       this.add(trunkMesh, canopyMesh);
@@ -87,12 +95,15 @@ export class Forest extends Group {
     });
 
     const mush = G.mushroom();
+    this.geo.cap = mush.cap;
     const stemMesh = new InstancedMesh(mush.stem, M.stemMaterial, CAPACITY.mushroom);
     const capMesh = new InstancedMesh(mush.cap, M.capMaterial, CAPACITY.mushroom);
     this.add(stemMesh, capMesh);
     this.mushrooms = new InstanceSet([stemMesh, capMesh], CAPACITY.mushroom);
 
-    const crystalMesh = new InstancedMesh(G.crystal(), M.crystalMaterial, CAPACITY.crystal);
+    const crystalGeo = G.crystal();
+    this.geo.crystal = crystalGeo;
+    const crystalMesh = new InstancedMesh(crystalGeo, M.crystalMaterial, CAPACITY.crystal);
     crystalMesh.renderOrder = 3;
     this.add(crystalMesh);
     this.crystals = new InstanceSet([crystalMesh], CAPACITY.crystal);
@@ -106,6 +117,20 @@ export class Forest extends Group {
     this.add(orbMesh);
     this.orbs = new InstanceSet([orbMesh], CAPACITY.orb);
 
+    // Casca de realce mostrada em volta do objeto que a mão vai pegar.
+    this.highlights = {
+      mushroom: new Mesh(this.geo.cap, M.highlightMaterial),
+      crystal: new Mesh(this.geo.crystal, M.highlightMaterial),
+      tree: new Mesh(this.geo.trunk, M.highlightMaterial),
+    };
+    for (const h of Object.values(this.highlights)) {
+      h.visible = false;
+      h.frustumCulled = false;
+      h.renderOrder = 7;
+      this.add(h);
+    }
+
+    this.held = new Set();
     this.ground = null;
     this.spores = null;
   }
@@ -327,11 +352,15 @@ export class Forest extends Group {
       && distanceToEdges(local.x, local.z, this.footprint) >= WALK.wallMargin;
   }
 
-  /** Distância do ponto ao tronco mais próximo já plantado. */
-  #nearestTrunk(x, z) {
+  /**
+   * Distância do ponto ao tronco mais próximo. `skip` exclui a própria árvore
+   * que está na mão — senão ela sempre se veria como obstáculo de si mesma.
+   */
+  #nearestTrunk(x, z, skip = null) {
     let best = Infinity;
     for (const sp of this.species) {
       for (let i = 0; i < sp.set.count; i++) {
+        if (skip && skip.set === sp.set && skip.idx === i) continue;
         sp.set.meshes[0].getMatrixAt(i, _m);
         const dx = _m.elements[12] - x, dz = _m.elements[14] - z;
         best = Math.min(best, Math.hypot(dx, dz));
@@ -363,7 +392,8 @@ export class Forest extends Group {
     const idx = sp.set.add(pos, quat, scale);
     if (idx < 0) return 'cheio';
 
-    this.growing.push({ set: sp.set, idx, pos, quat, scale, t: 0 });
+    this.#tween(sp.set, idx,
+      { pos, quat, scale: new Vector3(0.001, 0.001, 0.001) }, { pos, quat, scale });
 
     for (let i = 0; i < 3 && this.mushrooms.count < CAPACITY.mushroom; i++) {
       const a = r() * Math.PI * 2, d = 0.3 + r() * 0.5;
@@ -373,26 +403,161 @@ export class Forest extends Group {
       const mq = new Quaternion().setFromAxisAngle(_up, r() * Math.PI * 2);
       const msc = new Vector3(ms, ms, ms);
       const mi = this.mushrooms.add(mp, mq, msc);
-      if (mi >= 0) this.growing.push({ set: this.mushrooms, idx: mi, pos: mp, quat: mq, scale: msc, t: 0 });
+      if (mi >= 0) {
+        this.#tween(this.mushrooms, mi,
+          { pos: mp, quat: mq, scale: new Vector3(0.001, 0.001, 0.001) },
+          { pos: mp, quat: mq, scale: msc });
+      }
     }
     return 'ok';
   }
 
-  /** Brotar com pequeno overshoot elástico. */
+  // -------------------------------------------------------------------------
+  // Animação
+  // -------------------------------------------------------------------------
+
+  /**
+   * Interpola uma instância de um estado a outro. Plantar é um caso particular
+   * (escala 0 -> cheia); replantar e voltar para o lugar de origem usam o mesmo
+   * caminho, o que evita três sistemas de animação fazendo quase a mesma coisa.
+   */
+  #tween(set, idx, from, to, dur = 0.9, bounce = true) {
+    // Um alvo novo para a mesma instância cancela o anterior.
+    const at = this.growing.findIndex((g) => g.set === set && g.idx === idx);
+    if (at >= 0) this.growing.splice(at, 1);
+    this.growing.push({ set, idx, from, to, t: 0, dur, bounce });
+  }
+
+  /** Estado atual de uma instância, como objeto solto. */
+  #snapshot(set, idx) {
+    const pos = new Vector3(), quat = new Quaternion(), scale = new Vector3();
+    set.read(idx, pos, quat, scale);
+    return { pos, quat, scale };
+  }
+
   update(dt) {
     if (!this.growing.length) return;
     const touched = new Set();
+
     for (let i = this.growing.length - 1; i >= 0; i--) {
       const g = this.growing[i];
-      g.t = Math.min(1, g.t + dt / 0.95);
-      const k = 1 - Math.pow(1 - g.t, 3);
-      const ease = k + Math.sin(g.t * Math.PI) * 0.18 * (1 - g.t);
-      _s.copy(g.scale).multiplyScalar(ease);
-      g.set.write(g.idx, g.pos, g.quat, _s);
+      g.t = Math.min(1, g.t + dt / g.dur);
+
+      let k = 1 - Math.pow(1 - g.t, 3);
+      if (g.bounce) k += Math.sin(g.t * Math.PI) * 0.18 * (1 - g.t);
+
+      _p.copy(g.from.pos).lerp(g.to.pos, k);
+      _q.copy(g.from.quat).slerp(g.to.quat, Math.min(1, k));
+      _s.copy(g.from.scale).lerp(g.to.scale, k);
+      g.set.write(g.idx, _p, _q, _s);
+
       touched.add(g.set);
       if (g.t >= 1) this.growing.splice(i, 1);
     }
     for (const set of touched) set.flush();
+  }
+
+  // -------------------------------------------------------------------------
+  // Pegar com as mãos
+  // -------------------------------------------------------------------------
+
+  /**
+   * O que está ao alcance de `local`, se houver. Cogumelo e cristal são
+   * pegos pelo corpo (distância 3D); árvore é pega pelo tronco, então a
+   * distância é medida no plano — você agarra o tronco na altura que quiser.
+   */
+  pick(local) {
+    const inv = 1 / (this.scale.x || 1);
+    let best = null, bestD = Infinity;
+
+    const consider = (kind, set, idx, dist, limit) => {
+      if (dist >= limit || dist >= bestD) return;
+      if (this.#isHeld(set, idx)) return;
+      bestD = dist;
+      best = { kind, set, idx };
+    };
+
+    const body = [
+      ['mushroom', this.mushrooms, 0.60, 0.30 * inv],
+      ['crystal', this.crystals, 0.66, 0.32 * inv],
+    ];
+    for (const [kind, set, hFrac, limit] of body) {
+      for (let i = 0; i < set.count; i++) {
+        set.read(i, _p, _q, _s);
+        _p.y += hFrac * _s.y;
+        consider(kind, set, i, _p.distanceTo(local), limit);
+      }
+    }
+
+    const treeLimit = 0.34 * inv;
+    for (const sp of this.species) {
+      for (let i = 0; i < sp.set.count; i++) {
+        sp.set.read(i, _p, _q, _s);
+        if (local.y < 0.15 || local.y > 2.3 * _s.y) continue;
+        consider('tree', sp.set, i, Math.hypot(_p.x - local.x, _p.z - local.z), treeLimit);
+      }
+    }
+    return best;
+  }
+
+  #isHeld(set, idx) {
+    for (const h of this.held) if (h.set === set && h.idx === idx) return true;
+    return false;
+  }
+
+  /** Mostra a casca de realce sobre um alvo (ou esconde tudo com null). */
+  highlight(target) {
+    for (const h of Object.values(this.highlights)) h.visible = false;
+    if (!target) return;
+    const mesh = this.highlights[target.kind];
+    if (!mesh) return;
+    target.set.read(target.idx, _p, _q, _s);
+    mesh.position.copy(_p);
+    mesh.quaternion.copy(_q);
+    mesh.scale.copy(_s);
+    mesh.visible = true;
+  }
+
+  /** Arranca o objeto do chão. Devolve a alça usada em carry/drop. */
+  lift(target) {
+    const home = this.#snapshot(target.set, target.idx);
+    const handle = { ...target, home, carried: home.scale.clone().multiplyScalar(0.42) };
+    this.held.add(handle);
+    // Cancela qualquer animação pendente: a mão manda agora.
+    const at = this.growing.findIndex((g) => g.set === handle.set && g.idx === handle.idx);
+    if (at >= 0) this.growing.splice(at, 1);
+    return handle;
+  }
+
+  /** Faz o objeto seguir a mão, encolhido e girando devagar. */
+  carry(handle, local, spin = 0) {
+    _q.copy(handle.home.quat);
+    _p.set(0, 1, 0);
+    _q.multiply(new Quaternion().setFromAxisAngle(_p, spin));
+    handle.set.write(handle.idx, local, _q, handle.carried);
+    handle.set.flush();
+  }
+
+  /**
+   * Solta em `local`. Replanta ali se couber; senão devolve ao lugar de origem.
+   * Devolve 'plantado' | 'devolvido'.
+   */
+  drop(handle, local) {
+    this.held.delete(handle);
+    const ground = new Vector3(local.x, 0, local.z);
+
+    const fits = this.accepts(ground)
+      && (handle.kind !== 'tree'
+        || this.#nearestTrunk(ground.x, ground.z, handle) >= Forest.trunkGap(
+          distanceToEdges(ground.x, ground.z, this.footprint)) * 0.8);
+
+    const from = this.#snapshot(handle.set, handle.idx);
+    const to = fits
+      ? { pos: ground, quat: handle.home.quat, scale: handle.home.scale }
+      : handle.home;
+
+    this.#tween(handle.set, handle.idx, from, to, fits ? 0.45 : 0.7);
+    return fits ? 'plantado' : 'devolvido';
   }
 
   get treeCount() { return this.species.reduce((n, sp) => n + sp.set.count, 0); }

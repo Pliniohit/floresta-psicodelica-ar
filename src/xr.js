@@ -1,6 +1,7 @@
 const REQUIRED = ['local-floor'];
 const OPTIONAL = [
   'plane-detection',   // Space Setup do Quest: é daqui que vem o cômodo mapeado
+  'hit-test',          // celular Android: mirar no chão e tocar
   'bounded-floor',     // reserva: o limite do guardian
   'hand-tracking',
   'anchors',
