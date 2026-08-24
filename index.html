@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07030f">
+<title>Floresta Psicodélica AR — Meta Quest 3</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🍄</text></svg>">
+<style>
+  :root{
+    --ink:#f3e9ff;
+    --dim:#9b8fb5;
+    --edge:rgba(190,150,255,.28);
+    --glow:#c07bff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#07030f}
+  body{
+    font:400 16px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    touch-action:none;
+  }
+  canvas{display:block;position:fixed;inset:0}
+
+  /* ---------- tela inicial (fora do XR) ---------- */
+  #gate{
+    position:fixed;inset:0;display:grid;place-items:center;padding:24px;
+    background:
+      radial-gradient(90vmax 70vmax at 20% -10%, #2b0b4d 0%, transparent 60%),
+      radial-gradient(70vmax 70vmax at 100% 110%, #06403f 0%, transparent 55%),
+      #07030f;
+    z-index:10;transition:opacity .5s ease;
+  }
+  #gate.gone{opacity:0;pointer-events:none}
+  .card{width:min(560px,100%);text-align:center}
+  .mark{font-size:64px;line-height:1;filter:drop-shadow(0 0 24px var(--glow));animation:bob 6s ease-in-out infinite}
+  @keyframes bob{50%{transform:translateY(-10px) rotate(-4deg)}}
+  h1{
+    font-size:clamp(28px,7vw,44px);font-weight:600;letter-spacing:-.02em;margin:18px 0 6px;
+    background:linear-gradient(92deg,#7dffd4,#c07bff 45%,#ff85c8 75%,#ffd479);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .sub{color:var(--dim);font-size:15px;margin-bottom:28px}
+  button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+  #enter{
+    width:100%;padding:17px 22px;border-radius:16px;font-weight:600;font-size:17px;
+    background:linear-gradient(100deg,#6b2fd6,#a63ec9 60%,#d2418f);
+    box-shadow:0 10px 40px -8px rgba(180,80,255,.6), inset 0 1px 0 rgba(255,255,255,.25);
+    transition:transform .15s ease, filter .15s ease;
+  }
+  #enter:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.12)}
+  #enter:disabled{opacity:.45;cursor:default;background:#2a2140;box-shadow:none}
+  #preview{
+    margin-top:12px;width:100%;padding:14px;border-radius:14px;font-size:14px;color:var(--dim);
+    border:1px solid var(--edge);transition:color .15s,border-color .15s;
+  }
+  #preview:hover{color:var(--ink);border-color:rgba(190,150,255,.6)}
+  #status{margin-top:18px;font-size:13px;color:var(--dim);min-height:1.5em}
+  #status b{color:#ff9ec7;font-weight:500}
+  .keys{
+    margin-top:30px;padding-top:22px;border-top:1px solid var(--edge);
+    display:grid;grid-template-columns:auto 1fr;gap:9px 16px;text-align:left;font-size:13.5px;color:var(--dim);
+  }
+  .keys kbd{
+    font:inherit;font-size:12px;color:var(--ink);white-space:nowrap;
+    background:rgba(190,150,255,.13);border:1px solid var(--edge);border-radius:7px;padding:3px 9px;
+  }
+
+  /* ---------- HUD dentro do AR (dom-overlay) ---------- */
+  #overlay{position:fixed;inset:0;pointer-events:none;display:none;font-size:15px}
+  #overlay.on{display:block}
+  #toast{
+    position:absolute;left:50%;bottom:9%;transform:translateX(-50%);
+    padding:11px 22px;border-radius:999px;white-space:nowrap;
+    background:rgba(10,4,22,.72);border:1px solid var(--edge);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:0 0 40px -6px rgba(160,80,255,.55);
+    opacity:0;transition:opacity .35s ease;
+  }
+  #toast.on{opacity:1}
+  #toast .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:9px;vertical-align:-1px;box-shadow:0 0 10px currentColor}
+  #scan{
+    position:absolute;left:50%;top:14%;transform:translateX(-50%);
+    width:min(460px,86vw);padding:22px 26px;border-radius:20px;text-align:center;
+    background:rgba(10,4,22,.74);border:1px solid var(--edge);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    box-shadow:0 0 60px -10px rgba(160,80,255,.6);
+    opacity:0;transition:opacity .4s ease;
+  }
+  #scan.on{opacity:1}
+  #scan h2{font-size:19px;font-weight:600;margin-bottom:7px}
+  #scan p{font-size:14px;color:var(--dim);line-height:1.6}
+  #scan p b{color:var(--ink);font-weight:500}
+  #scan .pulse{
+    width:38px;height:38px;margin:0 auto 14px;border-radius:50%;
+    border:2px solid var(--glow);animation:sonar 2.2s ease-out infinite;
+  }
+  @keyframes sonar{
+    0%{transform:scale(.35);opacity:1}
+    100%{transform:scale(1.25);opacity:0}
+  }
+  #exit{
+    position:absolute;top:22px;right:22px;pointer-events:auto;
+    padding:10px 18px;border-radius:999px;font-size:14px;
+    background:rgba(10,4,22,.7);border:1px solid var(--edge);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <div class="mark">🍄</div>
+    <h1>Floresta Psicodélica</h1>
+    <p class="sub">Realidade aumentada &middot; low poly &middot; texturas animadas por shader</p>
+    <p class="sub" style="margin-top:-20px">A floresta cresce dentro do <b style="color:#c07bff;font-weight:500">seu cômodo mapeado</b>, com espaço para você caminhar entre as árvores.</p>
+
+    <button id="enter" disabled>Procurando headset…</button>
+    <button id="preview">Ver prévia no navegador (sem AR)</button>
+    <p id="status"></p>
+
+    <div class="keys">
+      <kbd>Gatilho</kbd><span>Confirmar o espaço mapeado &nbsp;·&nbsp; depois, plantar onde você aponta</span>
+      <kbd>Grip</kbd><span>Trocar a paleta psicodélica</span>
+      <kbd>A / X</kbd><span>Alternar modo calmo ⇄ viagem completa</span>
+      <kbd>B / Y</kbd><span>Semear novamente a floresta inteira</span>
+      <kbd>Analógico ↕</kbd><span>Escalar &nbsp;·&nbsp; <b>↔</b> girar a floresta</span>
+      <kbd>Pinça</kbd><span>Mesmo que o gatilho, com hand tracking</span>
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <button id="exit">Sair do AR</button>
+  <div id="scan">
+    <div class="pulse"></div>
+    <h2 id="scan-title">Mapeando seu espaço…</h2>
+    <p id="scan-info"></p>
+  </div>
+  <div id="toast"><span class="sw"></span><span id="toast-text"></span></div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

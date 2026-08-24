@@ -1,0 +1,399 @@
+import {
+  WebGLRenderer, Scene, PerspectiveCamera, Vector2, Vector3,
+  Raycaster, Plane, Clock, MathUtils,
+} from 'three';
+import { Forest } from './forest.js';
+import { XRStage, detect } from './xr.js';
+import { RoomScan, fallbackRoom, polygonArea } from './room.js';
+import { Interaction } from './interaction.js';
+import { Ambience } from './audio.js';
+import { shared, disposeMaterials } from './shaders/materials.js';
+import { palettes } from './palettes.js';
+
+const TRIP_CALM = 0.30;
+const TRIP_FULL = 1.00;
+
+// ---------------------------------------------------------------------------
+// Renderizador
+// ---------------------------------------------------------------------------
+const renderer = new WebGLRenderer({
+  antialias: true,
+  alpha: true,                       // obrigatório: é o alfa que revela o passthrough
+  powerPreference: 'high-performance',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 0);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new Scene();
+const camera = new PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 60);
+camera.position.set(0, 1.6, 6.0);
+
+const forest = new Forest();
+forest.visible = false;
+scene.add(forest);
+
+const room = new RoomScan();
+scene.add(room.view);
+
+const xr = new XRStage(renderer);
+const audio = new Ambience();
+
+// ---------------------------------------------------------------------------
+// Estado
+// ---------------------------------------------------------------------------
+const state = {
+  phase: 'idle',        // idle -> mapping -> growing
+  paletteIndex: 0,
+  tripTarget: TRIP_CALM,
+  scale: 1.0,
+  spin: 0,
+  intro: 0,
+  seed: 1,
+};
+
+const target = {
+  uPalA: palettes[0].a.clone(),
+  uPalB: palettes[0].b.clone(),
+  uPalC: palettes[0].c.clone(),
+  uPalD: palettes[0].d.clone(),
+};
+for (const k of Object.keys(target)) shared[k].value.copy(target[k]);
+
+// ---------------------------------------------------------------------------
+// HUD
+// ---------------------------------------------------------------------------
+const el = (id) => document.getElementById(id);
+const gate = el('gate'), overlay = el('overlay');
+const toastEl = el('toast'), toastText = el('toast-text');
+const scanEl = el('scan'), scanTitle = el('scan-title'), scanInfo = el('scan-info');
+let toastTimer = 0;
+
+function toast(msg, swatch = '#c07bff') {
+  if (!toastEl) return;
+  toastText.textContent = msg;
+  const dot = toastEl.querySelector('.sw');
+  dot.style.color = swatch; dot.style.background = swatch;
+  toastEl.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('on'), 2800);
+}
+
+function status(msg) { el('status').innerHTML = msg; }
+
+function updateScanPanel() {
+  if (!scanEl) return;
+  if (room.ready) {
+    scanTitle.textContent = 'Espaço reconhecido';
+    scanInfo.innerHTML =
+      `${room.area.toFixed(1)} m² · ${room.source}` +
+      (room.obstacles.length ? ` · ${room.obstacles.length} móvel(is)` : '') +
+      '<br><b>Aperte o gatilho para plantar a floresta</b>';
+  } else {
+    scanTitle.textContent = 'Mapeando seu espaço…';
+    scanInfo.innerHTML = room.planeCount
+      ? `${room.planeCount} superfície(s) lida(s) — olhe ao redor`
+      : 'Nenhum espaço encontrado. Rode o <b>Space Setup</b> do Quest para um encaixe perfeito,'
+        + '<br>ou aperte o gatilho para usar uma área padrão de 4 × 4 m.';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ações
+// ---------------------------------------------------------------------------
+function ping(strength = 1) {
+  shared.uPulse.value = Math.min(1, shared.uPulse.value + strength);
+}
+
+/** Fecha o mapeamento e faz a floresta brotar dentro do cômodo lido. */
+function commitRoom() {
+  forest.applyRoom(room);
+  shared.uOrigin.value.copy(forest.position);
+  forest.visible = true;
+  room.view.visible = false;
+  state.phase = 'growing';
+  state.intro = 0;
+  interaction.enabled = true;
+  scanEl?.classList.remove('on');
+  ping(1);
+  audio.chime(12, 0.28);
+  toast(`${forest.treeCount} árvores em ${room.area.toFixed(1)} m² — caminhe entre elas`,
+    palettes[state.paletteIndex].swatch);
+}
+
+function cyclePalette() {
+  state.paletteIndex = (state.paletteIndex + 1) % palettes.length;
+  const p = palettes[state.paletteIndex];
+  target.uPalA.copy(p.a); target.uPalB.copy(p.b);
+  target.uPalC.copy(p.c); target.uPalD.copy(p.d);
+  ping(0.7);
+  audio.chime([0, 3, 7, 10, 5, -2][state.paletteIndex] ?? 0, 0.2);
+  toast(p.name, p.swatch);
+}
+
+function toggleTrip() {
+  const full = state.tripTarget < 0.6;
+  state.tripTarget = full ? TRIP_FULL : TRIP_CALM;
+  shared.uSway.value = full ? 0.019 : 0.010;
+  audio.setTrip(state.tripTarget);
+  ping(0.9);
+  toast(full ? 'Viagem completa' : 'Modo calmo', palettes[state.paletteIndex].swatch);
+}
+
+function reseed() {
+  if (state.phase !== 'growing') return;
+  state.seed = (state.seed * 1103515245 + 12345) >>> 0;
+  forest.seed(state.seed);
+  state.intro = 0;
+  ping(1);
+  audio.chime(-5, 0.26);
+  toast(`Nova floresta — ${forest.treeCount} árvores`, palettes[state.paletteIndex].swatch);
+}
+
+const PLANT_MESSAGE = {
+  fora: 'Fora do espaço mapeado',
+  apertado: 'Perto demais de outra árvore — deixe passagem',
+  cheio: 'A floresta está cheia — B/Y semeia outra',
+};
+
+function plantAt(worldPoint) {
+  const result = forest.plant(forest.worldToLocal(worldPoint.clone()));
+  if (result === 'ok') {
+    ping(0.55);
+    audio.chime([0, 4, 7, 11, 14][Math.floor(Math.random() * 5)], 0.14);
+  } else {
+    toast(PLANT_MESSAGE[result]);
+  }
+  return result;
+}
+
+/** Ponto no chão a 2 m à frente de quem está olhando. */
+function aheadOfCamera(distance = 2.0) {
+  const fwd = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  fwd.y = 0;
+  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+  fwd.normalize().multiplyScalar(distance);
+  const p = camera.position.clone().add(fwd);
+  return new Vector2(p.x, p.z);
+}
+
+// ---------------------------------------------------------------------------
+// Controles XR
+// ---------------------------------------------------------------------------
+const interaction = new Interaction(renderer, scene, {
+  onSelect: (aimPoint, controller) => {
+    if (state.phase === 'mapping') {
+      if (!room.ready) room.useFallback(aheadOfCamera());
+      commitRoom();
+      interaction.pulse(controller, 0.8, 60);
+    } else if (state.phase === 'growing' && aimPoint) {
+      if (plantAt(aimPoint) === 'ok') interaction.pulse(controller, 0.6, 40);
+    }
+  },
+  onPalette: cyclePalette,
+  onTrip: toggleTrip,
+  onReseed: reseed,
+  onScale: (d) => { state.scale = MathUtils.clamp(state.scale + d, 0.35, 2.4); },
+  onRotate: (d) => { state.spin += d; },
+});
+interaction.enabled = false;
+
+// ---------------------------------------------------------------------------
+// Prévia no desktop: órbita com o mouse, clique planta
+// ---------------------------------------------------------------------------
+const orbit = { theta: 0.5, phi: 1.34, radius: 8.0, target: new Vector3(0, 1.35, 0), active: false, moved: false };
+let previewMode = false;
+
+function applyOrbit() {
+  const r = orbit.radius, p = MathUtils.clamp(orbit.phi, 0.15, 1.55);
+  camera.position.set(
+    orbit.target.x + r * Math.sin(p) * Math.sin(orbit.theta),
+    orbit.target.y + r * Math.cos(p),
+    orbit.target.z + r * Math.sin(p) * Math.cos(orbit.theta),
+  );
+  camera.lookAt(orbit.target);
+}
+
+const raycaster = new Raycaster();
+const groundPlane = new Plane(new Vector3(0, 1, 0), 0);
+const ndc = new Vector2();
+
+function bindPreview() {
+  const dom = renderer.domElement;
+  let px = 0, py = 0;
+  dom.addEventListener('pointerdown', (e) => {
+    orbit.active = true; orbit.moved = false; px = e.clientX; py = e.clientY;
+    dom.setPointerCapture(e.pointerId);
+  });
+  dom.addEventListener('pointermove', (e) => {
+    if (!orbit.active) return;
+    const dx = e.clientX - px, dy = e.clientY - py;
+    if (Math.abs(dx) + Math.abs(dy) > 4) orbit.moved = true;
+    orbit.theta -= dx * 0.006;
+    orbit.phi = MathUtils.clamp(orbit.phi - dy * 0.006, 0.15, 1.55);
+    px = e.clientX; py = e.clientY;
+    applyOrbit();
+  });
+  dom.addEventListener('pointerup', (e) => {
+    orbit.active = false;
+    if (orbit.moved || !previewMode) return;
+    ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const hit = new Vector3();
+    if (raycaster.ray.intersectPlane(groundPlane, hit)) plantAt(hit);
+  });
+  dom.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    orbit.radius = MathUtils.clamp(orbit.radius * (1 + Math.sign(e.deltaY) * 0.09), 2.0, 24);
+    applyOrbit();
+  }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
+    if (!previewMode) return;
+    const k = e.key.toLowerCase();
+    if (k === 'p') cyclePalette();
+    if (k === 't') toggleTrip();
+    if (k === 'r') reseed();
+    if (k === 'm') toast(audio.toggleMute() ? 'Som mudo' : 'Som ligado');
+  });
+}
+
+/** Sala sintética para a prévia: 5 × 4 m com uma mesa no canto. */
+function startPreview() {
+  previewMode = true;
+  gate.classList.add('gone');
+  audio.start();
+
+  room.footprint = fallbackRoom(new Vector2(0, 0), 5.0, 4.0);
+  room.obstacles = [[
+    new Vector2(1.1, -1.5), new Vector2(2.3, -1.5),
+    new Vector2(2.3, -0.3), new Vector2(1.1, -0.3),
+  ]];
+  room.floorY = 0;
+  room.source = 'sala de demonstração';
+  commitRoom();
+  applyOrbit();
+  toast('Prévia: arraste para orbitar · clique planta · P paleta · T viagem · R semear', palettes[0].swatch);
+}
+
+// ---------------------------------------------------------------------------
+// Entrada em AR
+// ---------------------------------------------------------------------------
+async function enterXR(mode) {
+  const btn = el('enter');
+  btn.disabled = true;
+  btn.textContent = 'Abrindo sessão…';
+  try {
+    audio.start();
+    await xr.start(mode, overlay);
+    await room.prepare(xr.session);
+
+    gate.classList.add('gone');
+    overlay.classList.add('on');
+    scanEl?.classList.add('on');
+    room.view.visible = true;
+    state.phase = 'mapping';
+    updateScanPanel();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Entrar em AR';
+    status(`<b>Falha ao iniciar:</b> ${err?.message ?? err}`);
+  }
+}
+
+xr.onEnd = () => {
+  overlay.classList.remove('on');
+  scanEl?.classList.remove('on');
+  gate.classList.remove('gone');
+  interaction.enabled = false;
+  state.phase = 'idle';
+  forest.visible = false;
+  room.view.visible = false;
+  el('enter').disabled = false;
+  el('enter').textContent = 'Entrar em AR';
+};
+
+el('exit').addEventListener('click', () => xr.end());
+el('preview').addEventListener('click', startPreview);
+
+// ---------------------------------------------------------------------------
+// Laço de renderização
+// ---------------------------------------------------------------------------
+const clock = new Clock();
+let scanTick = 0;
+
+renderer.setAnimationLoop((time, frame) => {
+  const dt = Math.min(0.05, clock.getDelta());
+
+  shared.uTime.value = clock.elapsedTime;
+  shared.uPulse.value *= Math.exp(-dt * 2.4);
+
+  const k = 1 - Math.exp(-dt * 5.0);
+  shared.uPalA.value.lerp(target.uPalA, k);
+  shared.uPalB.value.lerp(target.uPalB, k);
+  shared.uPalC.value.lerp(target.uPalC, k);
+  shared.uPalD.value.lerp(target.uPalD, k);
+  shared.uTrip.value += (state.tripTarget - shared.uTrip.value) * k;
+
+  if (state.phase === 'mapping' && renderer.xr.isPresenting) {
+    room.update(frame, xr.refSpace);
+    scanTick += dt;
+    if (scanTick > 0.4) { scanTick = 0; updateScanPanel(); }
+  }
+
+  interaction.groundY = forest.position.y;
+  interaction.update(dt);
+  forest.update(dt);
+
+  if (state.phase === 'growing') {
+    if (state.intro < 1) {
+      state.intro = Math.min(1, state.intro + dt / 1.5);
+      const e = 1 - Math.pow(1 - state.intro, 4);
+      forest.scale.setScalar(Math.max(0.001, state.scale * e));
+    } else {
+      forest.scale.setScalar(state.scale);
+    }
+    forest.rotation.y = state.spin;
+  }
+
+  renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------------------------------------------------------------------------
+// Detecção inicial
+// ---------------------------------------------------------------------------
+bindPreview();
+
+detect().then((res) => {
+  const btn = el('enter');
+  if (!res.ok) {
+    btn.textContent = 'AR indisponível';
+    status(res.reason + ' Você ainda pode ver a prévia abaixo.');
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = res.degraded ? 'Entrar em VR (sem passthrough)' : 'Entrar em AR';
+  if (res.degraded) status('Este aparelho não oferece <b>immersive-ar</b>; a cena roda em VR.');
+  else status('Meta Quest detectado. Coloque o headset e toque em Entrar em AR.');
+  btn.addEventListener('click', () => enterXR(res.mode));
+});
+
+// Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
+// `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
+window.floresta = { forest, room, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+
+window.addEventListener('beforeunload', () => {
+  forest.dispose();
+  room.dispose();
+  interaction.dispose();
+  disposeMaterials();
+  audio.stop();
+});
