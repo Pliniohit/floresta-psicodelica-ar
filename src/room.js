@@ -100,6 +100,19 @@ function ribbon(poly, width = 0.035, y = 0.02, closed = true) {
   return g;
 }
 
+/**
+ * Aresta inferior de um plano vertical: os dois vértices mais baixos, que
+ * juntos dão a linha onde a parede encontra o chão. É por ali que as
+ * trepadeiras começam a subir.
+ */
+function lowestEdge(points) {
+  if (points.length < 2) return null;
+  const sorted = [...points].sort((a, b) => a.y - b.y);
+  const [a, b] = sorted;
+  if (Math.hypot(a.x - b.x, a.z - b.z) < 0.25) return null;   // degenerado
+  return { a: new Vector2(a.x, a.z), b: new Vector2(b.x, b.z), y: (a.y + b.y) / 2 };
+}
+
 // ---------------------------------------------------------------------------
 // Captura do espaço
 // ---------------------------------------------------------------------------
@@ -107,6 +120,9 @@ function ribbon(poly, width = 0.035, y = 0.02, closed = true) {
 const HORIZONTAL = 'horizontal';
 const FLOOR_LABELS = new Set(['floor']);
 const OBSTACLE_LABELS = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'screen', 'other']);
+
+/** Superfícies onde vale fazer musgo e cogumelos brotarem por cima. */
+const COLONIZABLE = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'cabinet', 'other']);
 
 /**
  * Lê as superfícies que o usuário já mapeou no Space Setup do Quest e monta:
@@ -122,6 +138,8 @@ export class RoomScan {
   constructor() {
     this.footprint = null;
     this.obstacles = [];
+    this.surfaces = [];    // tampos de móveis, para colonizar por cima
+    this.wallBases = [];   // linha pé-de-parede, para trepadeiras
     this.floorY = 0;
     this.ceilingY = null;
     this.source = 'nenhuma';
@@ -202,6 +220,8 @@ export class RoomScan {
     this.footprint = fallbackRoom(new Vector2(this.hitPoint.x, this.hitPoint.z), TAP_AREA, TAP_AREA);
     this.floorY = this.hitPoint.y;
     this.obstacles = [];
+    this.surfaces = [];
+    this.wallBases = [];
     this.source = 'toque no chão';
     this.reticle.visible = false;
     this.#rebuildView([]);
@@ -237,7 +257,12 @@ export class RoomScan {
       const poly = pts3.map((p) => new Vector2(p.x, p.z));
       const y = pts3.reduce((a, p) => a + p.y, 0) / pts3.length;
       const entry = { plane, poly, y, area: polygonArea(poly), label: plane.semanticLabel };
-      (plane.orientation === HORIZONTAL ? horizontals : verticals).push(entry);
+      if (plane.orientation === HORIZONTAL) {
+        horizontals.push(entry);
+      } else {
+        entry.base = lowestEdge(pts3);
+        verticals.push(entry);
+      }
     }
 
     if (!horizontals.length) return !!this.footprint;
@@ -257,10 +282,23 @@ export class RoomScan {
     this.ceilingY = ceil ? ceil.y : null;
 
     // Móveis: horizontais acima do chão e abaixo da altura do peito.
-    this.obstacles = horizontals
+    const furniture = horizontals
       .filter((h) => h !== floor && h.y > this.floorY + 0.12 && h.y < this.floorY + 1.5)
-      .filter((h) => !h.label || OBSTACLE_LABELS.has(h.label))
-      .map((h) => h.poly);
+      .filter((h) => !h.label || OBSTACLE_LABELS.has(h.label));
+    this.obstacles = furniture.map((h) => h.poly);
+
+    // Tampos onde a floresta pode subir: a mesma geometria, mas guardada com
+    // a altura, porque aqui a intenção é plantar EM CIMA e não desviar.
+    this.surfaces = furniture
+      .filter((h) => !h.label || COLONIZABLE.has(h.label))
+      .map((h) => ({ poly: h.poly, y: h.y, label: h.label ?? 'other', area: h.area }));
+
+    // Base das paredes, para trepadeiras subirem. Guardamos o segmento mais
+    // baixo de cada plano vertical.
+    this.wallBases = verticals
+      .filter((v) => !v.label || v.label === 'wall' || v.label === 'wall_face')
+      .map((v) => v.base)
+      .filter(Boolean);
 
     this.#rebuildView(verticals);
     this.revision++;
@@ -286,6 +324,8 @@ export class RoomScan {
     this.footprint = poly;
     this.floorY = 0;
     this.obstacles = [];
+    this.surfaces = [];
+    this.wallBases = [];
     this.source = 'limite do guardian';
     this.#rebuildView([]);
     this.revision++;
@@ -297,6 +337,8 @@ export class RoomScan {
     this.footprint = fallbackRoom(center, 4.0, 4.0);
     this.floorY = 0;
     this.obstacles = [];
+    this.surfaces = [];
+    this.wallBases = [];
     this.source = 'área padrão';
     this.#rebuildView([]);
     this.revision++;
@@ -325,6 +367,27 @@ export class RoomScan {
       const m = new Mesh(ribbon(w.poly, 0.02, this.floorY + 0.01, false), reticleMaterial);
       m.frustumCulled = false;
       this.view.add(m);
+    }
+  }
+
+  /**
+   * Esquece tudo que foi lido. Usado depois de um reescaneamento: a geometria
+   * antiga não vale mais, e manter a assinatura faria a leitura nova ser
+   * descartada como "nada mudou".
+   */
+  reset() {
+    this.footprint = null;
+    this.obstacles = [];
+    this.surfaces = [];
+    this.wallBases = [];
+    this.hitPoint = null;
+    this.planeCount = 0;
+    this.source = 'nenhuma';
+    this._signature = '';
+    for (const c of [...this.view.children]) {
+      if (c === this.reticle) continue;
+      c.geometry.dispose();
+      this.view.remove(c);
     }
   }
 

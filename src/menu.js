@@ -1,6 +1,6 @@
 import {
   Group, Mesh, IcosahedronGeometry, OctahedronGeometry, TetrahedronGeometry,
-  Vector3,
+  DodecahedronGeometry, Vector3,
 } from '../vendor/three/three.module.min.js';
 import { handMaterial } from './shaders/materials.js';
 
@@ -26,7 +26,7 @@ const _v = new Vector3();
 const _side = new Vector3();
 
 export class WristMenu extends Group {
-  /** @param {{onPalette:Function, onTrip:Function, onReseed:Function}} actions */
+  /** @param {{onPalette:Function, onTrip:Function, onReseed:Function, onSky:Function}} actions */
   constructor(actions = {}) {
     super();
     this.name = 'menu-de-pulso';
@@ -35,16 +35,17 @@ export class WristMenu extends Group {
     this.renderOrder = 9;
 
     const shapes = [
-      new IcosahedronGeometry(ORB_SIZE, 0),   // paleta
-      new OctahedronGeometry(ORB_SIZE, 0),    // viagem
-      new TetrahedronGeometry(ORB_SIZE * 1.2, 0), // semear
+      new IcosahedronGeometry(ORB_SIZE, 0),        // paleta
+      new OctahedronGeometry(ORB_SIZE, 0),         // viagem
+      new TetrahedronGeometry(ORB_SIZE * 1.2, 0),  // semear
+      new DodecahedronGeometry(ORB_SIZE, 0),       // céu
     ];
-    const fns = [actions.onPalette, actions.onTrip, actions.onReseed];
+    const fns = [actions.onPalette, actions.onTrip, actions.onReseed, actions.onSky];
 
     this.orbs = shapes.map((geo, i) => {
       const m = new Mesh(geo, handMaterial);
       m.frustumCulled = false;
-      m.userData = { action: fns[i], cooldown: 0, pop: 0, slot: i - 1 };
+      m.userData = { action: fns[i], cooldown: 0, pop: 0, slot: i - (shapes.length - 1) / 2 };
       this.add(m);
       return m;
     });

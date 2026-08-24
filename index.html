@@ -118,7 +118,8 @@
   }
   #pad{
     position:absolute;left:50%;bottom:calc(9% + 58px);transform:translateX(-50%);
-    display:none;gap:8px;pointer-events:auto;
+    display:none;gap:6px;pointer-events:auto;flex-wrap:wrap;
+    justify-content:center;max-width:94vw;
     padding:8px;border-radius:20px;
     background:rgba(10,4,22,.72);border:1px solid var(--edge);
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -130,7 +131,7 @@
   #overlay.camera #pad .so-camera{display:flex}
   #pad button{
     display:flex;flex-direction:column;align-items:center;gap:3px;
-    min-width:62px;padding:9px 6px;border-radius:14px;
+    min-width:56px;padding:8px 6px;border-radius:14px;
     font-size:11px;color:var(--dim);line-height:1;
     transition:background .15s, color .15s;
   }
@@ -164,7 +165,7 @@
 
     <div class="keys">
       <kbd>Gatilho</kbd><span>Confirmar o espaço mapeado &nbsp;·&nbsp; depois, plantar onde você aponta</span>
-      <kbd>Grip</kbd><span>Trocar a paleta psicodélica</span>
+      <kbd>Grip</kbd><span>Escanear o cômodo de novo &nbsp;·&nbsp; depois, trocar a paleta</span>
       <kbd>A / X</kbd><span>Alternar modo calmo ⇄ viagem completa</span>
       <kbd>B / Y</kbd><span>Semear novamente a floresta inteira</span>
       <kbd>Analógico ↕</kbd><span>Escalar &nbsp;·&nbsp; <b>↔</b> girar a floresta</span>
@@ -187,6 +188,7 @@
     <button data-act="seed"><i>🌱</i>Semear</button>
     <button data-act="smaller"><i>➖</i>Menor</button>
     <button data-act="bigger"><i>➕</i>Maior</button>
+    <button data-act="sky"><i>🌌</i>Céu</button>
     <button data-act="recenter" class="so-camera"><i>🧭</i>Centrar</button>
   </div>
 </div>

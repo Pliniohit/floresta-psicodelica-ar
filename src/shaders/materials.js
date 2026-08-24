@@ -1,5 +1,5 @@
 import {
-  ShaderMaterial, Vector3, DoubleSide, FrontSide,
+  ShaderMaterial, Vector3, DoubleSide, FrontSide, BackSide,
   AdditiveBlending, NormalBlending,
 } from '../../vendor/three/three.module.min.js';
 import { NOISE, PALETTE, SWAY, VERT_HEAD, VERT_EMIT, FRAG_HEAD, FRAG_FADE } from './lib.js';
@@ -323,6 +323,149 @@ export const orbMaterial = make('orbes', {
       float core = pow(max(dot(N, V), 0.0), 1.5);
       vec3 col = palette(vSeed + uTime * 0.12);
       gl_FragColor = vec4(trippy(col) * (0.25 + core * 1.6) * vFade, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// CÉU — cúpula invertida em volta do usuário.
+//
+// Em passthrough um céu opaco cobriria a sala inteira e mataria a AR. Então a
+// opacidade sobe com a altura do olhar: à frente você continua vendo o cômodo
+// real, e o céu só toma conta quando você levanta a cabeça. O teto vira
+// abertura em vez de superfície.
+// ---------------------------------------------------------------------------
+export const skyMaterial = make('ceu', {
+  transparent: true,
+  depthWrite: false,
+  // Sem teste de profundidade, e desenhado ANTES do oclusor. Se o céu fosse
+  // testado, o teto real — que agora escreve profundidade — o esconderia por
+  // completo. Pintando antes, o teto deixa de ser superfície e vira abertura.
+  depthTest: false,
+  side: BackSide,
+  uniforms: {
+    uHorizon: { value: 0.10 },   // seno da elevação onde o céu começa a aparecer
+    uFull: { value: 0.62 },      // onde já está cheio
+    uSky: { value: 1.0 },        // liga/desliga com transição
+  },
+  vert: /* glsl */ `
+    void main(){
+      vSeed = 0.0;
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uHorizon;
+    uniform float uFull;
+    uniform float uSky;
+
+    void main(){
+      vec3 dir = normalize(vWorld - cameraPosition);
+      float up = dir.y;
+
+      // Nada abaixo da linha: ali está a sala de verdade.
+      float veu = smoothstep(uHorizon, uFull, up) * uSky;
+      if (veu <= 0.004) discard;
+
+      // Nebulosa: fbm com domain warping, girando devagar.
+      vec3 q = dir * 2.6;
+      float warp = vnoise(q * 0.8 + uTime * 0.02);
+      float neb = fbm3(q + warp * 1.6 + vec3(uTime * 0.012, 0.0, uTime * 0.008));
+
+      // Faixas de aurora atravessando o zênite.
+      float faixa = sin(dir.x * 3.1 + neb * 5.0 + uTime * 0.22)
+                  * sin(dir.z * 2.3 - neb * 4.0 - uTime * 0.17);
+      faixa = pow(max(faixa, 0.0), 2.2);
+
+      // Estrelas: pontos duros num reticulado de direção.
+      vec3 cel = floor(dir * 190.0);
+      float estrela = step(0.9992, hash13(cel));
+      estrela *= smoothstep(0.25, 0.7, up);
+
+      float t = neb * 0.9 + up * 0.35 + uTime * 0.03;
+      vec3 col = palette(t) * (0.16 + neb * 0.5);
+      col += palette(t + 0.42) * faixa * (0.9 + uTrip * 1.8);
+      col += vec3(estrela) * (0.7 + uTrip * 0.8);
+      col += palette(t + 0.5) * uPulse * 0.35 * neb;
+
+      gl_FragColor = vec4(trippy(col) * (1.0 + uTrip * 0.6), veu);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// VIDA NO CÉU — medusas à deriva. Mesmo visual dos orbes, mas sem teste de
+// profundidade: elas moram além do teto e o oclusor as apagaria.
+// ---------------------------------------------------------------------------
+export const skyLifeMaterial = make('medusas', {
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: AdditiveBlending,
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      // Dominada pela borda: o miolo quase não acende, o que faz a forma ler
+      // como sino translúcido em vez de bola sólida.
+      float rim = pow(1.0 - abs(dot(N, V)), 2.6);
+      float core = pow(max(dot(N, V), 0.0), 2.5);
+
+      // Tentáculos: o corpo apaga para baixo, e umas listras descem dele.
+      float baixo = smoothstep(-0.9, 0.25, N.y);
+      float franja = 0.5 + 0.5 * sin(atan(N.z, N.x) * 11.0 + uTime * 1.3);
+      float cauda = (1.0 - baixo) * franja * 0.5;
+
+      vec3 col = palette(vSeed * 0.5 + uTime * 0.07);
+      float brilho = (rim * 1.35 + core * 0.10) * (0.35 + baixo * 0.65) + cauda * 0.35;
+      gl_FragColor = vec4(trippy(col) * brilho, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// VARREDURA — a malha do cômodo revelada durante o escaneamento. Silhueta por
+// fresnel (sem coordenadas baricêntricas não há wireframe de verdade) mais um
+// plano de varredura subindo, que é o que dá a leitura de "está lendo agora".
+// ---------------------------------------------------------------------------
+export const scanMaterial = make('varredura', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  blending: AdditiveBlending,
+  uniforms: { uSweep: { value: 0 }, uReveal: { value: 0 } },
+  vert: /* glsl */ `
+    void main(){
+      vSeed = 0.0;
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uSweep;    // altura do plano de varredura, em metros
+    uniform float uReveal;   // 0..1, quanto da sala já apareceu
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float rim = pow(1.0 - abs(dot(N, V)), 2.2);
+
+      // linha de varredura
+      float band = exp(-abs(vWorld.y - uSweep) * 7.0);
+
+      // grade fina ancorada em mundo: dá escala à superfície
+      vec3 g = abs(fract(vWorld * 4.0) - 0.5);
+      float grid = smoothstep(0.46, 0.5, max(max(g.x, g.y), g.z));
+
+      float a = (rim * 0.55 + band * 0.9 + grid * 0.22) * uReveal;
+      if (a <= 0.004) discard;
+
+      vec3 col = palette(vWorld.y * 0.2 + uTime * 0.12);
+      gl_FragColor = vec4(trippy(col) * (0.8 + band * 2.2), a);
     }
   `,
 });

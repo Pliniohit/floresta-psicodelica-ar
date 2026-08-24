@@ -9,6 +9,9 @@ import { Interaction } from './interaction.js';
 import { Hands } from './hands.js';
 import { WristMenu } from './menu.js';
 import { MagicWindow } from './magicwindow.js';
+import { RoomMesh } from './occlusion.js';
+import { Sky } from './sky.js';
+import { skyMaterial, scanMaterial } from './shaders/materials.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
@@ -41,6 +44,13 @@ scene.add(forest);
 const room = new RoomScan();
 scene.add(room.view);
 
+const roomMesh = new RoomMesh();
+scene.add(roomMesh);
+
+const sky = new Sky();
+sky.visible = false;
+scene.add(sky);
+
 const xr = new XRStage(renderer);
 const audio = new Ambience();
 
@@ -56,6 +66,10 @@ const state = {
   spin: 0,
   intro: 0,
   seed: 1,
+  skyOn: true,
+  occlusionOn: true,
+  scanSweep: 0,
+  scanReveal: 0,
 };
 
 const target = {
@@ -90,11 +104,18 @@ function status(msg) { el('status').innerHTML = msg; }
 function updateScanPanel() {
   if (!scanEl) return;
   if (room.ready) {
+    const partes = [`${room.area.toFixed(1)} m²`];
+    if (roomMesh.volumeCount) partes.push(`${roomMesh.triangleCount.toLocaleString('pt-BR')} triângulos de volume`);
+    if (roomMesh.objectCount) partes.push(`${roomMesh.objectCount} objeto(s)`);
+    else if (room.obstacles.length) partes.push(`${room.obstacles.length} móvel(is)`);
+
+    const rotulos = roomMesh.labels.slice(0, 5).map(([n, c]) => c > 1 ? `${n}×${c}` : n);
+
     scanTitle.textContent = 'Espaço reconhecido';
-    scanInfo.innerHTML =
-      `${room.area.toFixed(1)} m² · ${room.source}` +
-      (room.obstacles.length ? ` · ${room.obstacles.length} móvel(is)` : '') +
-      '<br><b>Aperte o gatilho para plantar a floresta</b>';
+    scanInfo.innerHTML = partes.join(' · ') + ` · ${room.source}`
+      + (rotulos.length ? `<br><span style="opacity:.7">${rotulos.join(' · ')}</span>` : '')
+      + '<br><b>Aperte o gatilho para plantar a floresta</b>'
+      + (xr.canCapture ? '<br><span style="opacity:.6">Grip para escanear de novo</span>' : '');
   } else if (room.aiming) {
     scanTitle.textContent = 'Chão encontrado';
     scanInfo.innerHTML = interaction.touchMode
@@ -105,11 +126,18 @@ function updateScanPanel() {
     scanInfo.innerHTML = 'Aponte a câmera para o piso e mova o aparelho devagar'
       + '<br>até o anel aparecer.';
   } else {
-    scanTitle.textContent = 'Mapeando seu espaço…';
-    scanInfo.innerHTML = room.planeCount
-      ? `${room.planeCount} superfície(s) lida(s) — olhe ao redor`
-      : 'Nenhum espaço encontrado. Rode o <b>Space Setup</b> do Quest para um encaixe perfeito,'
+    scanTitle.textContent = 'Escaneando seu espaço…';
+    if (room.planeCount || roomMesh.volumeCount) {
+      scanInfo.innerHTML = `${room.planeCount} superfície(s)`
+        + (roomMesh.volumeCount ? ` · ${roomMesh.volumeCount} volume(s)` : '')
+        + '<br>Olhe ao redor para completar a leitura.';
+    } else if (xr.canCapture) {
+      scanInfo.innerHTML = 'Nenhum espaço conhecido ainda.'
+        + '<br><b>Aperte o gatilho para escanear o cômodo agora.</b>';
+    } else {
+      scanInfo.innerHTML = 'Nenhum espaço encontrado. Rode o <b>Space Setup</b> do Quest,'
         + '<br>ou confirme para usar uma área padrão de 4 × 4 m.';
+    }
   }
 }
 
@@ -126,14 +154,55 @@ function commitRoom() {
   shared.uOrigin.value.copy(forest.position);
   forest.visible = true;
   room.view.visible = false;
+
+  // A malha deixa de ser desenhada e passa a só escrever profundidade: daqui
+  // em diante ela existe para esconder a floresta atrás dos móveis reais.
+  roomMesh.setMode('occlude');
+
+  sky.visible = state.skyOn;
+  skyMaterial.uniforms.uSky.value = state.skyOn ? 1 : 0;
   state.phase = 'growing';
   state.intro = 0;
   interaction.enabled = true;
   scanEl?.classList.remove('on');
   ping(1);
   audio.chime(12, 0.28);
-  toast(`${forest.treeCount} árvores em ${room.area.toFixed(1)} m² — caminhe entre elas`,
+  const extras = [];
+  if (forest.surfaces.length) extras.push(`${forest.surfaces.length} móvel(is) tomado(s)`);
+  if (roomMesh.volumeCount) extras.push('oclusão ativa');
+  toast(`${forest.treeCount} árvores em ${room.area.toFixed(1)} m²`
+    + (extras.length ? ` · ${extras.join(' · ')}` : ''),
     palettes[state.paletteIndex].swatch);
+}
+
+/** Pede ao Quest um novo escaneamento do cômodo. */
+async function rescan() {
+  if (!xr.canCapture) { toast('Este aparelho não permite escanear pelo app'); return; }
+  toast('Abrindo o escaneamento do sistema…');
+  const ok = await xr.captureRoom();
+  if (ok) {
+    // Força releitura: a geometria antiga não vale mais nada.
+    room.reset();
+    roomMesh.setMode('scan');
+    state.scanReveal = 0;
+    toast('Espaço reescaneado — olhe ao redor');
+  } else {
+    toast('Não foi possível escanear agora');
+  }
+}
+
+function toggleSky() {
+  state.skyOn = !state.skyOn;
+  sky.visible = state.skyOn;
+  toast(state.skyOn ? 'Céu aberto — olhe para cima' : 'Céu fechado',
+    palettes[state.paletteIndex].swatch);
+}
+
+function toggleOcclusion() {
+  state.occlusionOn = roomMesh.setOcclusion(!state.occlusionOn);
+  toast(state.occlusionOn
+    ? 'Oclusão ativa — a floresta some atrás dos móveis'
+    : 'Oclusão desligada');
 }
 
 function cyclePalette() {
@@ -203,6 +272,10 @@ const interaction = new Interaction(renderer, scene, camera, {
     if (state.phase === 'mapping') {
       if (room.ready || room.commitFromReticle()) {
         commitRoom();
+      } else if (xr.canCapture) {
+        // Nada conhecido e o runtime deixa escanear: é a hora exata de pedir.
+        rescan();
+        return;
       } else if (!room.hasHitTest) {
         room.useFallback(aheadOfCamera());
         commitRoom();
@@ -217,7 +290,7 @@ const interaction = new Interaction(renderer, scene, camera, {
       if (plantAt(aimPoint) === 'ok') interaction.pulse(controller, 0.6, 40);
     }
   },
-  onPalette: cyclePalette,
+  onPalette: () => { if (state.phase === 'mapping') rescan(); else cyclePalette(); },
   onTrip: toggleTrip,
   onReseed: reseed,
   onScale: (d) => { state.scale = MathUtils.clamp(state.scale + d, 0.35, 2.4); },
@@ -342,6 +415,7 @@ function startPreview() {
   room.floorY = 0;
   room.source = 'sala de demonstração';
   commitRoom();
+  sky.visible = state.skyOn;
   applyOrbit();
   overlay.classList.add('on', 'preview');
   syncTouchUI();
@@ -460,6 +534,9 @@ async function enterXR(mode) {
     overlay.classList.add('on');
     scanEl?.classList.add('on');
     room.view.visible = true;
+    roomMesh.setMode('scan');
+    sky.visible = false;
+    state.scanReveal = 0;
     state.phase = 'mapping';
     updateScanPanel();
   } catch (err) {
@@ -478,6 +555,8 @@ xr.onEnd = () => {
   state.phase = 'idle';
   forest.visible = false;
   room.view.visible = false;
+  roomMesh.setMode('off');
+  sky.visible = false;
   el('enter').disabled = false;
   el('enter').textContent = 'Entrar em AR';
 };
@@ -498,6 +577,7 @@ const PAD = {
   smaller: () => { state.scale = MathUtils.clamp(state.scale * 0.85, 0.35, 2.4); },
   bigger: () => { state.scale = MathUtils.clamp(state.scale * 1.18, 0.35, 2.4); },
   recenter: () => { magic.recenter(); toast('Frente recentrada'); },
+  sky: toggleSky,
 };
 el('pad').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
@@ -552,6 +632,7 @@ const wristMenu = new WristMenu({
   onPalette: () => { cyclePalette(); },
   onTrip: () => { toggleTrip(); },
   onReseed: () => { reseed(); },
+  onSky: () => { toggleSky(); },
 });
 scene.add(wristMenu);
 
@@ -591,6 +672,7 @@ function syncTouchUI() {
 // Laço de renderização
 // ---------------------------------------------------------------------------
 const clock = new Clock();
+const _head = new Vector3();
 let scanTick = 0;
 
 renderer.setAnimationLoop((time, frame) => {
@@ -608,6 +690,14 @@ renderer.setAnimationLoop((time, frame) => {
 
   if (state.phase === 'mapping' && renderer.xr.isPresenting) {
     room.update(frame, xr.refSpace);
+    roomMesh.update(frame, xr.refSpace);
+
+    // Plano de varredura subindo em ciclo, e revelação entrando de vez.
+    state.scanSweep = (state.scanSweep + dt * 1.15) % 3.6;
+    state.scanReveal = Math.min(1, state.scanReveal + dt * 0.9);
+    scanMaterial.uniforms.uSweep.value = room.floorY + state.scanSweep;
+    scanMaterial.uniforms.uReveal.value = state.scanReveal;
+
     scanTick += dt;
     if (scanTick > 0.3) { scanTick = 0; syncTouchUI(); updateScanPanel(); }
   }
@@ -618,6 +708,11 @@ renderer.setAnimationLoop((time, frame) => {
   interaction.update(dt);
   updateHands(dt);
   forest.update(dt);
+
+  if (sky.visible) {
+    camera.getWorldPosition(_head);
+    sky.update(clock.elapsedTime, _head);
+  }
 
   if (state.phase === 'growing') {
     if (state.intro < 1) {
@@ -679,9 +774,11 @@ detect().then((res) => {
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = { forest, room, roomMesh, sky, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
 
 window.addEventListener('beforeunload', () => {
+  roomMesh.dispose();
+  sky.dispose();
   hands.dispose();
   wristMenu.dispose();
   forest.dispose();

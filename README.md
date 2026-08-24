@@ -16,20 +16,61 @@ que você chegue de um cogumelo.
 
 ---
 
+## O escaneamento
+
+A experiência **sempre começa lendo o espaço**. Ao entrar em AR o app varre o
+que o headset conhece do cômodo e mostra na sua frente: superfícies, volumes,
+contagem de triângulos e os rótulos do que reconheceu — `couch`, `table`,
+`wall`, `window`.
+
+Se nada for conhecido, o gatilho dispara `session.initiateRoomCapture()`, que
+abre o escaneamento do próprio sistema ali na hora. Não é preciso ter rodado o
+Space Setup antes. Com o espaço já lido, o **grip** reescaneia.
+
+O que sai daí alimenta três coisas:
+
+**Oclusão.** A malha do cômodo (`mesh-detection`) passa a ser renderizada só no
+buffer de profundidade, antes de tudo. Uma árvore atrás do seu sofá **fica
+atrás do sofá**. É o maior ganho de integração do projeto inteiro: sem isso a
+floresta parece adesivo colado sobre a imagem; com isso ela parece estar na
+sala.
+
+**Colonização.** Os móveis deixam de ser só obstáculo e viram substrato. Musgo
+e cogumelos pequenos brotam no tampo da mesa e no assento do sofá; trepadeiras
+sobem pelo rodapé das paredes. O que o app reconhece como `table`, `couch`,
+`bed`, `desk` ou `shelf` é tomado por cima, não contornado.
+
+**Caminhabilidade.** O polígono do piso continua definindo onde dá para andar,
+como antes.
+
+## O céu
+
+Olhe para cima e o teto se dissolve. Nebulosa com domain warping, faixas de
+aurora atravessando o zênite, estrelas e medusas à deriva.
+
+A opacidade cresce com a elevação do olhar: no horizonte é zero — sua sala real
+continua inteira à sua frente — e só a partir de uns 30° acima o céu domina. É
+o que permite ter céu sem matar a AR.
+
+Detalhe de implementação que decide se funciona: a cúpula é desenhada **antes**
+do oclusor e sem teste de profundidade. Se fosse testada, o teto real (que
+agora escreve profundidade) apagaria o céu por completo. Pintando antes, o teto
+deixa de ser superfície e vira abertura.
+
+Liga e desliga no 🌌 da barra, ou no quarto orbe do menu de pulso.
+
 ## Como abrir no Quest 3
 
-1. **Antes de tudo**, rode o **Space Setup** do Quest (Configurações → Espaço
-   físico) para o headset conhecer as paredes e os móveis do cômodo. É opcional,
-   mas é o que faz a floresta encaixar exatamente no seu espaço.
-2. No headset, abra o **Meta Quest Browser** e vá até a URL do projeto.
-3. Toque em **Entrar em AR** e permita o acesso quando o sistema pedir.
-4. **Olhe ao redor.** O app desenha o contorno do que já leu; quando reconhecer
-   o piso, o painel mostra a área em m².
-5. **Aperte o gatilho** e a floresta brota dentro daquele espaço.
-6. **Caminhe entre as árvores.**
+1. No headset, abra o **Meta Quest Browser** e vá até a URL do projeto.
+2. Toque em **Entrar em AR** e permita o acesso quando o sistema pedir.
+3. **Olhe ao redor** enquanto a varredura corre. O painel mostra o que foi lido.
+4. **Aperte o gatilho.** Se já houver espaço conhecido, a floresta brota nele;
+   se não houver, abre o escaneamento do sistema e você varre o cômodo.
+5. **Caminhe entre as árvores. Olhe para cima.**
 
-Se o Space Setup nunca foi feito, o app usa o limite do guardian; e se nem isso
-existir, cai para uma área de 4 × 4 m à sua frente.
+Rodar o **Space Setup** antes (Configurações → Espaço físico) dá o melhor
+resultado, porque traz os rótulos semânticos dos móveis — mas não é necessário:
+o app sabe pedir o escaneamento sozinho.
 
 Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão insegura.
 
@@ -58,7 +99,7 @@ vez de fechar a sua passagem.
 | Entrada | Ação |
 | --- | --- |
 | **Gatilho** | Confirma o espaço mapeado; depois, planta onde você aponta |
-| **Grip** | Troca a paleta psicodélica |
+| **Grip** | Reescaneia o cômodo; depois de plantada, troca a paleta |
 | **A / X** | Alterna entre modo calmo e viagem completa |
 | **B / Y** | Semeia uma floresta inteiramente nova |
 | **Analógico ↕** | Escala a floresta (0,35× a 2,4×) |
@@ -131,7 +172,9 @@ index.html              tela inicial, HUD de dom-overlay, vídeo de fundo
 src/
   main.js               renderizador, estado, fases, laço de render, prévia
   xr.js                 ciclo de vida da sessão immersive-ar
-  room.js               plane-detection, hit-test, polígono do cômodo, móveis
+  room.js               plane-detection, hit-test, polígono, móveis, paredes
+  occlusion.js          mesh-detection, varredura visível e oclusor de profundidade
+  sky.js                cúpula do céu e medusas à deriva
   interaction.js        controles, toque na tela, mira no chão, háptico
   hands.js              juntas rastreadas, pinça, normal da palma
   menu.js               três orbes no pulso, acionados com o indicador
@@ -192,11 +235,19 @@ A cena fica entre **8 e 16 mil triângulos** (depende do tamanho do cômodo) e
   branco chapado. O roll-off segura o canal mais alto antes do teto e a cor
   sobrevive.
 - **Ruído de duas oitavas** na maioria das superfícies; três só onde a malha
-  ocupa pouca tela.
+  ocupa pouca tela — o céu é a exceção, com três, porque cobre muita tela mas
+  não concorre com nada.
+- **A malha do cômodo só é reconstruída quando muda.** Ela tem dezenas de
+  milhares de triângulos e refazer os buffers a cada frame derrubaria o frame
+  rate; uma assinatura barata de `lastChangedTime` evita isso.
+- **Como oclusor ela não custa cor nenhuma.** `colorWrite: false` escreve só
+  profundidade, que é o passe mais barato que existe.
 
 Uma consequência assumida: em teto baixo, as árvores mais altas atravessam o
 forro. Preferi manter a escala de floresta a espremer as copas na altura da sua
-cabeça — atravessar o teto parece mágico, esbarrar em galho parece defeito.
+cabeça — atravessar o teto parece mágico, esbarrar em galho parece defeito. Com
+o céu ligado isso deixa de ser concessão e vira intenção: a copa sobe pela
+abertura.
 
 ### Sem importmap, de propósito
 

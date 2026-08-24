@@ -41,7 +41,11 @@ const WALK = {
 
 /** Densidades por metro quadrado de piso livre. */
 const PER_M2 = { tree: 0.42, mushroom: 1.1, crystal: 0.55, grass: 95, orb: 1.1 };
-const CAPACITY = { tree: 60, mushroom: 90, crystal: 40, grass: 1600, orb: 40 };
+/** Densidades sobre móveis: bem mais altas, são superfícies pequenas. */
+const ON_SURFACE = { mushroom: 7, moss: 320 };
+/** Trepadeiras por metro linear de parede. */
+const VINES_PER_M = 3.2;
+const CAPACITY = { tree: 60, mushroom: 120, crystal: 40, grass: 2600, orb: 40 };
 const SPORES = 900;
 
 class InstanceSet {
@@ -83,6 +87,8 @@ export class Forest extends Group {
     this.growing = [];
     this.footprint = null;     // polígono do cômodo, em coordenadas locais
     this.obstacles = [];
+    this.surfaces = [];        // tampos de móveis, em coordenadas locais
+    this.wallBases = [];       // linha pé-de-parede
     this.seedValue = 1;
 
     this.geo = {};
@@ -149,9 +155,19 @@ export class Forest extends Group {
     this.position.set(centroid.x, room.floorY, centroid.y);
 
     this.footprint = room.footprint.map((p) => new Vector2(p.x - centroid.x, p.y - centroid.y));
-    this.obstacles = (room.obstacles ?? []).map(
-      (ob) => ob.map((p) => new Vector2(p.x - centroid.x, p.y - centroid.y)),
-    );
+    const toLocal2 = (p) => new Vector2(p.x - centroid.x, p.y - centroid.y);
+    this.obstacles = (room.obstacles ?? []).map((ob) => ob.map(toLocal2));
+
+    // Tampos e paredes viram substrato: a floresta sobe neles em vez de só
+    // desviar. É o que faz a sala parecer tomada, e não decorada por cima.
+    this.surfaces = (room.surfaces ?? []).map((sf) => ({
+      poly: sf.poly.map(toLocal2),
+      y: sf.y - room.floorY,
+      label: sf.label,
+    }));
+    this.wallBases = (room.wallBases ?? []).map((w) => ({
+      a: toLocal2(w.a), b: toLocal2(w.b), y: w.y - room.floorY,
+    }));
 
     this.#rebuildGround();
     this.#rebuildSpores();
@@ -327,6 +343,8 @@ export class Forest extends Group {
     }
     this.grass.flush();
 
+    this.#colonize(r);
+
     // Orbes: pairam acima da cabeça, sem restrição de piso.
     const orbCount = n(PER_M2.orb, CAPACITY.orb);
     for (let i = 0, guard = 0; i < orbCount && guard < orbCount * 12; guard++) {
@@ -343,6 +361,71 @@ export class Forest extends Group {
     this.orbs.flush();
 
     return this;
+  }
+
+  /**
+   * Faz a floresta subir nos móveis e nas paredes. Usa as mesmas malhas
+   * instanciadas do chão — só muda a altura e a orientação, então o custo é
+   * de instâncias, não de draw calls.
+   */
+  #colonize(r) {
+    // Tampos: musgo curto e cogumelos pequenos, na altura do móvel.
+    for (const sf of this.surfaces) {
+      const area = polygonArea(sf.poly);
+      if (area < 0.05) continue;
+      const b = polygonBounds(sf.poly);
+
+      const sortear = (tentativas) => {
+        for (let t = 0; t < tentativas; t++) {
+          const x = b.minX + r() * (b.maxX - b.minX);
+          const z = b.minZ + r() * (b.maxZ - b.minZ);
+          if (pointInPolygon(x, z, sf.poly)) return { x, z };
+        }
+        return null;
+      };
+
+      const nMush = Math.min(14, Math.round(area * ON_SURFACE.mushroom));
+      for (let i = 0; i < nMush && this.mushrooms.count < CAPACITY.mushroom; i++) {
+        const pt = sortear(20);
+        if (!pt) break;
+        const sc = 0.22 + r() * 0.3;      // menores que os do chão
+        _p.set(pt.x, sf.y, pt.z);
+        _q.setFromAxisAngle(_up, r() * Math.PI * 2);
+        _s.set(sc, sc, sc);
+        this.mushrooms.add(_p, _q, _s);
+      }
+
+      const nMoss = Math.min(260, Math.round(area * ON_SURFACE.moss));
+      for (let i = 0; i < nMoss && this.grass.count < CAPACITY.grass; i++) {
+        const pt = sortear(12);
+        if (!pt) break;
+        const sc = 0.25 + r() * 0.35;     // musgo rente, não capim
+        _p.set(pt.x, sf.y, pt.z);
+        _q.setFromAxisAngle(_up, r() * Math.PI * 2);
+        _s.set(1, sc, 1);
+        this.grass.add(_p, _q, _s);
+      }
+    }
+
+    // Paredes: trepadeiras subindo do rodapé, deitadas contra a parede.
+    for (const w of this.wallBases) {
+      const dx = w.b.x - w.a.x, dz = w.b.y - w.a.y;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.4) continue;
+      const ang = Math.atan2(dx, dz);     // orienta a lâmina ao longo da parede
+      const n = Math.min(40, Math.round(len * VINES_PER_M));
+      for (let i = 0; i < n && this.grass.count < CAPACITY.grass; i++) {
+        const t = (i + r() * 0.8) / n;
+        const sc = 1.6 + r() * 3.2;       // sobem bem mais que o capim do chão
+        _p.set(w.a.x + dx * t, w.y, w.a.y + dz * t);
+        _q.setFromAxisAngle(_up, ang + (r() - 0.5) * 0.5);
+        _s.set(1, sc, 1);
+        this.grass.add(_p, _q, _s);
+      }
+    }
+
+    this.mushrooms.flush();
+    this.grass.flush();
   }
 
   /** O ponto está dentro do cômodo mapeado? Usado antes de plantar. */
