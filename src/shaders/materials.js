@@ -1,7 +1,7 @@
 import {
   ShaderMaterial, Vector3, DoubleSide, FrontSide,
   AdditiveBlending, NormalBlending,
-} from 'three';
+} from '../../vendor/three/three.module.min.js';
 import { NOISE, PALETTE, SWAY, VERT_HEAD, VERT_EMIT, FRAG_HEAD, FRAG_FADE } from './lib.js';
 
 /**

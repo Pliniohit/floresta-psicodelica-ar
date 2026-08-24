@@ -72,31 +72,37 @@ mouse. Ali valem as teclas `P` (paleta), `T` (viagem), `R` (semear) e `M` (mudo)
 
 | Aparelho | O que acontece |
 | --- | --- |
-| **Android com ARCore** | AR de verdade. Aponte a câmera para o chão até o anel aparecer e toque para plantar. |
-| **iPhone / iPad** | Safari não implementa WebXR. Abre no modo 3D: arraste para orbitar, pince para aproximar, toque para plantar. |
+| **Android com ARCore** | AR com rastreamento real. Aponte a câmera para o chão até o anel aparecer e toque para plantar. |
+| **iPhone / iPad** | **Modo câmera**: feed da câmera traseira ao fundo e giroscópio girando a cena. Toque em *Abrir com a câmera*. |
+| **Qualquer navegador** | Modo 3D: arraste para orbitar, pince para aproximar, toque para plantar. |
 
 Sem controle físico não existe gatilho nem analógico, então paleta, viagem,
-semear e escala aparecem numa **barra na tela**. No celular a área vem de um
-toque no chão (3,5 × 3,5 m), não do Space Setup — `plane-detection` é coisa de
-headset; no telefone o que existe é `hit-test`.
+semear e escala aparecem numa **barra na tela**.
 
-## Rodando localmente
+### Por que o iPhone não faz AR de verdade
 
-```bash
-npm start
-```
+Não é limitação do projeto. **Nenhum navegador do iOS implementa WebXR** —
+Chrome, Firefox e Edge no iPhone são todos o WebKit por baixo, com outra
+interface. Logo `navigator.xr` não existe, `immersive-ar` não existe, e nada
+que a página faça vai pedir a câmera por esse caminho.
 
-O servidor gera um certificado autoassinado e sobe em `https://0.0.0.0:8443`,
-imprimindo o IP da sua rede local. Abra esse IP no navegador do Quest — ele vai
-avisar sobre o certificado; toque em *Advanced* e depois em *Proceed*.
+O que dá para fazer é o **modo câmera**: `getUserMedia` para o feed da traseira
+e `DeviceOrientationEvent` para a orientação. Ele pede permissão de câmera, sim,
+e permite olhar em volta girando o aparelho.
 
-Para testar só no computador, `node serve.mjs --http` serve em
-`http://localhost:8080` (que o navegador já considera contexto seguro).
+A diferença honesta: **não há rastreamento de posição.** Girar funciona; andar
+com o telefone não move você dentro da cena. Por isso, nesse modo, a floresta
+nasce **em volta de você** e não à frente — girar em torno de si é exatamente o
+grau de liberdade que o aparelho oferece, e a cena é montada para aproveitar
+esse, não para fingir os outros.
+
+Rastreamento completo no iOS existiria só via SDK comercial de SLAM em
+WebAssembly (8th Wall e afins), com licença paga — fora do escopo daqui.
 
 ## Como está montado
 
 ```
-index.html              tela inicial, HUD de dom-overlay e importmap
+index.html              tela inicial, HUD de dom-overlay, vídeo de fundo
 src/
   main.js               renderizador, estado, fases, laço de render, prévia
   xr.js                 ciclo de vida da sessão immersive-ar
@@ -104,6 +110,7 @@ src/
   interaction.js        controles, toque na tela, mira no chão, háptico
   hands.js              juntas rastreadas, pinça, normal da palma
   menu.js               três orbes no pulso, acionados com o indicador
+  magicwindow.js        câmera + giroscópio para aparelhos sem WebXR
   forest.js             semeadura no polígono, instancing, animação de brotar
   geometry.js           construtores das malhas low poly
   audio.js              drone ambiente gerado por WebAudio
@@ -165,6 +172,15 @@ A cena fica entre **8 e 16 mil triângulos** (depende do tamanho do cômodo) e
 Uma consequência assumida: em teto baixo, as árvores mais altas atravessam o
 forro. Preferi manter a escala de floresta a espremer as copas na altura da sua
 cabeça — atravessar o teto parece mágico, esbarrar em galho parece defeito.
+
+### Sem importmap, de propósito
+
+O Three.js é referenciado por **caminho relativo**, não por especificador nu
+com importmap. Importmap exige Safari 16.4+, e num iPhone mais antigo a página
+inteira quebraria com "Failed to resolve module specifier" — sem mensagem
+nenhuma para o usuário, só uma tela parada. Caminho relativo funciona em
+qualquer navegador com ES modules. Há também um `window.onerror` no `index.html`
+que mostra a falha na tela, caso algum módulo não carregue.
 
 ### Uma nota sobre a normal da palma
 

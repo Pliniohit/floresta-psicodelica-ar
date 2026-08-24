@@ -2,7 +2,7 @@ import {
   BufferGeometry, BufferAttribute, CylinderGeometry, IcosahedronGeometry,
   ConeGeometry, SphereGeometry, OctahedronGeometry,
   Matrix4, Euler, Quaternion, Vector3,
-} from 'three';
+} from '../vendor/three/three.module.min.js';
 
 /**
  * Concatena geometrias já transformadas numa só, sem índice, e recalcula

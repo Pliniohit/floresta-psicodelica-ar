@@ -1,6 +1,6 @@
 // Verifica que a floresta cabe no cômodo mapeado E que sobra passagem.
 // É o requisito central da experiência: caminhar entre as árvores.
-import { Matrix4, Vector2 } from 'three';
+import { Matrix4, Vector2 } from './vendor/three/three.module.min.js';
 import { Forest } from './src/forest.js';
 import { pointInPolygon, distanceToEdges, polygonArea, fallbackRoom } from './src/room.js';
 

@@ -1,7 +1,7 @@
 import {
   Group, Mesh, IcosahedronGeometry, OctahedronGeometry, TetrahedronGeometry,
   Vector3,
-} from 'three';
+} from '../vendor/three/three.module.min.js';
 import { handMaterial } from './shaders/materials.js';
 
 /**

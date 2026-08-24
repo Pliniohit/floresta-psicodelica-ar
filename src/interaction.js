@@ -1,4 +1,4 @@
-import { Mesh, CylinderGeometry, Vector3, Quaternion, Matrix4 } from 'three';
+import { Mesh, CylinderGeometry, Vector3, Quaternion, Matrix4 } from '../vendor/three/three.module.min.js';
 import * as G from './geometry.js';
 import { reticleMaterial, crystalMaterial } from './shaders/materials.js';
 

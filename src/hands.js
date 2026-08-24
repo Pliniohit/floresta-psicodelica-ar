@@ -1,6 +1,6 @@
 import {
   Group, InstancedMesh, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
-} from 'three';
+} from '../vendor/three/three.module.min.js';
 import { handMaterial } from './shaders/materials.js';
 
 /**

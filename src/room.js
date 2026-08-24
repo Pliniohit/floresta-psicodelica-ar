@@ -1,6 +1,6 @@
 import {
   Group, Mesh, BufferGeometry, BufferAttribute, Matrix4, Vector2, Vector3,
-} from 'three';
+} from '../vendor/three/three.module.min.js';
 import { reticleRing } from './geometry.js';
 import { reticleMaterial } from './shaders/materials.js';
 

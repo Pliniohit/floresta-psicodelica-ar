@@ -2,7 +2,7 @@ import {
   Group, InstancedMesh, Mesh, Points, BufferGeometry, BufferAttribute,
   Shape, ShapeGeometry, IcosahedronGeometry, Matrix4, Vector2, Vector3,
   Quaternion,
-} from 'three';
+} from '../vendor/three/three.module.min.js';
 import * as G from './geometry.js';
 import * as M from './shaders/materials.js';
 import {

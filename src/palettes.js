@@ -1,4 +1,4 @@
-import { Vector3 } from 'three';
+import { Vector3 } from '../vendor/three/three.module.min.js';
 
 /**
  * Paletas de cosseno: cor(t) = a + b * cos(2pi * (c*t + d)).

@@ -1,13 +1,14 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Vector2, Vector3,
   Raycaster, Plane, Clock, MathUtils,
-} from 'three';
+} from '../vendor/three/three.module.min.js';
 import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
 import { RoomScan, fallbackRoom, polygonArea } from './room.js';
 import { Interaction } from './interaction.js';
 import { Hands } from './hands.js';
 import { WristMenu } from './menu.js';
+import { MagicWindow } from './magicwindow.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
@@ -48,6 +49,7 @@ const audio = new Ambience();
 // ---------------------------------------------------------------------------
 const state = {
   phase: 'idle',        // idle -> mapping -> growing
+  mode: 'none',         // none | xr | camera | preview
   paletteIndex: 0,
   tripTarget: TRIP_CALM,
   scale: 1.0,
@@ -247,6 +249,9 @@ function bindPreview() {
   const dom = renderer.domElement;
   let px = 0, py = 0;
   dom.addEventListener('pointerdown', (e) => {
+    // No modo câmera com giroscópio quem manda na rotação é o aparelho;
+    // arrastar só é liberado se a orientação não estiver disponível.
+    if (state.mode === 'camera' && magic.hasOrientation) { orbit.moved = false; return; }
     orbit.active = true; orbit.moved = false; px = e.clientX; py = e.clientY;
     dom.setPointerCapture(e.pointerId);
   });
@@ -260,18 +265,51 @@ function bindPreview() {
     applyOrbit();
   });
   dom.addEventListener('pointerup', (e) => {
+    const arrastou = orbit.moved;
     orbit.active = false;
-    if (orbit.moved || !previewMode) return;
+    if (arrastou || !previewMode) return;
     ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     const hit = new Vector3();
     if (raycaster.ray.intersectPlane(groundPlane, hit)) plantAt(hit);
   });
   dom.addEventListener('wheel', (e) => {
+    if (state.mode === 'camera') return;
     e.preventDefault();
     orbit.radius = MathUtils.clamp(orbit.radius * (1 + Math.sign(e.deltaY) * 0.09), 2.0, 24);
     applyOrbit();
   }, { passive: false });
+
+  // Pinça de dois dedos para aproximar. No modo câmera ela escala a floresta
+  // em vez da distância: a câmera ali é o aparelho, não uma órbita.
+  let pinchDist = 0;
+  const spread = (t) => Math.hypot(
+    t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+  dom.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 2) return;
+    orbit.active = false;
+    orbit.moved = true;          // impede que o toque duplo plante ao soltar
+    pinchDist = spread(e.touches);
+  }, { passive: false });
+
+  dom.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2 || pinchDist <= 0) return;
+    e.preventDefault();
+    const d = spread(e.touches);
+    const k = d / pinchDist;
+    if (state.mode === 'camera') {
+      state.scale = MathUtils.clamp(state.scale * k, 0.35, 2.4);
+    } else {
+      orbit.radius = MathUtils.clamp(orbit.radius / k, 2.0, 24);
+      applyOrbit();
+    }
+    pinchDist = d;
+  }, { passive: false });
+
+  dom.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) pinchDist = 0;
+  });
 
   window.addEventListener('keydown', (e) => {
     if (!previewMode) return;
@@ -286,6 +324,7 @@ function bindPreview() {
 /** Sala sintética para a prévia: 5 × 4 m com uma mesa no canto. */
 function startPreview() {
   previewMode = true;
+  state.mode = 'preview';
   gate.classList.add('gone');
   audio.start();
 
@@ -304,6 +343,73 @@ function startPreview() {
 }
 
 // ---------------------------------------------------------------------------
+// Modo câmera (iPhone e qualquer aparelho sem WebXR)
+// ---------------------------------------------------------------------------
+const magic = new MagicWindow(camera);
+
+/** Sala padrão centrada em quem está segurando o aparelho. */
+function roomAroundUser(size = 5.0) {
+  room.footprint = fallbackRoom(new Vector2(0, 0), size, size);
+  room.obstacles = [];
+  room.floorY = 0;
+  room.source = 'em volta de você';
+}
+
+async function startCameraMode() {
+  const btn = el('camera');
+  btn.disabled = true;
+  btn.textContent = 'Pedindo acesso à câmera…';
+  try {
+    audio.start();
+    const feed = el('feed');
+    const { orientation } = await magic.start(feed);
+    feed.classList.add('on');
+
+    state.mode = 'camera';
+    previewMode = true;             // reaproveita plantar por toque e a barra
+    gate.classList.add('gone');
+    // Sem a classe 'preview' de propósito: ela esconde o #exit, e aqui o
+    // usuário precisa conseguir desligar a câmera.
+    overlay.classList.remove('preview');
+    overlay.classList.add('on', 'touch');
+    el('exit').textContent = 'Fechar câmera';
+    touchUI = true;
+
+    // Sem rastreamento de posição, o que existe é girar em torno de si —
+    // então a floresta nasce em volta, não à frente.
+    roomAroundUser();
+    commitRoom();
+    camera.position.set(0, 1.55, 0);
+
+    toast(orientation
+      ? 'Gire o aparelho para olhar em volta · toque para plantar'
+      : 'Sem giroscópio: arraste para olhar em volta', palettes[0].swatch);
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Abrir com a câmera';
+    const negado = /NotAllowed|Permission/i.test(String(err?.name || err));
+    status(negado
+      ? '<b>Câmera negada.</b> Libere o acesso em Ajustes → Safari → Câmera e recarregue.'
+      : `<b>Não deu para abrir a câmera:</b> ${err?.message ?? err}`);
+  }
+}
+
+function stopCameraMode() {
+  magic.stop();
+  el('feed').classList.remove('on');
+  el('exit').textContent = 'Sair do AR';
+  state.mode = 'none';
+  previewMode = false;
+  overlay.classList.remove('on', 'preview', 'touch');
+  touchUI = null;
+  gate.classList.remove('gone');
+  forest.visible = false;
+  state.phase = 'idle';
+  el('camera').disabled = false;
+  el('camera').textContent = 'Abrir com a câmera';
+}
+
+// ---------------------------------------------------------------------------
 // Entrada em AR
 // ---------------------------------------------------------------------------
 async function enterXR(mode) {
@@ -315,6 +421,7 @@ async function enterXR(mode) {
     await xr.start(mode, overlay);
     await room.prepare(xr.session);
 
+    state.mode = 'xr';
     gate.classList.add('gone');
     overlay.classList.remove('preview');
     overlay.classList.add('on');
@@ -342,7 +449,11 @@ xr.onEnd = () => {
   el('enter').textContent = 'Entrar em AR';
 };
 
-el('exit').addEventListener('click', () => xr.end());
+el('exit').addEventListener('click', () => {
+  if (state.mode === 'camera') stopCameraMode();
+  else xr.end();
+});
+el('camera').addEventListener('click', startCameraMode);
 el('preview').addEventListener('click', startPreview);
 
 // Barra de ações na tela: é o único caminho para paleta / viagem / semear
@@ -467,6 +578,8 @@ renderer.setAnimationLoop((time, frame) => {
     if (scanTick > 0.3) { scanTick = 0; syncTouchUI(); updateScanPanel(); }
   }
 
+  if (magic.active) magic.update();
+
   interaction.groundY = forest.position.y;
   interaction.update(dt);
   updateHands(dt);
@@ -497,23 +610,42 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 bindPreview();
 
+const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
 detect().then((res) => {
   const btn = el('enter');
-  if (!res.ok) {
-    btn.textContent = 'AR indisponível';
-    status(res.reason + ' Você ainda pode ver a prévia abaixo.');
+  const cam = el('camera');
+  const camOk = MagicWindow.supported;
+
+  if (res.ok) {
+    btn.disabled = false;
+    btn.textContent = res.degraded ? 'Entrar em VR (sem passthrough)' : 'Entrar em AR';
+    btn.addEventListener('click', () => enterXR(res.mode));
+    if (res.degraded) status('Este aparelho não oferece <b>immersive-ar</b>; a cena roda em VR.');
+    else status('Coloque o headset e toque em Entrar em AR.');
     return;
   }
-  btn.disabled = false;
-  btn.textContent = res.degraded ? 'Entrar em VR (sem passthrough)' : 'Entrar em AR';
-  if (res.degraded) status('Este aparelho não oferece <b>immersive-ar</b>; a cena roda em VR.');
-  else status('Meta Quest detectado. Coloque o headset e toque em Entrar em AR.');
-  btn.addEventListener('click', () => enterXR(res.mode));
+
+  // Sem WebXR. Num aparelho com câmera ainda dá para fazer AR de giroscópio,
+  // que é o melhor possível no iOS — lá o WebXR não existe em navegador nenhum,
+  // porque todos rodam sobre o WebKit.
+  btn.hidden = true;
+  if (camOk) {
+    cam.hidden = false;
+    status(iOS
+      ? 'O Safari do iPhone não implementa WebXR, então AR com rastreamento '
+        + 'completo não é possível aqui. O modo câmera usa o giroscópio: '
+        + 'a floresta fica em volta e você gira o aparelho para olhar.'
+      : 'Sem WebXR neste navegador. O modo câmera usa o giroscópio.');
+  } else {
+    status(res.reason + ' Você ainda pode ver a prévia abaixo.');
+  }
 });
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, hands, wristMenu, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = { forest, room, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
 
 window.addEventListener('beforeunload', () => {
   hands.dispose();

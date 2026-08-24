@@ -1,7 +1,7 @@
 // Verifica pegar / carregar / soltar sem precisar de headset.
 // A pinça em si vem do three.js; o que testamos é a decisão da floresta:
 // o que está ao alcance, e se o lugar onde você soltou serve.
-import { Vector2, Vector3, Quaternion } from 'three';
+import { Vector2, Vector3, Quaternion } from './vendor/three/three.module.min.js';
 import { Forest } from './src/forest.js';
 import { fallbackRoom } from './src/room.js';
 

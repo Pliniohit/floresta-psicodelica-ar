@@ -4,7 +4,7 @@
 import * as G from './src/geometry.js';
 import { Forest } from './src/forest.js';
 import { fallbackRoom } from './src/room.js';
-import { Vector2 } from 'three';
+import { Vector2 } from './vendor/three/three.module.min.js';
 
 let failures = 0;
 const check = (name, geo) => {
