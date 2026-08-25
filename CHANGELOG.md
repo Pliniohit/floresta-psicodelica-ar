@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.21.0 — A floresta virou nuvem de pontos
+
 ## v0.20.0 — Vaga-lumes em pontos; fora os poliedros flutuantes
 
 Dois poliedros sólidos flutuavam sem explicação na cena, e eram coisas
