@@ -17,6 +17,32 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.21.1 — A borboleta parou de rodopiar
 
+Dois erros no mesmo lugar, e o segundo é o que importa.
+
+O **primeiro é o eixo**: no modelo assado o corpo corre em Z, e a orientação
+alinhava o Y com a direção do voo. A borboleta voava de pé.
+
+O **segundo é mais fundo**. `setFromUnitVectors` devolve o arco *mais curto*
+entre dois vetores, e um arco curto não carrega nenhuma referência de cima — o
+rolamento sobra livre. Conforme a direção varria o círculo do voo, ela rodopiava
+sobre o próprio eixo. Era, literalmente, uma rotação sem gravidade.
+
+Agora a pose é montada com o mundo como referência:
+
+- o **rumo** vem do deslocamento horizontal
+- a **subida** vira inclinação do nariz, não giro do corpo
+- a **virada** vira inclinação lateral, que *persegue* o giro em vez de
+  segui-lo de imediato — sem isso a inclinação vibra junto com o ruído do
+  deslocamento
+
+Medido em quinze segundos de voo: o componente vertical do "cima" nunca desce
+de **0,917**. Ela inclina uns vinte e três graus no pior caso e nunca rola de
+barriga para cima.
+
+A frente do modelo é +Z, e isso não foi chutado: a envergadura cresce de 0,319
+em z = −0,36 para 0,500 em z = +0,36, e asa dianteira é mais larga que abdômen.
+
+
 ## v0.21.0 — A floresta virou nuvem de pontos
 
 Mudança de conceito, vinda do estudo de partículas guardado no Drive. A
