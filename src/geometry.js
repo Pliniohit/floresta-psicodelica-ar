@@ -69,6 +69,22 @@ export function trunk(topR, botR, height, radial = 5, rings = 4) {
  */
 const CANOPY_FLOOR = 2.4;
 
+/**
+ * FRUTOS.
+ *
+ * Octaedros de seis centímetros pendurados sob as massas de folha. Oito
+ * triângulos cada um: uma esfera de verdade custaria vinte vezes mais para
+ * ler igual a esta distância.
+ *
+ * Vêm em malha separada porque a cor é outra — o material da copa é folha, e
+ * fruta verde-folha não é fruta.
+ */
+function frutos(pontos, raio = 0.058) {
+  return weld(pontos.map(([x, y, z], i) => place(new OctahedronGeometry(raio, 0), {
+    x, y, z, sy: 1.35, ry: i * 0.7,   // levemente alongado, como uma baga
+  })));
+}
+
 /** Torre: alta e magra, copa em três bolhas empilhadas fora de eixo. */
 export function speciesTower() {
   return {
@@ -77,6 +93,10 @@ export function speciesTower() {
       place(new IcosahedronGeometry(0.58, 0), { y: 2.98, sy: 0.85, rz: 0.3 }),
       place(new IcosahedronGeometry(0.42, 0), { x: 0.18, y: 3.54, z: -0.12, sy: 0.9, rx: 0.5 }),
       place(new IcosahedronGeometry(0.30, 0), { x: -0.12, y: 3.96, z: 0.14, ry: 0.8 }),
+    ]),
+    fruit: frutos([
+      [0.22, 2.62, 0.10], [-0.26, 2.70, -0.16],
+      [0.30, 3.24, -0.20], [-0.10, 3.32, 0.24], [0.06, 3.72, 0.02],
     ]),
     height: 4.0,
   };
@@ -91,21 +111,70 @@ export function speciesUmbrella() {
       place(new ConeGeometry(0.76, 0.5, 7, 1), { y: 3.12, ry: 0.45 }),
       place(new IcosahedronGeometry(0.26, 0), { y: 3.42 }),
     ]),
+    fruit: frutos([
+      [0.72, 2.40, 0.30], [-0.55, 2.38, 0.62], [0.10, 2.36, -0.80],
+      [-0.82, 2.42, -0.22], [0.58, 2.44, 0.75],
+    ]),
     height: 3.6,
   };
 }
 
-/** Pagode: cones empilhados, silhueta em degraus. */
-export function speciesPagoda() {
-  const layers = [];
-  for (let i = 0; i < 4; i++) {
-    const t = i / 3;
-    layers.push(place(new ConeGeometry(0.82 - t * 0.48, 0.52, 6, 1), {
-      y: CANOPY_FLOOR + 0.36 + i * 0.48,
-      ry: i * 0.52,
+/**
+ * Árvore de galhos: tronco que se abre em quatro braços, cada um terminando
+ * numa massa de folha, com frutos pendurados.
+ *
+ * É a que o casulo escolhe. As outras duas são silhuetas — bolhas empilhadas
+ * e dossel de guarda-chuva; esta é a única com galho de verdade, e é dela que
+ * o casulo pende.
+ */
+export function speciesBranched() {
+  const tronco = [place(new CylinderGeometry(0.075, 0.17, 2.35, 6, 3, true), { y: 1.175 })];
+
+  // Alturas, azimutes e inclinações diferentes de propósito: quatro galhos
+  // iguais girados em torno do eixo leem como antena, não como árvore.
+  const galhos = [
+    { y: 1.95, az: 0.40, incl: 0.85, comp: 1.20, folha: 0.52 },
+    { y: 2.16, az: 2.05, incl: 0.70, comp: 1.05, folha: 0.46 },
+    { y: 2.30, az: 3.70, incl: 0.95, comp: 1.30, folha: 0.56 },
+    { y: 2.15, az: 5.10, incl: 0.62, comp: 0.95, folha: 0.44 },
+  ];
+
+  const copa = [];
+  const bagas = [];
+
+  for (const g of galhos) {
+    const braco = new CylinderGeometry(0.020, 0.058, g.comp, 5, 2, true);
+    place(braco, { y: g.comp / 2 });                    // base na origem
+    place(braco, { rz: g.incl, ry: g.az, y: g.y });     // inclina, gira, sobe
+    tronco.push(braco);
+
+    // Ponta do galho: para onde (0,1,0) foi parar depois das duas rotações.
+    const sx = -Math.sin(g.incl) * Math.cos(g.az);
+    const sz = Math.sin(g.incl) * Math.sin(g.az);
+    const sy = Math.cos(g.incl);
+    const px = sx * g.comp, py = g.y + sy * g.comp, pz = sz * g.comp;
+
+    copa.push(place(new IcosahedronGeometry(g.folha, 0), {
+      x: px + sx * 0.12, y: py + 0.10, z: pz + sz * 0.12,
+      sy: 0.82, ry: g.az,
     }));
+
+    // Duas bagas por galho, penduradas por baixo da massa de folha.
+    bagas.push([px + sx * 0.30, py - g.folha * 0.55, pz + sz * 0.10]);
+    bagas.push([px - sz * 0.26, py - g.folha * 0.68, pz + sx * 0.22]);
   }
-  return { trunk: trunk(0.055, 0.115, 2.6, 5, 4), canopy: weld(layers), height: 4.2 };
+
+  // Coroa central, fechando a forquilha por cima.
+  copa.push(place(new IcosahedronGeometry(0.50, 0), { y: 3.02, sy: 0.78, rz: 0.25 }));
+  bagas.push([0.16, 2.62, -0.10]);
+  bagas.push([-0.20, 2.58, 0.14]);
+
+  return {
+    trunk: weld(tronco),
+    canopy: weld(copa),
+    fruit: frutos(bagas),
+    height: 3.7,
+  };
 }
 
 /** Cogumelo: caule + chapéu em cúpula, ambos com origem em y = 0. */

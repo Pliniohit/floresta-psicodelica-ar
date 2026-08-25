@@ -106,6 +106,49 @@ export const barkMaterial = make('casca', {
 });
 
 // ---------------------------------------------------------------------------
+// FRUTOS — bagas penduradas sob a copa. Malha separada da copa porque a cor
+// é outra: fruta com a cor da folha não é fruta.
+// ---------------------------------------------------------------------------
+export const fruitMaterial = make('frutos', {
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      // Balança com a copa, e um pouco além: pendurada, ela atrasa em relação
+      // ao galho que a segura.
+      vec3 p = sway(position, root, 1.0);
+      p.x += sin(uTime * 0.62 + root.z * 3.1 + position.y * 2.0) * 0.008 * uSway * 90.0;
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      ${FRAG_FADE}
+      // Três frutas por bosque, sorteadas pela árvore: rubi, âmbar e ameixa.
+      vec3 fruta = pick3(
+        vec3(0.66, 0.10, 0.13),
+        vec3(0.84, 0.44, 0.07),
+        vec3(0.33, 0.10, 0.36),
+        fract(vSeed * 4.3));
+      // No fogo elas assam; na água ficam nacaradas.
+      fruta = biomeMix(fruta, mix(fruta, vec3(0.95, 0.52, 0.14), 0.55),
+                              mix(fruta, vec3(0.72, 0.86, 0.90), 0.45));
+
+      // Ponto de luz especular fixo: é o que faz a baga parecer lisa e
+      // molhada em vez de uma pedrinha fosca.
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float brilho = pow(max(dot(reflect(-V, N), normalize(vec3(0.4, 0.9, 0.3))), 0.0), 14.0);
+
+      float t = vSeed * 2.0 + uTime * 0.03;
+      vec3 col = enchant(fruta, t, 0.28);
+      col *= 0.50 + 0.72 * wrapLight(N);
+      col += vec3(1.0, 0.95, 0.88) * brilho * 0.55;
+      gl_FragColor = vec4(filmic(col), 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
 // COPA — massas de cor deformadas por domain warping, com brilho de borda.
 // ---------------------------------------------------------------------------
 export const canopyMaterial = make('copa', {
@@ -494,20 +537,26 @@ export const orbMaterial = make('orbes', {
 export const skyMaterial = make('ceu', {
   transparent: true,
   depthWrite: false,
-  // Sem teste de profundidade, e desenhado ANTES do oclusor. Se o céu fosse
-  // testado, o teto real — que agora escreve profundidade — o esconderia por
-  // completo. Pintando antes, o teto deixa de ser superfície e vira abertura.
-  depthTest: false,
+  // COM teste de profundidade.
+  //
+  // Ele já esteve desligado, porque o teto real escrevia profundidade e
+  // apagava o céu inteiro. Agora o teto não oclui mais — ele é a abertura —,
+  // e ligar o teste de volta resolve as duas coisas de uma vez: o céu passa
+  // pelo buraco do teto, e a COPA DA ÁRVORE fica na frente dele em vez de
+  // levar uma demão de céu por cima. Parede e chão continuam ganhando do
+  // céu, porque ali a sala é sala.
+  depthTest: true,
   side: BackSide,
   uniforms: {
     uHorizon: { value: 0.10 },   // seno da elevação onde o céu começa a aparecer
     uFull: { value: 0.62 },      // onde já está cheio
     uSky: { value: 1.0 },        // liga/desliga com transição
     uSpace: { value: 0.0 },      // 0 céu sobre a sala, 1 espaço profundo
-    // Teto de opacidade. O céu NUNCA fecha de todo: abaixo de 1.0 sempre
-    // sobra passthrough por baixo, e a sala continua legível mesmo no espaço.
-    // É o que mantém isto realidade mista em vez de virar realidade virtual.
-    uMaxVeil: { value: 0.86 },
+    // Teto de opacidade PERTO DO HORIZONTE. Para os lados o céu nunca fecha
+    // de todo — ali estão as suas paredes, e elas ficam. Para cima ele fecha
+    // por inteiro: o teto é a parte que pode ser realidade virtual, e é por
+    // ele que se vê o céu e a copa das árvores atravessando.
+    uMaxVeil: { value: 0.72 },
   },
   vert: /* glsl */ `
     void main(){
@@ -526,8 +575,10 @@ export const skyMaterial = make('ceu', {
       vec3 dir = normalize(vWorld - cameraPosition);
       float up = dir.y;
 
-      // Nada abaixo da linha: ali está a sala de verdade.
-      float veu = smoothstep(uHorizon, uFull, up) * uSky * uMaxVeil;
+      // Nada abaixo da linha: ali está a sala de verdade. E o quanto o céu
+      // pode fechar depende de para onde se olha — cede de lado, fecha em cima.
+      float teto = mix(uMaxVeil, 1.0, smoothstep(0.20, 0.50, up));
+      float veu = smoothstep(uHorizon, uFull, up) * uSky * teto;
       if (veu <= 0.004) discard;
 
       // Nebulosa: fbm com domain warping, girando devagar.
@@ -565,13 +616,14 @@ export const skyMaterial = make('ceu', {
 });
 
 // ---------------------------------------------------------------------------
-// VIDA NO CÉU — medusas à deriva. Mesmo visual dos orbes, mas sem teste de
-// profundidade: elas moram além do teto e o oclusor as apagaria.
+// VIDA NO CÉU — medusas à deriva. Moram além do teto; como o teto virou
+// abertura, elas podem ser testadas em profundidade como todo o resto, e
+// assim passam por trás das copas em vez de por cima.
 // ---------------------------------------------------------------------------
 export const skyLifeMaterial = make('medusas', {
   transparent: true,
   depthWrite: false,
-  depthTest: false,
+  depthTest: true,
   blending: AdditiveBlending,
   vert: /* glsl */ `
     #ifdef USE_INSTANCING

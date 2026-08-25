@@ -27,10 +27,11 @@ const check = (name, geo) => {
   );
 };
 
-for (const [n, f] of [['torre', G.speciesTower], ['guarda-chuva', G.speciesUmbrella], ['pagode', G.speciesPagoda]]) {
+for (const [n, f] of [['torre', G.speciesTower], ['guarda-chuva', G.speciesUmbrella], ['galhos', G.speciesBranched]]) {
   const sp = f();
   check(`${n} / tronco`, sp.trunk);
   check(`${n} / copa`, sp.canopy);
+  check(`${n} / frutos`, sp.fruit);
 }
 const mu = G.mushroom();
 check('cogumelo / caule', mu.stem);

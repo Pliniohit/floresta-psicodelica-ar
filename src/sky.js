@@ -52,7 +52,7 @@ export class Sky extends Group {
 
     this.medusas = new InstancedMesh(geoMedusa, skyLifeMaterial, MEDUSAS);
     this.medusas.frustumCulled = false;
-    this.medusas.renderOrder = -1999;   // logo após a cúpula, ainda antes do oclusor
+    this.medusas.renderOrder = -1999;   // logo após a cúpula, no fundo de tudo
     this.add(this.medusas);
 
     this.drift = [];

@@ -111,12 +111,16 @@ export class Forest extends Group {
     this.seedValue = 1;
 
     this.geo = {};
-    this.species = [G.speciesTower(), G.speciesUmbrella(), G.speciesPagoda()].map((sp) => {
+    // Tronco, copa e frutos: três malhas por espécie, uma lista de
+    // transformações só. O InstanceSet mantém as três soldadas, e o shader de
+    // vento faz o resto — todas derivam o balanço da mesma raiz em mundo.
+    this.species = [G.speciesTower(), G.speciesUmbrella(), G.speciesBranched()].map((sp) => {
       this.geo.trunk ??= sp.trunk;
       const trunkMesh = new InstancedMesh(sp.trunk, M.barkMaterial, CAPACITY.tree);
       const canopyMesh = new InstancedMesh(sp.canopy, M.canopyMaterial, CAPACITY.tree);
-      this.add(trunkMesh, canopyMesh);
-      return { set: new InstanceSet([trunkMesh, canopyMesh], CAPACITY.tree) };
+      const fruitMesh = new InstancedMesh(sp.fruit, M.fruitMaterial, CAPACITY.tree);
+      this.add(trunkMesh, canopyMesh, fruitMesh);
+      return { set: new InstanceSet([trunkMesh, canopyMesh, fruitMesh], CAPACITY.tree) };
     });
 
     const mush = G.mushroom();
@@ -391,8 +395,8 @@ export class Forest extends Group {
       // Casulo pendurado num galho, em algumas árvores altas.
       if (altura > 1.05 && this.cocoons.count < CAPACITY.cocoon && r() < 0.45) {
         const a = r() * Math.PI * 2;
-        const raio = (0.35 + r() * 0.45) * largura;
-        const cp = new Vector3(pt.x + Math.cos(a) * raio, 1.42 + r() * 0.32, pt.z + Math.sin(a) * raio);
+        const raio = (0.68 + r() * 0.34) * largura;
+        const cp = new Vector3(pt.x + Math.cos(a) * raio, 1.95 + r() * 0.28, pt.z + Math.sin(a) * raio);
         const cs = 1.5 + r() * 0.5;
         this.cocoons.add(cp, _q.identity(), _s.set(cs, cs, cs));
         this.cocoonSpots.push({ pos: cp.clone(), escala: cs, aberto: false });
@@ -653,7 +657,8 @@ export class Forest extends Group {
     const edge = distanceToEdges(local.x, local.z, this.footprint);
     if (this.#nearestTrunk(local.x, local.z) < Forest.trunkGap(edge) * 0.8) return 'apertado';
 
-    // A semente de casulo sempre vira a espécie de galhos abertos (pagode).
+    // A semente de casulo sempre vira a árvore de galhos: é a única com
+    // galho de verdade, e o casulo precisa pender de um.
     const order = kind === 'cocoon'
       ? [2, 0, 1]
       : [0, 1, 2].sort(() => r() - 0.5);
@@ -678,12 +683,15 @@ export class Forest extends Group {
 
     if (kind === 'cocoon' && this.cocoons.count < CAPACITY.cocoon) {
       const a = r() * Math.PI * 2;
-      const raio = (0.4 + r() * 0.35) * largura;
-      // ALTURA DE BRAÇO, não de copa. Antes pendurava a 2,6x a altura da
-      // árvore — de 3,2 a 5,1 m do chão, fora do alcance de qualquer mão.
+      // No raio em que os galhos passam, para o casulo pender de um deles em
+      // vez de flutuar ao lado do tronco.
+      const raio = (0.72 + r() * 0.30) * largura;
+      // Antes ficava a 1,4 m, altura de braço, porque só se abria encostando.
+      // Agora abre por mira, então pode subir até o galho — mas não além do
+      // que um braço levantado alcança, para quem está de pé e prefere tocar.
       const cp = new Vector3(
         local.x + Math.cos(a) * raio,
-        1.42 + r() * 0.32,
+        1.95 + r() * 0.28,
         local.z + Math.sin(a) * raio);
       const cs = 1.5 + r() * 0.5;
       const ci = this.cocoons.add(cp, _q.identity(), _s.setScalar(0.004));

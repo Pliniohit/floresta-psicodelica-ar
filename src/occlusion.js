@@ -21,6 +21,16 @@ import { scanMaterial } from './shaders/materials.js';
 const FURNITURE = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'cabinet', 'lamp', 'plant', 'other']);
 const STRUCTURE = new Set(['floor', 'ceiling', 'wall', 'wall_face', 'door', 'window', 'screen']);
 
+/**
+ * O TETO NÃO OCLUI.
+ *
+ * Ele é a única superfície do cômodo que precisa virar abertura: se o teto
+ * escreve profundidade, a copa da árvore que passa dos 2,6 m fica escondida
+ * atrás dele, e olhar para cima não mostra nem céu nem árvore — mostra o
+ * gesso. Parede e chão continuam ocluindo, porque ali a sala é sala.
+ */
+const NAO_OCLUI = new Set(['ceiling']);
+
 /** Só o oclusor precisa deste material — ele escreve profundidade e mais nada. */
 function makeOccluderMaterial() {
   const m = new MeshBasicMaterial();
@@ -115,10 +125,14 @@ export class RoomMesh extends Group {
     this.visible = mode !== 'off' && (mode === 'scan' || occluding);
 
     for (const e of this.entries) {
-      e.mesh.material = occluding ? this.occluderMaterial : scanMaterial;
+      const ocultaEsta = occluding && !NAO_OCLUI.has(e.label);
+      e.mesh.material = ocultaEsta ? this.occluderMaterial : scanMaterial;
       // Profundidade primeiro: o oclusor tem de estar no Z-buffer antes de
       // qualquer parte da floresta ser testada contra ele.
-      e.mesh.renderOrder = occluding ? -1000 : 6;
+      e.mesh.renderOrder = ocultaEsta ? -1000 : 6;
+      // Fora do escaneamento, o teto simplesmente não é desenhado: nem
+      // oclusor nem malha de varredura.
+      e.mesh.visible = mode === 'scan' || ocultaEsta;
     }
   }
 

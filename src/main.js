@@ -369,6 +369,7 @@ function enterWorld(biomeId) {
   _ultimoPasso.set(1e9, 0, 1e9);
   ping(1);
   audio.chime(12, 0.3);
+  audio.setBiome(b.id);
   toast(`${b.name} — ${b.saudacao}`, b.swatch);
 }
 

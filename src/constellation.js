@@ -78,7 +78,7 @@ export class Constellation extends Group {
 
     this.stars = new InstancedMesh(geoEstrela, skyLifeMaterial, this.stars3D.length);
     this.stars.frustumCulled = false;
-    this.stars.renderOrder = -1998;   // com o resto do céu, antes do oclusor
+    this.stars.renderOrder = -1998;   // com o resto do céu, no fundo de tudo
     this.add(this.stars);
 
     this.sizes = this.stars3D.map((_, i) => (shape.edges.some((e) => e.includes(i)) ? 0.26 : 0.17));

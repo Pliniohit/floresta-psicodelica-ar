@@ -1,7 +1,20 @@
 /**
- * Trilha gerada em tempo real: um drone de três osciladores desafinados
- * passando por um filtro que respira, mais um delay longo. Sem nenhum
- * arquivo de áudio — combina com a floresta, que também não tem texturas.
+ * Onde a trilha mora. Se o arquivo existir, ele é A trilha; se não existir,
+ * o drone gerado continua sendo. O primeiro que carregar ganha.
+ */
+const TRILHA = ['assets/trilha.mp3'];
+
+/**
+ * Som da experiência.
+ *
+ * Nasceu inteiro gerado em tempo real — um drone de osciladores desafinados
+ * por um filtro que respira, mais um delay longo, sem arquivo nenhum, que era
+ * o par certo para uma floresta que também não tem textura.
+ *
+ * Agora ele cede o lugar para uma trilha de verdade quando existe uma. O
+ * drone não some: recua para um leito quase inaudível, e os sinos das
+ * interações continuam por cima, porque eles são resposta ao gesto e não
+ * música. Sem o arquivo, nada disso acontece e o drone segue sozinho.
  */
 export class Ambience {
   constructor() {
@@ -9,6 +22,10 @@ export class Ambience {
     this.master = null;
     this.filter = null;
     this.muted = false;
+    this.track = null;        // AudioBufferSourceNode em loop
+    this.trackGain = null;
+    this.trackFilter = null;
+    this.hasTrack = false;
   }
 
   /** Precisa ser chamado de dentro de um gesto do usuário (clique / select). */
@@ -60,6 +77,76 @@ export class Ambience {
     lfo.start();
 
     master.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 4.0);
+
+    // A trilha entra por um caminho próprio, sem passar pelo filtro do drone:
+    // ela já vem mixada, e abafá-la com o passa-baixa da cena seria desfazer
+    // o trabalho de quem a fez.
+    this.trackFilter = ctx.createBiquadFilter();
+    this.trackFilter.type = 'lowpass';
+    this.trackFilter.frequency.value = 18000;
+    this.trackGain = ctx.createGain();
+    this.trackGain.gain.value = 0;
+    this.trackFilter.connect(this.trackGain);
+    this.trackGain.connect(master);
+
+    this.loadTrack();
+  }
+
+  /**
+   * Procura a trilha e a coloca em loop. Não é erro não achar: o projeto
+   * roda sem nenhum arquivo de áudio, e a ausência só significa que o drone
+   * gerado continua sendo a trilha.
+   *
+   * @returns {Promise<boolean>} true se encontrou e começou a tocar
+   */
+  async loadTrack(caminhos = TRILHA) {
+    const ctx = this.ctx;
+    if (!ctx || this.hasTrack) return false;
+
+    for (const url of caminhos) {
+      let buf;
+      try {
+        const r = await fetch(url, { cache: 'force-cache' });
+        if (!r.ok) continue;
+        buf = await ctx.decodeAudioData(await r.arrayBuffer());
+      } catch {
+        continue;   // não existe, ou o formato não decodifica neste navegador
+      }
+      if (!this.ctx) return false;    // parou enquanto carregava
+
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(this.trackFilter);
+      src.start();
+      this.track = src;
+      this.hasTrack = true;
+
+      const t = ctx.currentTime;
+      // Entra em oito segundos. Uma trilha que começa de estalo denuncia o
+      // carregamento; entrando devagar ela parece ter estado ali o tempo todo.
+      this.trackGain.gain.setValueAtTime(0.0001, t);
+      this.trackGain.gain.linearRampToValueAtTime(0.62, t + 8.0);
+      // E o drone recua para leito. Não para zero: ele é o que sustenta a
+      // cena quando a trilha respira.
+      for (const v of this.voices) v.gain.gain.setTargetAtTime(v.gain.gain.value * 0.18, t, 3.0);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Cada mundo abafa a trilha à sua maneira: debaixo d'água as altas somem,
+   * no fogo ela abre. É o mesmo float contínuo do shader, então a mudança
+   * acompanha a travessia em vez de saltar.
+   */
+  setBiome(biome) {
+    if (!this.ctx || !this.hasTrack) return;
+    const b = Math.max(0, Math.min(2, biome));
+    // terra 18k (limpa) · fogo 12k (áspera) · água 1,6k (submersa)
+    const alvo = b < 1 ? 18000 + (12000 - 18000) * b
+                       : 12000 + (1600 - 12000) * (b - 1);
+    this.trackFilter.frequency.setTargetAtTime(alvo, this.ctx.currentTime, 1.6);
   }
 
   /** Sino curto disparado ao plantar ou trocar de paleta. */
@@ -81,6 +168,7 @@ export class Ambience {
   /** Modo "viagem" abre o filtro e sobe um pouco as vozes agudas. */
   setTrip(trip) {
     if (!this.ctx) return;
+    if (this.hasTrack) this.trackGain.gain.setTargetAtTime(0.62 + trip * 0.18, this.ctx.currentTime, 1.5);
     const t = this.ctx.currentTime;
     this.filter.frequency.setTargetAtTime(380 + trip * 900, t, 1.2);
     this.filter.Q.setTargetAtTime(3.5 + trip * 5.0, t, 1.2);
@@ -96,6 +184,12 @@ export class Ambience {
   stop() {
     if (!this.ctx) return;
     this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
-    setTimeout(() => { this.ctx?.close(); this.ctx = null; }, 900);
+    setTimeout(() => {
+      try { this.track?.stop(); } catch { /* já parada */ }
+      this.track = null;
+      this.hasTrack = false;
+      this.ctx?.close();
+      this.ctx = null;
+    }, 900);
   }
 }
