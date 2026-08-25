@@ -55,9 +55,9 @@ export class Sky extends Group {
         raio: 9 + r() * 16,
         altura: 6 + r() * 13,
         fase: r() * Math.PI * 2,
-        vel: 0.02 + r() * 0.055,
+        vel: 0.010 + r() * 0.028,
         escala: 0.35 + r() * 1.15,
-        pulso: 0.5 + r() * 1.4,
+        pulso: 0.22 + r() * 0.55,
       });
     }
     this.medusas.count = MEDUSAS;

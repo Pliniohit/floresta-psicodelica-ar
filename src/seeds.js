@@ -16,7 +16,7 @@ import { crystalMaterial } from './shaders/materials.js';
  */
 
 const PALM_UP = 0.25;      // limiar mais exigente que o do menu: evita brotar sem querer
-const GROW = 2.2;          // velocidade de crescimento e murcha
+const GROW = 1.1;          // velocidade de crescimento e murcha
 const SIZE = 0.032;
 
 const _v = new Vector3();
@@ -58,8 +58,8 @@ export class Seeds extends Group {
       if (!h) { this.held = false; this.offered = false; }
       else {
         this.mesh.position.copy(h.pinch);
-        this.mesh.rotation.y = t * 2.4;
-        this.mesh.rotation.x = t * 1.3;
+        this.mesh.rotation.y = t * 1.0;
+        this.mesh.rotation.x = t * 0.55;
         this.mesh.scale.setScalar(1);
         this.mesh.visible = true;
         return;
@@ -81,11 +81,11 @@ export class Seeds extends Group {
       // Pairando um palmo acima da palma.
       _v.copy(h.wrist)
         .addScaledVector(h.handForward, 0.075)
-        .addScaledVector(h.palmNormal, 0.055 + Math.sin(t * 1.8) * 0.008);
+        .addScaledVector(h.palmNormal, 0.055 + Math.sin(t * 0.8) * 0.010);
       this.position0.copy(_v);
     }
     this.mesh.position.copy(this.position0);
-    this.mesh.rotation.y = t * 1.1;
+    this.mesh.rotation.y = t * 0.45;
     // A de casulo é maior: dá para ver na mão qual delas veio.
     this.mesh.scale.setScalar(this.growth * (this.kind === 'cocoon' ? 1.7 : 1));
     this.mesh.visible = true;

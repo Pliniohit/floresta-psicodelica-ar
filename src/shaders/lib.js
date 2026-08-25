@@ -192,11 +192,15 @@ uniform float uSway;
 
 vec3 sway(vec3 pos, vec3 root, float rigidity){
   float phase = root.x * 0.73 + root.z * 0.91;
-  float t = uTime * (0.85 + uTrip * 0.5);
+  // Brisa, não vendaval: quase metade do ritmo original. Vegetação lenta
+  // é o que dá peso à massa das copas.
+  float t = uTime * (0.42 + uTrip * 0.22);
   float h = max(pos.y, 0.0);
   float amp = h * h * uSway * rigidity;
-  pos.x += (sin(t * 1.10 + phase) * 0.62 + sin(t * 1.93 + phase * 1.7) * 0.38) * amp;
-  pos.z += (cos(t * 0.94 + phase * 1.3) * 0.62 + cos(t * 1.71 + phase) * 0.38) * amp * 0.8;
+  // A segunda harmônica pesa menos: era ela que dava a tremida de alta
+  // frequência por cima do balanço largo.
+  pos.x += (sin(t * 1.10 + phase) * 0.78 + sin(t * 1.93 + phase * 1.7) * 0.22) * amp;
+  pos.z += (cos(t * 0.94 + phase * 1.3) * 0.78 + cos(t * 1.71 + phase) * 0.22) * amp * 0.8;
   return pos;
 }
 `;

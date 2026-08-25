@@ -977,9 +977,9 @@ function frame(time, xrFrame) {
   const dt = Math.min(0.05, clock.getDelta());
 
   shared.uTime.value = clock.elapsedTime;
-  shared.uPulse.value *= Math.exp(-dt * 2.4);
+  shared.uPulse.value *= Math.exp(-dt * 1.3);   // a onda demora mais a se apagar
 
-  const k = 1 - Math.exp(-dt * 5.0);
+  const k = 1 - Math.exp(-dt * 1.8);   // paleta atravessa devagar, sem estalo
   shared.uPalA.value.lerp(target.uPalA, k);
   shared.uPalB.value.lerp(target.uPalB, k);
   shared.uPalC.value.lerp(target.uPalC, k);
@@ -987,7 +987,7 @@ function frame(time, xrFrame) {
   shared.uTrip.value += (state.tripTarget - shared.uTrip.value) * k;
   // Trocar de mundo é animar este float: um só conjunto de materiais serve
   // para todos os biomas.
-  shared.uBiome.value += (state.biome - shared.uBiome.value) * (1 - Math.exp(-dt * 1.4));
+  shared.uBiome.value += (state.biome - shared.uBiome.value) * (1 - Math.exp(-dt * 0.65));
 
   if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
     // Durante a captura a tela é do sistema, e ler os planos antigos aqui só
@@ -1022,7 +1022,7 @@ function frame(time, xrFrame) {
   if (state.phase === 'growing') {
     const alvoWarp = state.world === 'espaco' ? 1 : 0;
     // Ida lenta (acompanha a subida da borboleta), volta rápida.
-    const vel = alvoWarp > state.warp ? 1 / 5.0 : 1 / 1.6;
+    const vel = alvoWarp > state.warp ? 1 / 8.0 : 1 / 3.0;
     state.warp += Math.sign(alvoWarp - state.warp)
       * Math.min(Math.abs(alvoWarp - state.warp), dt * vel);
 
@@ -1064,8 +1064,10 @@ function frame(time, xrFrame) {
 
   if (state.phase === 'growing') {
     if (state.intro < 1) {
-      state.intro = Math.min(1, state.intro + dt / 1.5);
-      const e = 1 - Math.pow(1 - state.intro, 4);
+      state.intro = Math.min(1, state.intro + dt / 3.2);
+      // Suavização nos dois extremos: começa e termina devagar, em vez de
+      // arrancar de uma vez como fazia a curva puramente desacelerada.
+      const e = state.intro * state.intro * (3 - 2 * state.intro);
       forest.scale.setScalar(Math.max(0.001, state.scale * e));
     } else {
       // Encolhe conforme o warp: a clareira fica para trás.

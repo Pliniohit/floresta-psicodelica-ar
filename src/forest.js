@@ -695,7 +695,7 @@ export class Forest extends Group {
    * (escala 0 -> cheia); replantar e voltar para o lugar de origem usam o mesmo
    * caminho, o que evita três sistemas de animação fazendo quase a mesma coisa.
    */
-  #tween(set, idx, from, to, dur = 0.9, bounce = true) {
+  #tween(set, idx, from, to, dur = 1.4, bounce = true) {
     // Um alvo novo para a mesma instância cancela o anterior.
     const at = this.growing.findIndex((g) => g.set === set && g.idx === idx);
     if (at >= 0) this.growing.splice(at, 1);
@@ -717,8 +717,10 @@ export class Forest extends Group {
       const g = this.growing[i];
       g.t = Math.min(1, g.t + dt / g.dur);
 
-      let k = 1 - Math.pow(1 - g.t, 3);
-      if (g.bounce) k += Math.sin(g.t * Math.PI) * 0.18 * (1 - g.t);
+      // Suavização nos dois extremos. A curva anterior era só desacelerada:
+      // arrancava do zero em velocidade máxima, o que é o oposto de gracioso.
+      let k = g.t * g.t * (3 - 2 * g.t);
+      if (g.bounce) k += Math.sin(g.t * Math.PI) * 0.12 * (1 - g.t);
 
       _p.copy(g.from.pos).lerp(g.to.pos, k);
       _q.copy(g.from.quat).slerp(g.to.quat, Math.min(1, k));
@@ -830,7 +832,7 @@ export class Forest extends Group {
       ? { pos: ground, quat: handle.home.quat, scale: handle.home.scale }
       : handle.home;
 
-    this.#tween(handle.set, handle.idx, from, to, fits ? 0.45 : 0.7);
+    this.#tween(handle.set, handle.idx, from, to, fits ? 0.85 : 1.2);
     return fits ? 'plantado' : 'devolvido';
   }
 

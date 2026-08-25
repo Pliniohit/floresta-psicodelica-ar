@@ -191,7 +191,7 @@ export class BodyGrowth extends Group {
       // aparecer inteira de uma vez.
       const atraso = (i / this.brotos.length) * 0.5;
       const alvoI = alvo * Math.min(1, Math.max(0, (this.blooming ? 1 : 0) - atraso + 0.5));
-      b.crescido += (alvoI - b.crescido) * (1 - Math.exp(-dt * 3.0));
+      b.crescido += (alvoI - b.crescido) * (1 - Math.exp(-dt * 1.4));
       if (b.crescido < 0.01) continue;
 
       const de = body.joints[b.de], para = body.joints[b.para];
@@ -206,7 +206,7 @@ export class BodyGrowth extends Group {
       _a.normalize();
       _b.crossVectors(_axis, _a);
 
-      const bal = Math.sin(t * 1.6 + b.fase) * 0.2;
+      const bal = Math.sin(t * 0.7 + b.fase) * 0.22;
       const ang = b.ang + bal;
       _p.addScaledVector(_a, Math.cos(ang) * b.raio)
         .addScaledVector(_b, Math.sin(ang) * b.raio);

@@ -65,8 +65,8 @@ export class Space extends Group {
         raio: 1.1 + r() * 1.7,     // ao alcance do braço, não no horizonte
         alt: 0.75 + r() * 1.35,
         fase: r() * Math.PI * 2,
-        vel: 0.035 + r() * 0.085,
-        giro: 0.15 + r() * 0.4,
+        vel: 0.016 + r() * 0.040,
+        giro: 0.06 + r() * 0.16,
         inclina: (r() - 0.5) * 0.6,
       };
       grupo.userData = { orbita, corpo, raio, preso: false, bioma: bioma.id, mat };
@@ -223,7 +223,7 @@ export class Emergence extends Group {
 
     this.cursor = 0;
     this.t = 0;
-    this.duration = 5.0;
+    this.duration = 8.0;   // a subida da borboleta É a transição; sem pressa
     this.from = new Vector3();
     this.active = false;
   }
@@ -247,10 +247,11 @@ export class Emergence extends Group {
     if (!this.active) return 0;
     this.t = Math.min(1, this.t + dt / this.duration);
 
-    // Sobe acelerando, em espiral que abre com a altura.
-    const k = this.t * this.t;
+    // Sobe acelerando devagar, em espiral que abre com a altura. O expoente
+    // 2,4 no lugar de 2 deixa o início mais demorado — ela hesita ao sair.
+    const k = Math.pow(this.t, 2.4);
     const altura = k * 16;
-    const giro = this.t * 9;
+    const giro = this.t * 5.5;
     const abre = 0.18 + this.t * 0.9;
     _p.set(
       this.from.x + Math.cos(giro) * abre,
@@ -259,14 +260,14 @@ export class Emergence extends Group {
     );
     this.mesh.position.copy(_p);
     this.mesh.rotation.y = giro + Math.PI / 2;
-    this.mesh.rotation.z = Math.sin(t * 8) * 0.25;
+    this.mesh.rotation.z = Math.sin(t * 2.2) * 0.22;
 
     // Emite no anel, envelhecendo o resto.
     const i = this.cursor;
     this.pos[i * 3] = _p.x; this.pos[i * 3 + 1] = _p.y; this.pos[i * 3 + 2] = _p.z;
     this.age[i] = 0;
     this.cursor = (this.cursor + 1) % this.n;
-    for (let j = 0; j < this.n; j++) this.age[j] = Math.min(1, this.age[j] + dt * 0.55);
+    for (let j = 0; j < this.n; j++) this.age[j] = Math.min(1, this.age[j] + dt * 0.30);
 
     this.trail.geometry.attributes.position.needsUpdate = true;
     this.trail.geometry.attributes.aAge.needsUpdate = true;

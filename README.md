@@ -68,8 +68,10 @@ restantes. Senóide pura dá vaivém de metrônomo; borboleta bate e deixa cair.
 tempos em tempos elas planam, e a normal acompanha a rotação, senão a asa
 levantada continuaria sombreada como se estivesse deitada.
 
-A frequência é de 3 a 4,5 Hz, menos que a borboleta real, que passa de 8 — em
-VR uma asa a 8 Hz na periferia lê como tremulação.
+A frequência é de 1,7 a 2,5 Hz, bem abaixo da borboleta real, que passa de 8 —
+em VR uma asa rápida na periferia lê como tremulação, e o objetivo aqui é
+graça, não fidelidade entomológica. Entre as batidas elas planam por mais
+tempo do que batem.
 
 O voo  é a soma de senóides de frequências não múltiplas, então o padrão leva
 minutos para se repetir — não fica com cara de órbita.
@@ -153,6 +155,25 @@ A fonte pior não era nenhuma animação. Eram as **estrelas de borda dura**: um
 cada movimento de cabeça, elas apareciam e sumiam de golpe. Agora nascem no
 centro da célula e somem suavemente na borda. Os vaga-lumes iam de 0,08 a 1,0 —
 doze vezes de brilho — e hoje respiram entre 0,78 e 1,0.
+
+### Ritmo
+
+Tudo se move a cerca de **metade** da velocidade original, e as transições
+duram de 1,6 a 2,8 vezes mais. Balanço ao vento, voo das borboletas, órbita dos
+vaga-lumes, deriva das medusas, giro dos planetas, esporos subindo — todos
+caíram para perto de 0,5x.
+
+Duas mudanças importam mais que os números:
+
+**As harmônicas secundárias pesam menos.** O balanço e o voo somavam uma
+segunda senóide de frequência mais alta, com peso 0,35. Era ela que punha
+tremida por cima do arco largo — e tremida não é gracioso. Caiu para 0,18 no
+voo e 0,22 no vento.
+
+**As curvas suavizam nos dois extremos.** O crescimento e o surgimento usavam
+uma curva puramente desacelerada, que arranca do zero em velocidade máxima. Um
+`smoothstep` começa e termina devagar, e é isso que faz o movimento parecer
+intencional em vez de disparado.
 
 ### Padrões que corriam demais
 

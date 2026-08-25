@@ -226,7 +226,7 @@ export const cocoonMaterial = make('casulo', {
     void main(){
       ${ROOT_AND_SEED}
       // Pende e balança: o fio é fino, qualquer brisa mexe.
-      float t = uTime * 0.9 + vSeed * 6.28;
+      float t = uTime * 0.45 + vSeed * 6.28;
       vec3 p = position;
       float pendura = clamp(-position.y / 0.22, 0.0, 1.0);
       p.x += sin(t) * 0.012 * pendura;
@@ -242,8 +242,8 @@ export const cocoonMaterial = make('casulo', {
       vec3 seda = mix(vec3(0.62, 0.55, 0.38), vec3(0.80, 0.74, 0.56), aneis);
 
       // Batimento interno: duas senóides, acelerando conforme uReady sobe.
-      float bat = 0.62 + 0.26 * sin(uTime * (1.5 + uReady * 2.2) + vSeed * 12.0);
-      bat *= 0.75 + 0.25 * sin(uTime * 0.9 + vSeed * 5.0);
+      float bat = 0.62 + 0.26 * sin(uTime * (0.8 + uReady * 1.2) + vSeed * 12.0);
+      bat *= 0.75 + 0.25 * sin(uTime * 0.45 + vSeed * 5.0);
       float vida = damp(bat, 0.55);
 
       vec3 N = normalize(vNormalW);
@@ -274,13 +274,13 @@ export const cocoonGlowMaterial = make('halo-do-casulo', {
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
-      float t = uTime * 0.9 + vSeed * 6.28;
+      float t = uTime * 0.45 + vSeed * 6.28;
       vec3 p = position;
       float pendura = clamp(-position.y / 0.22, 0.0, 1.0);
       p.x += sin(t) * 0.012 * pendura;
       p.z += cos(t * 0.8) * 0.010 * pendura;
       // Respira devagar, sem piscar.
-      p += normal * (0.055 + 0.012 * sin(uTime * 0.7 + vSeed * 5.0));
+      p += normal * (0.055 + 0.012 * sin(uTime * 0.35 + vSeed * 5.0));
       emit(p, normal);
     }
   `,
@@ -289,7 +289,7 @@ export const cocoonGlowMaterial = make('halo-do-casulo', {
       vec3 N = normalize(vNormalW);
       vec3 V = normalize(cameraPosition - vWorld);
       float aro = pow(1.0 - abs(dot(N, V)), 1.6);
-      float respira = damp(0.72 + 0.28 * sin(uTime * 0.7 + vSeed * 5.0), 0.72);
+      float respira = damp(0.72 + 0.28 * sin(uTime * 0.35 + vSeed * 5.0), 0.72);
       vec3 col = mix(palette(uTime * 0.04 + vSeed), vec3(1.0, 0.93, 0.74), 0.45);
       gl_FragColor = vec4(col * aro * respira * 1.5, 1.0);
     }
@@ -306,7 +306,7 @@ export const crystalMaterial = make('cristal', {
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
-      float bob = sin(uTime * 1.2 + vSeed * 6.28) * 0.02;
+      float bob = sin(uTime * 0.55 + vSeed * 6.28) * 0.025;
       vec3 p = position + vec3(0.0, bob, 0.0);
       emit(p, normal);
     }
@@ -405,7 +405,7 @@ export const sporeMaterial = make('esporos', {
     attribute float aSpeed;
     void main(){
       vSeed = aSeed;
-      float life = fract(position.y * 0.09 + uTime * aSpeed * 0.05);
+      float life = fract(position.y * 0.09 + uTime * aSpeed * 0.026);
       float ang  = aSeed * 6.28318 + life * 3.4;
       float rad  = 0.25 + aSeed * 0.5;
       vec3 p = position;
@@ -446,7 +446,7 @@ export const orbMaterial = make('orbes', {
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
-      float t = uTime * (0.25 + vSeed * 0.35);
+      float t = uTime * (0.13 + vSeed * 0.18);
       vec3 p = position + vec3(sin(t * 1.7) * 0.22, sin(t * 1.1) * 0.16, cos(t * 1.3) * 0.22);
       emit(p, normal);
     }
@@ -510,8 +510,8 @@ export const skyMaterial = make('ceu', {
       float neb = fbm3(q + warp * 1.6 + vec3(uTime * 0.012, 0.0, uTime * 0.008));
 
       // Faixas de aurora atravessando o zênite.
-      float faixa = sin(dir.x * 3.1 + neb * 5.0 + uTime * 0.22)
-                  * sin(dir.z * 2.3 - neb * 4.0 - uTime * 0.17);
+      float faixa = sin(dir.x * 3.1 + neb * 5.0 + uTime * 0.11)
+                  * sin(dir.z * 2.3 - neb * 4.0 - uTime * 0.085);
       faixa = pow(max(faixa, 0.0), 2.2);
 
       // Estrelas com borda suave: as de borda dura piscavam a cada movimento
@@ -564,7 +564,7 @@ export const skyLifeMaterial = make('medusas', {
 
       // Tentáculos: o corpo apaga para baixo, e umas listras descem dele.
       float baixo = smoothstep(-0.9, 0.25, N.y);
-      float franja = 0.5 + 0.5 * sin(atan(N.z, N.x) * 7.0 + uTime * 0.40);
+      float franja = 0.5 + 0.5 * sin(atan(N.z, N.x) * 7.0 + uTime * 0.20);
       float cauda = (1.0 - baixo) * franja * 0.5;
 
       vec3 col = palette(vSeed * 0.5 + uTime * 0.07);
@@ -740,7 +740,7 @@ export const butterflyMaterial = make('borboletas', {
 
       // Frequência entre 3 e 4,5 Hz. Menos que a borboleta real, que passa de
       // 8, porque em VR uma asa a 8 Hz na periferia lê como tremulação.
-      float freq = (3.0 + vSeed * 1.5) * mix(0.5, 1.0, uCalm);
+      float freq = (1.7 + vSeed * 0.8) * mix(0.55, 1.0, uCalm);
       float fase = fract(uTime * freq + vSeed * 7.0);
 
       // Perfil ASSIMÉTRICO: sobe em 35% do ciclo e desce nos 65% restantes.
@@ -750,8 +750,8 @@ export const butterflyMaterial = make('borboletas', {
       float perfil = fase < 0.35 ? sobe : desce;
 
       // Plana de vez em quando: sem as pausas o voo fica mecânico.
-      float planando = smoothstep(0.45, 0.85, sin(uTime * 0.31 + vSeed * 9.0));
-      perfil = mix(perfil, 0.42, planando * 0.85);
+      float planando = smoothstep(0.25, 0.75, sin(uTime * 0.17 + vSeed * 9.0));
+      perfil = mix(perfil, 0.42, planando * 0.92);
 
       // De 14 graus abaixo da horizontal a 77 acima — quase se tocando em cima.
       float ang = mix(-0.25, 1.35, perfil) * aSpan * abs(aWing);
@@ -833,8 +833,8 @@ export const fireflyMaterial = make('vagalumes', {
       // para não virar metrônomo, com piso alto para o contraste ficar baixo.
       // Ia de 0,08 a 1,0 — doze vezes de brilho, cintilação demais.
       float osc = 0.78
-        + 0.14 * sin(uTime * 1.15 + vSeed * 31.0)
-        + 0.08 * sin(uTime * 1.85 + vSeed * 17.0);
+        + 0.14 * sin(uTime * 0.55 + vSeed * 31.0)
+        + 0.08 * sin(uTime * 0.95 + vSeed * 17.0);
       float pisca = damp(osc, 0.78);
 
       vec3 col = palette(0.12 + vSeed * 0.1 + uTime * 0.02);
@@ -883,7 +883,7 @@ export const highlightMaterial = make('realce', {
     void main(){
       vSeed = 0.0;
       // infla ao longo da normal para virar uma casca em volta do objeto
-      vec3 p = position + normal * (0.035 + sin(uTime * 2.4) * 0.010);
+      vec3 p = position + normal * (0.035 + sin(uTime * 1.1) * 0.012);
       emit(p, normal);
     }
   `,
@@ -920,7 +920,7 @@ export const reticleMaterial = make('reticulo', {
     void main(){
       float r = length(vLocal.xz);
       float a = atan(vLocal.z, vLocal.x);
-      float dashes = smoothstep(0.30, 0.42, fract(a * 3.8 + uTime * 0.25));
+      float dashes = smoothstep(0.30, 0.42, fract(a * 3.8 + uTime * 0.12));
       float ring = smoothstep(0.055, 0.0, abs(r - 0.13));
       float halo = smoothstep(0.16, 0.0, r) * 0.35;
       float alpha = ring * (0.35 + 0.65 * dashes) + halo;

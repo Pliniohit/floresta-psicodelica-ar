@@ -11,6 +11,17 @@ const check = (ok, label, detail = '') => {
   console.log(`${ok ? '  ok  ' : ' FALHA'} ${label}${detail ? '  — ' + detail : ''}`);
 };
 
+/**
+ * Avança até as animações acabarem, em vez de contar frames. Contar frames
+ * amarra o teste à duração dos tweens, e ele quebra a cada ajuste de ritmo.
+ */
+const assentar = (f, limite = 20) => {
+  let t = 0;
+  while (f.growing.length && t < limite) { f.update(1 / 60); t += 1 / 60; }
+  f.update(1 / 60);
+  return t;
+};
+
 const build = () => {
   const f = new Forest();
   f.applyRoom({ footprint: fallbackRoom(new Vector2(0, 0), 5, 4), obstacles: [], floorY: 0 });
@@ -65,7 +76,7 @@ const posOf = (set, i) => {
 
   const destino = new Vector3(-1.6, 1.0, 1.2);
   check(f.drop(handle, destino) === 'plantado', 'solto dentro do cômodo: replanta');
-  for (let i = 0; i < 60; i++) f.update(1 / 60);
+  assentar(f);
   const final = posOf(target.set, target.idx);
   check(Math.hypot(final.p.x - destino.x, final.p.z - destino.z) < 0.02,
     'termina no ponto onde foi solto');
@@ -83,7 +94,7 @@ const posOf = (set, i) => {
 
   check(f.drop(handle, new Vector3(20, 1.0, 20)) === 'devolvido',
     'solto fora do cômodo: recusa');
-  for (let i = 0; i < 60; i++) f.update(1 / 60);
+  assentar(f);
   const final = posOf(target.set, target.idx);
   check(final.p.distanceTo(home.p) < 0.02, 'volta exatamente para onde estava');
 }
@@ -98,7 +109,7 @@ const posOf = (set, i) => {
 
   check(f.drop(handle, new Vector3(b.p.x + 0.2, 1.0, b.p.z)) === 'devolvido',
     'árvore solta colada em outra: recusa e volta');
-  for (let i = 0; i < 60; i++) f.update(1 / 60);
+  assentar(f);
   check(posOf(f.species[0].set, 0).p.distanceTo(a.p) < 0.02, 'a árvore volta ao lugar');
 }
 

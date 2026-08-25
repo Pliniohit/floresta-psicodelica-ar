@@ -128,9 +128,9 @@ export class Butterflies extends Group {
       this.paths.push({
         cx: 0, cz: 0,
         rx: 0.5 + r() * 0.9, rz: 0.5 + r() * 0.9,
-        wx: 0.14 + r() * 0.22, wz: 0.11 + r() * 0.25,
+        wx: 0.065 + r() * 0.10, wz: 0.055 + r() * 0.11,
         px: r() * 6.28, pz: r() * 6.28,
-        alt: 0.7 + r() * 1.5, bob: 0.15 + r() * 0.35, wb: 0.5 + r() * 0.9,
+        alt: 0.7 + r() * 1.5, bob: 0.18 + r() * 0.30, wb: 0.22 + r() * 0.36,
         escala: 0.75 + r() * 0.7,
       });
       this._prev.push(new Vector3());
@@ -154,8 +154,10 @@ export class Butterflies extends Group {
     if (!this.mesh.count) return;
     for (let i = 0; i < this.count; i++) {
       const p = this.paths[i];
-      const x = p.cx + Math.cos(t * p.wx + p.px) * p.rx + Math.sin(t * p.wx * 2.3 + p.pz) * p.rx * 0.35;
-      const z = p.cz + Math.sin(t * p.wz + p.pz) * p.rz + Math.cos(t * p.wz * 1.9 + p.px) * p.rz * 0.35;
+      // A harmônica secundária caiu de 0,35 para 0,18: era ela que punha
+      // tremida por cima do arco largo, e tremida não é gracioso.
+      const x = p.cx + Math.cos(t * p.wx + p.px) * p.rx + Math.sin(t * p.wx * 2.3 + p.pz) * p.rx * 0.18;
+      const z = p.cz + Math.sin(t * p.wz + p.pz) * p.rz + Math.cos(t * p.wz * 1.9 + p.px) * p.rz * 0.18;
       const y = p.alt + Math.sin(t * p.wb + p.px) * p.bob;
       _p.set(x, y, z);
 
@@ -213,9 +215,9 @@ export class Fireflies extends Group {
       raio: 0.28 + r() * 0.55,
       alt: r() * 1.35,
       fase: r() * Math.PI * 2,
-      vel: 0.35 + r() * 0.75,
+      vel: 0.16 + r() * 0.34,
       bob: 0.06 + r() * 0.16,
-      wb: 0.7 + r() * 1.6,
+      wb: 0.30 + r() * 0.70,
       inc: (r() - 0.5) * 0.5,
     }));
   }
@@ -225,7 +227,9 @@ export class Fireflies extends Group {
 
   update(t, dt) {
     // Atraso: o bando se estica ao seguir e se junta ao parar.
-    this.follow.lerp(this.target, 1 - Math.exp(-dt * 2.4));
+    // Atraso maior: o bando demora mais a te alcançar, e essa preguiça é o
+    // que faz parecer bando e não enfeite preso ao corpo.
+    this.follow.lerp(this.target, 1 - Math.exp(-dt * 1.3));
 
     for (let i = 0; i < this.count; i++) {
       const o = this.orbits[i];
