@@ -1109,6 +1109,116 @@ export const atmosferaMaterial = make('atmosfera', {
 });
 
 // ---------------------------------------------------------------------------
+// O PORTAL — a animação passando dentro do cômodo.
+//
+// A imagem sai do arquivo já pronta e graduada por quem a fez, então ela
+// passa quase INTOCADA: nada de `filmic`, nada de paleta, nada de encanto.
+// Aplicar o tratamento da cena por cima seria refazer, mal, um trabalho que
+// já está feito. O que o shader acrescenta é só o que faz o retângulo deixar
+// de ser um retângulo.
+//
+// A BORDA É UM RASGO. Uma moldura nítida no meio da sala lê como televisão, e
+// televisão é o oposto de portal. Aqui a margem se desfaz: a opacidade cai
+// junto de um limiar irregular, tirado de ruído que anda devagar, e o que era
+// aresta vira orla desmanchando.
+//
+// Aberta, a orla se fecha. Quando a tela é grande e você está dentro dela, o
+// rasgo já cumpriu o papel de dizer "isto é uma passagem" — daí em diante ele
+// só comeria imagem.
+// ---------------------------------------------------------------------------
+export const portalMaterial = make('portal', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  uniforms: {
+    uVideo: { value: null },
+    uAberto: { value: 0 },     // 0 pousado na parede, 1 tela aberta
+  },
+  vert: /* glsl */ `
+    void main(){ vSeed = 0.17; emit(position, normal); }
+  `,
+  frag: /* glsl */ `
+    uniform sampler2D uVideo;
+    uniform float uAberto;
+
+    void main(){
+      // vLocal vai de -1 a 1 nos dois eixos: o plano é 2x2 e a escala mora na
+      // malha, então o shader raciocina em coordenada normalizada e não muda
+      // de comportamento entre a janela e a tela grande.
+      vec2 uv = vLocal.xy * 0.5 + 0.5;
+      vec3 col = texture2D(uVideo, uv).rgb;
+
+      // Quanto falta para a borda, no eixo que estiver mais perto dela.
+      float margem = 1.0 - max(abs(vLocal.x), abs(vLocal.y));
+
+      // O limiar irregular. Duas escalas de ruído: uma grande, que dá as
+      // reentrâncias do rasgo, e uma fina, que come as pontas.
+      vec3 q = vec3(vLocal.xy * 3.4, uTime * 0.06);
+      float rasgo = fbm2(q) * 0.5 + fbm3(q * 3.1) * 0.5;
+      float largura = mix(0.16, 0.035, uAberto);
+      float a = smoothstep(0.0, largura, margem - rasgo * largura * 0.9);
+
+      // A orla acende: o gás que sobra de uma coisa se abrindo. Some quando a
+      // tela está aberta, junto com o rasgo.
+      float orla = (1.0 - a) * a * 4.0;
+      col += palette(0.12 + uTime * 0.02) * orla * (1.0 - uAberto * 0.8);
+
+      if (a <= 0.004) discard;
+      gl_FragColor = vec4(col, a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// A ORLA DE PARTÍCULAS do portal. Elas moram no mesmo gabarito normalizado da
+// tela, então acompanham a abertura sem cálculo nenhum do lado do JavaScript.
+// ---------------------------------------------------------------------------
+export const portalBordaMaterial = make('portal-orla', {
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: AdditiveBlending,
+  uniforms: { uAberto: { value: 0 } },
+  vert: /* glsl */ `
+    attribute float aSeed;
+    uniform float uAberto;
+    void main(){
+      vSeed = aSeed;
+      // Respira para fora e para dentro. Bem abaixo de 1 Hz, e é DESLOCAMENTO
+      // e não brilho: o que se move não pisca.
+      vec3 local = position;
+      float sopro = 1.0 + sin(uTime * 0.55 + aSeed * 6.28318) * 0.02;
+      local.xy *= sopro;
+
+      vec4 mundo = modelMatrix * vec4(local, 1.0);
+      vWorld = mundo.xyz; vLocal = local; vNormalW = vec3(0.0, 0.0, 1.0);
+      vec4 mv = viewMatrix * mundo;
+      vFade = 1.0;
+      gl_PointSize = max(1.2, 13.0 * (0.5 + aSeed * 0.8) / max(-mv.z, 0.25));
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uAberto;
+    void main(){
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      if (d > 0.25) discard;
+      float suave = pow(1.0 - d * 4.0, 2.0);
+
+      vec3 col = palette(0.12 + vSeed * 0.25 + uTime * 0.03);
+      col += bio(vSeed, vSeed + 0.4, 0.8);
+
+      // Aberta, a orla recua: ela já disse o que tinha para dizer, e uma
+      // guirlanda em volta de uma tela de cinema só distrai.
+      float a = suave * damp(0.72 + 0.28 * sin(uTime * 0.7 + vSeed * 12.0), 0.86)
+              * mix(1.0, 0.35, uAberto);
+      gl_FragColor = vec4(filmic(col) * a, a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
 // RASTRO — pontos aditivos deixados pela borboleta que sobe.
 // ---------------------------------------------------------------------------
 export const trailMaterial = make('rastro', {
@@ -1233,123 +1343,6 @@ export const scanMaterial = make('varredura', {
   `,
 });
 
-// ---------------------------------------------------------------------------
-// BORBOLETAS — as asas batem no vertex shader, girando em torno do eixo do
-// corpo. `aSpan` (0 na dobradiça, 1 na ponta) faz a asa flexionar em vez de
-// girar rígida, que é o que separa borboleta de placa articulada.
-// ---------------------------------------------------------------------------
-export const butterflyMaterial = make('borboletas', {
-  transparent: true,
-  side: DoubleSide,
-  depthWrite: false,
-  vert: /* glsl */ `
-    attribute float aWing;   // -1 esquerda, +1 direita, 0 corpo
-    attribute float aSpan;   // 0 dobradiça .. 1 ponta
-    attribute float aSeed;   // por instância: a espécie não pode mudar em voo
-    varying float vSpan;
-    varying float vWing;
-
-    void main(){
-      ${ROOT_AND_ATTR_SEED}
-      vSpan = aSpan;
-      vWing = aWing;
-
-      // RAJADA E PLANEIO.
-      //
-      // O que identifica uma borboleta não é a frequência: é o padrão. Ela
-      // bate algumas vezes fundo, para, e plana. Bater sem parar dava o
-      // "frenético" de antes; planar sempre — que foi a correção anterior —
-      // tirou a batida junto, e aí não parecia mais borboleta.
-      //
-      // Então: rajadas curtas de batida funda, separadas por planeios longos.
-      float freq = (2.05 + vSeed * 0.55) * mix(0.55, 1.0, uCalm);
-
-      // Um ciclo de ~7 s: bate durante um terço dele, plana no resto.
-      float ciclo = fract(uTime / (6.4 + vSeed * 2.6) + vSeed * 3.1);
-      float rajada = smoothstep(0.30, 0.40, ciclo) * (1.0 - smoothstep(0.62, 0.76, ciclo));
-
-      // Atraso ao longo da envergadura: a ponta chega depois da dobradiça, e
-      // é esse atraso que faz a asa parecer membrana e não placa.
-      float fase = fract(uTime * freq + vSeed * 7.0 - aSpan * 0.17);
-
-      // Perfil ASSIMÉTRICO: sobe em 34% do ciclo e desce nos 66% restantes.
-      // Senóide pura dá vaivém de metrônomo; borboleta bate e deixa cair.
-      float sobe = smoothstep(0.0, 1.0, fase / 0.34);
-      float desce = 1.0 - smoothstep(0.0, 1.0, (fase - 0.34) / 0.66);
-      float batida = fase < 0.34 ? sobe : desce;
-
-      // Planando, as asas ficam num diedro raso que respira devagar.
-      float planeio = 0.30 + sin(uTime * 0.28 + vSeed * 5.0) * 0.055;
-
-      float perfil = mix(planeio, batida, rajada);
-
-      // Curso amplo: 20 graus abaixo da horizontal até quase se encostarem
-      // por cima do dorso. É o curso que faz a silhueta ler como borboleta.
-      float ang = mix(-0.35, 1.45, perfil) * aSpan * abs(aWing);
-
-      // Rotação em torno de Y, o eixo do CORPO: é isso que levanta a asa.
-      // Em torno de Z ela apenas varria dentro do próprio plano, que foi por
-      // que o voo não parecia batida de asa.
-      float a = ang * sign(aWing);
-      float c = cos(a), sn = sin(a);
-      vec3 p = position;
-      float x = p.x, z = p.z;
-      p.x = x * c + z * sn;
-      p.z = -x * sn + z * c;
-
-      // A normal precisa acompanhar, senão a asa levantada continua sombreada
-      // como se estivesse deitada.
-      vec3 nrm = normal;
-      float nx = nrm.x, nz = nrm.z;
-      nrm.x = nx * c + nz * sn;
-      nrm.z = -nx * sn + nz * c;
-
-      // O corpo inteiro sobe quando as asas descem. Uma borboleta parada no
-      // ar enquanto as asas remam parece de brinquedo; é este solavanco de um
-      // centímetro que dá peso ao bicho.
-      p.z -= (perfil - 0.45) * 0.011 * rajada;
-
-      emit(p, nrm);
-    }
-  `,
-  frag: /* glsl */ `
-    varying float vSpan;
-    varying float vWing;
-    void main(){
-      // Três espécies reais em vez da paleta: monarca, morpho azul e branca.
-      float esp = fract(vSeed * 5.9);
-      // As três eram claras demais e o aditivo terminava de lavá-las: de
-      // longe as três davam a mesma borboleta branca. Agora cada uma tem um
-      // pigmento fundo de onde partir, e é a ponta da asa que clareia.
-      vec3 monarca = mix(vec3(0.62, 0.20, 0.02), vec3(0.95, 0.52, 0.09), vSpan);
-      vec3 morpho  = mix(vec3(0.03, 0.09, 0.42), vec3(0.16, 0.42, 0.90), vSpan);
-      // A "branca" não é branca: é creme com veia quente, senão ela some
-      // contra qualquer coisa clara e não lê como bicho.
-      vec3 amarela = mix(vec3(0.58, 0.44, 0.06), vec3(0.92, 0.82, 0.34), vSpan);
-      vec3 asa = esp < 0.4 ? monarca : (esp < 0.72 ? morpho : amarela);
-
-      // Nervuras escuras, como as veias da asa.
-      float nervura = smoothstep(0.40, 0.5, abs(fract(vSpan * 3.2) - 0.5));
-      asa = mix(asa * 0.42, asa, nervura);
-
-      // Borda escura com pontos claros na ponta — o desenho que quase toda
-      // borboleta tem, e o que faz a silhueta ler como asa e não como pétala.
-      float borda = smoothstep(0.72, 0.98, vSpan);
-      asa = mix(asa, vec3(0.08, 0.06, 0.05), borda * 0.75);
-      float pinta = step(0.62, fract(vSpan * 9.0 + vSeed * 13.0)) * borda;
-      asa = mix(asa, vec3(0.95, 0.94, 0.90), pinta * 0.8);
-
-      // Corpo escuro.
-      asa = mix(vec3(0.10, 0.08, 0.07), asa, step(0.02, abs(vWing)));
-
-      float t = vSeed + uTime * 0.04;
-      vec3 col = enchant(asa, t, 0.30);
-      col *= 0.62 + 0.55 * wrapLight(vNormalW);
-
-      gl_FragColor = vec4(filmic(col), (0.82 + 0.18 * vSpan) * vFade);
-    }
-  `,
-});
 
 // ---------------------------------------------------------------------------
 // VAGA-LUMES — pontinhos que acendem e apagam fora de fase.
@@ -2210,10 +2203,15 @@ export const butterflyCloudMaterial = make('borboleta-nuvem', {
       // Três espécies, sorteadas pela borboleta e não pelo ponto: senão cada
       // ponto de uma mesma asa sairia de uma espécie diferente.
       float esp = fract(vSeed * 5.9);
-      vec3 monarca = mix(vec3(0.82, 0.34, 0.05), vec3(0.95, 0.58, 0.12), vSpan);
-      vec3 morpho  = mix(vec3(0.10, 0.22, 0.62), vec3(0.32, 0.60, 0.92), vSpan);
-      vec3 branca  = mix(vec3(0.86, 0.84, 0.78), vec3(0.98, 0.97, 0.92), vSpan);
-      vec3 asa = esp < 0.4 ? monarca : (esp < 0.72 ? morpho : branca);
+      // As três eram claras demais e o aditivo terminava de lavá-las: de
+      // longe as três davam a mesma borboleta branca. Agora cada uma tem um
+      // pigmento fundo de onde partir, e é a ponta da asa que clareia.
+      vec3 monarca = mix(vec3(0.62, 0.20, 0.02), vec3(0.95, 0.52, 0.09), vSpan);
+      vec3 morpho  = mix(vec3(0.03, 0.09, 0.42), vec3(0.16, 0.42, 0.90), vSpan);
+      // A "branca" não é branca: é creme com veia quente, senão ela some
+      // contra qualquer coisa clara e não lê como bicho.
+      vec3 amarela = mix(vec3(0.58, 0.44, 0.06), vec3(0.92, 0.82, 0.34), vSpan);
+      vec3 asa = esp < 0.4 ? monarca : (esp < 0.72 ? morpho : amarela);
 
       // A borda escura, que é o que faz a silhueta ler como asa.
       asa = mix(asa, asa * 0.28, smoothstep(0.74, 1.0, vSpan));

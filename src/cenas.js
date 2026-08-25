@@ -232,4 +232,15 @@ export const N_CENAS = CENAS.length;
 /** A próxima da cadeia. A última volta para a primeira: a jornada é um anel. */
 export const proxima = (i) => (i + 1) % N_CENAS;
 
+/**
+ * O ÍNDICE DO COSMOS — para onde o casulo leva.
+ *
+ * A jornada não é uma fila: é uma roda com um eixo. O casulo sempre devolve
+ * ao espaço, e é lá, escolhendo um planeta, que se decide qual mundo vem a
+ * seguir. Encadear os cenários um atrás do outro parecia a mesma coisa e não
+ * era: a escolha desaparecia, e com ela a única razão de os planetas serem
+ * elementos diferentes.
+ */
+export const I_COSMOS = CENAS.findIndex((c) => c.cosmos);
+
 export const cenaPor = (i) => CENAS[((i % N_CENAS) + N_CENAS) % N_CENAS];

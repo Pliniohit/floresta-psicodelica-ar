@@ -3,7 +3,7 @@ import {
   BufferAttribute, Matrix4, Vector3, Quaternion, Points, Euler,
 } from '../vendor/three/three.module.min.js';
 import {
-  butterflyMaterial, fishMaterial, fireflyFieldMaterial,
+  fishMaterial, fireflyFieldMaterial,
   butterflyCloudMaterial, starPointMaterial,
 } from './shaders/materials.js';
 import { NuvemDePontos } from './nuvem.js';

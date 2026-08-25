@@ -37,6 +37,8 @@ export class Ambience {
     this.trackGain = null;
     this.trackFilter = null;
     this.hasTrack = false;
+    this.videoSrc = null;     // MediaElementSource do portal, criada uma vez só
+    this.videoGain = null;
   }
 
   /** Precisa ser chamado de dentro de um gesto do usuário (clique / select). */
@@ -152,6 +154,60 @@ export class Ambience {
       return true;
     }
     return false;
+  }
+
+  /**
+   * O SOM DO PORTAL.
+   *
+   * O áudio do vídeo entra pela MESMA mesa que o resto, e não pelo alto-falante
+   * por conta própria. É o que permite abaixar a trilha por baixo dele em vez
+   * de somar duas músicas — que é o que aconteceria deixando o elemento de
+   * vídeo tocar sozinho, já que ele não passa por nenhum ganho que eu controle.
+   *
+   * `createMediaElementSource` só pode ser chamado UMA vez por elemento: o
+   * segundo lança e ainda desconecta o primeiro. Por isso a fonte é criada na
+   * primeira chamada e guardada.
+   *
+   * @param {HTMLVideoElement} el
+   * @param {boolean} tocando  true quando a tela está aberta
+   */
+  setVideo(el, tocando) {
+    const ctx = this.ctx;
+    if (!ctx || !el) return false;
+
+    if (!this.videoGain) {
+      try {
+        this.videoSrc = ctx.createMediaElementSource(el);
+      } catch {
+        // Já ligado, ou o navegador recusou. Resta o caminho do elemento.
+        el.muted = !tocando;
+        return false;
+      }
+      this.videoGain = ctx.createGain();
+      this.videoGain.gain.value = 0;
+      this.videoSrc.connect(this.videoGain);
+      this.videoGain.connect(this.master);
+      // Da mesa em diante quem controla o volume é o ganho: o elemento fica
+      // aberto para sempre, senão o `muted` dele zeraria o sinal antes de
+      // chegar aqui.
+      el.muted = false;
+    }
+
+    const t = ctx.currentTime;
+    const dur = 0.9;
+    this.videoGain.gain.cancelScheduledValues(t);
+    this.videoGain.gain.setValueAtTime(this.videoGain.gain.value, t);
+    this.videoGain.gain.linearRampToValueAtTime(tocando ? 0.95 : 0, t + dur);
+
+    // E a trilha cede o lugar. Não some: fica de leito, do mesmo jeito que o
+    // drone fez quando ela chegou.
+    if (this.trackGain) {
+      const alvo = tocando ? 0.10 : (this.hasTrack ? 0.62 : 0);
+      this.trackGain.gain.cancelScheduledValues(t);
+      this.trackGain.gain.setValueAtTime(this.trackGain.gain.value, t);
+      this.trackGain.gain.linearRampToValueAtTime(alvo, t + dur);
+    }
+    return true;
   }
 
   /**

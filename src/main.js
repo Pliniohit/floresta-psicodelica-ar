@@ -1,6 +1,6 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Vector2, Vector3,
-  Raycaster, Plane, Clock, MathUtils, Matrix4,
+  Raycaster, Plane, Clock, MathUtils, Matrix4, Quaternion,
 } from '../vendor/three/three.module.min.js';
 import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
@@ -21,10 +21,10 @@ import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
 import { Space, Emergence, ENTER_SCALE } from './space.js';
+import { Portal } from './portal.js';
 import { BlackHoles } from './blackholes.js';
 import { Shell, Tide, wallsFromFootprint } from './shell.js';
-import { CENAS, cenaPor, proxima, N_CENAS } from './cenas.js';
-import { butterflyMaterial, cocoonMaterial, skyMaterial as _sky } from './shaders/materials.js';
+import { CENAS, cenaPor, proxima, I_COSMOS, N_CENAS } from './cenas.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
@@ -123,11 +123,19 @@ const seeds = new Seeds();
 scene.add(seeds);
 
 const space = new Space();
+
+/**
+ * O PORTAL da animação. Fica pendurado numa parede em todos os cenários: é a
+ * origem de tudo isto, e faz sentido que esteja sempre por perto. Mirar e
+ * pinçar abre; pinçar de novo devolve à parede.
+ */
+const portal = new Portal();
 scene.add(space);
 space.onTravessia = () => { audio.chime(-12, 0.22); ping(0.45); };
 
 const buracos = new BlackHoles();
 scene.add(buracos);
+scene.add(portal);
 
 // A casca do cômodo: as paredes reais vestidas pelo mundo em que você está.
 // Fica FORA da floresta de propósito — a floresta encolhe e dissolve na
@@ -359,6 +367,31 @@ function ping(strength = 1) {
   shared.uPulse.value = Math.min(1, shared.uPulse.value + strength);
 }
 
+/** O raio deste controle encontra o portal? */
+function portalSobMira(controller) {
+  if (!controller) return false;
+  interaction.ray(controller, _origem, _direcao);
+  return portal.pickAlongRay(_origem, _direcao) !== null;
+}
+
+/**
+ * Abre ou fecha a tela, e mexe no som junto.
+ *
+ * O som É metade do gesto. Uma tela que cresce em silêncio, com a trilha
+ * seguindo por cima como se nada tivesse acontecido, não convence ninguém de
+ * que aquilo virou o centro da cena. Aqui a trilha recua e a animação toma o
+ * lugar dela — e ao fechar, o contrário.
+ */
+function abrirPortal() {
+  camera.getWorldPosition(_head);
+  camera.getWorldQuaternion(_qCabeca);
+  const abriu = portal.alternar(_head, _qCabeca);
+  audio.setVideo(portal.video, abriu);
+  audio.chime(abriu ? 16 : 9, 0.16);
+  ping(0.5);
+  if (abriu) toast('Pince de novo para fechar');
+}
+
 /** Fecha o mapeamento e faz a floresta brotar dentro do cômodo lido. */
 function commitRoom() {
   forest.applyRoom(room);
@@ -397,6 +430,13 @@ function commitRoom() {
   // Os dois buracos viram o par de portais dos planetas: quem entra num sai
   // pelo outro. Sem dois, ninguém atravessa nada.
   space.setPortais(buracos.portais());
+
+  // O portal escolhe a parede mais longa que esteja LONGE dos buracos —
+  // dividir parede com um buraco negro faria os dois brigarem pelo mesmo
+  // olhar, e o portal é o que se quer que seja notado.
+  portal.position.copy(forest.position);
+  portal.applyWalls(paredes, buracos.portais().map((b) => b.pos));
+  portal.setEnabled(true);
   shell.position.copy(forest.position);
   tide.applyFootprint(forest.footprint);
   tide.position.copy(forest.position);
@@ -529,8 +569,23 @@ function montarCena(i) {
   return c;
 }
 
-/** Avança um elo da cadeia. O último devolve ao primeiro. */
-function trocarCena() { return montarCena(proxima(state.cena)); }
+/**
+ * PARA ONDE O CASULO LEVA.
+ *
+ * Ao espaço, sempre. Ele encadeava os cenários um atrás do outro — do 0 para
+ * o 1, do 1 para o 2 — e nessa fila o cosmos era o sexto elo: seis casulos
+ * até ver um planeta. Não era o que a experiência promete, e apagava a
+ * escolha, que é o que faz de cada planeta um elemento diferente.
+ *
+ * Agora a jornada é uma roda com eixo: o casulo devolve ao espaço, e é lá,
+ * ampliando um planeta, que se decide qual mundo vem a seguir. Só de dentro
+ * do próprio cosmos é que ele avança um elo — para o caso de o espaço ainda
+ * ter um casulo, e para nunca ser um beco.
+ */
+function trocarCena() {
+  const destino = state.cena === I_COSMOS ? proxima(state.cena) : I_COSMOS;
+  return montarCena(destino);
+}
 
 /**
  * Atravessa para o mundo de um planeta. Tudo o que muda é o bioma, a paleta e
@@ -720,14 +775,29 @@ const interaction = new Interaction(renderer, scene, camera, {
         return;
       }
       interaction.pulse(controller, 0.8, 60);
+    } else if (state.phase === 'growing' && portalSobMira(controller)) {
+      abrirPortal();
     } else if (state.phase === 'growing' && noCosmos()) {
       const planeta = space.pick(aimPoint ?? camera.position);
       if (planeta) { space.lift(planeta); space.drop(planeta); }
       else backToForest();
     } else if (state.phase === 'growing' && !noCosmos() && controller) {
-      // Primeiro tenta agarrar de longe pelo raio. Só se não houver nada sob
-      // a mira é que o gesto vira plantar ou abençoar.
       interaction.ray(controller, _origem, _direcao);
+
+      // O CASULO VEM PRIMEIRO, como já vinha para a mão. O gatilho não tinha
+      // caminho nenhum até ele: apontar para o casulo com o controle
+      // agarrava a planta atrás dele, ou plantava no chão — e a única porta
+      // de saída do cenário só existia para quem usa rastreamento de mão.
+      raioLocal(_origem, _direcao);
+      const casulo = forest.pickCocoonAlongRay(_rOrigL, _rDirL);
+      if (casulo >= 0) {
+        interaction.pulse(controller, 0.8, 60);
+        hatch(casulo);
+        return;
+      }
+
+      // Depois tenta agarrar de longe pelo raio. Só se não houver nada sob
+      // a mira é que o gesto vira plantar ou abençoar.
       const distante = forest.pickAlongRay(
         forest.worldToLocal(_origem.clone()),
         _direcao.clone().transformDirection(forest.matrixWorld.clone().invert()).normalize());
@@ -1137,6 +1207,15 @@ const hands = new Hands(renderer, {
 
     handRay(hand, _rOrig, _rDir);
 
+    // O PORTAL VEM PRIMEIRO, em qualquer cenário. Ele é grande, está numa
+    // parede e é a única coisa da cena que não se pega nem se planta — se
+    // qualquer outra coisa pudesse roubar a mira dele, ele viraria um alvo
+    // que só abre por sorte.
+    if (portal.pickAlongRay(_rOrig, _rDir) !== null) {
+      abrirPortal();
+      return;
+    }
+
     // No espaço a pinça só serve para pegar planeta — encostado nele, ou sob
     // a mira, que é o que vale quando você está sentado e a órbita passa
     // longe do braço.
@@ -1357,6 +1436,7 @@ function syncTouchUI() {
 // ---------------------------------------------------------------------------
 const clock = new Clock();
 const _head = new Vector3();
+const _qCabeca = new Quaternion();
 
 /**
  * Trilha de pisadas.
@@ -1586,6 +1666,7 @@ function frame(time, xrFrame) {
     else butterflies.update(t);
     seeds.update(dt, t, hands);
     space.update(t, dt);
+    portal.update(dt, t);
   }
 
   if (state.phase === 'growing') {
@@ -1668,13 +1749,14 @@ detect().then((res) => {
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
 window.floresta = {
   // cena
-  forest, room, roomMesh, sky, constelacao, space, emergence, buracos, shell, tide,
+  forest, room, roomMesh, sky, constelacao, space, portal, emergence, buracos, shell, tide,
   pirilampos, cardume,
   butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds,
   hands, wristMenu, magic,
   // estado
   state, shared, passos, renderer, camera, orbit,
   // ações
+  abrirPortal,
   cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
   toggleCalm, cycleGlow, togglePaint, bless, rescan, hatch, backToForest, enterWorld, GLOW,
   CENAS, cenaPor, montarCena, trocarCena, aplicarCena,
@@ -1690,6 +1772,7 @@ window.addEventListener('beforeunload', () => {
   bodyGrowth.dispose();
   seeds.dispose();
   space.dispose();
+  portal.dispose();
   emergence.dispose();
   shell.dispose();
   tide.dispose();

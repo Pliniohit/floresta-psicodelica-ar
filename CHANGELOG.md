@@ -15,6 +15,76 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.24.0 — O portal, e o casulo indo para o lugar certo
+
+### O casulo levava ao lugar errado
+
+Pegar o casulo não levava ao espaço. Ele **avançava um elo da cadeia** — do
+cenário 0 para o 1, do 1 para o 2 — e nessa fila o cosmos era o sexto elo:
+seis casulos até ver um planeta.
+
+Não era o que a experiência promete, e apagava a **escolha**, que é a única
+razão de cada planeta ser um elemento diferente. A jornada voltou a ser uma
+roda com eixo: o casulo devolve ao espaço, e é lá, ampliando um planeta, que
+se decide qual mundo vem a seguir. Só de dentro do próprio cosmos é que ele
+avança um elo, para nunca ser um beco.
+
+**E o gatilho não tinha caminho nenhum até o casulo.** A verificação existia só
+para a pinça: apontar o controle para o casulo agarrava a planta atrás dele ou
+plantava no chão. A única porta de saída do cenário funcionava apenas para
+quem usa rastreamento de mão.
+
+### O portal
+
+A animação passa dentro do cômodo, pendurada numa parede, do tamanho de um
+quadro e em silêncio: uma janela para o lugar de onde tudo isto veio. Mirar e
+pinçar abre — o retângulo cresce até virar tela de cinema à sua frente, o som
+entra e a trilha recua para debaixo dele. Pinçar de novo devolve a janela à
+parede.
+
+**A tela aberta é fixada no mundo, não na cabeça.** Uma tela que segue o olhar
+é impossível de olhar: nunca sai do canto do olho, e não dá para se aproximar
+nem se afastar dela. Ao abrir, ela é plantada uma vez à frente de onde você
+estava; dali em diante quem se move é você.
+
+**A borda é um rasgo, não uma moldura.** Um retângulo nítido no meio da sala lê
+como televisão, e televisão é o oposto de portal. A margem se desfaz num
+limiar irregular tirado de ruído lento, com um anel de partículas por fora.
+Aberta, o rasgo se fecha: quando a tela é grande e você está dentro dela, ele
+já cumpriu o papel e só comeria imagem.
+
+A imagem passa **intocada** — nada de `filmic`, nada de paleta, nada de
+encanto. Ela já foi graduada por quem a fez, e aplicar o tratamento da cena por
+cima seria refazer, mal, um trabalho pronto.
+
+O som do vídeo entra pela **mesma mesa** que o resto, e não pelo alto-falante
+por conta própria: é o que permite abaixar a trilha por baixo dele em vez de
+somar duas músicas. `createMediaElementSource` só aceita ser chamado uma vez
+por elemento, então a fonte é criada na primeira abertura e guardada.
+
+O arquivo tem 40 MB — 1280 px de largura, CRF 28. A 1936 px e CRF 25 ele ficava
+com 58 MB sem diferença visível numa comparação lado a lado.
+
+### Um material morto, e o teste que faltava
+
+A troca de cor das borboletas da v0.22.1 foi aplicada num material que **não é
+usado desde a conversão para partículas**. O arquivo tinha dois blocos de cor
+de asa idênticos, e a edição pegou o primeiro. As cores certas agora estão no
+material vivo, e o morto foi removido junto com o `import` dele.
+
+Só que o `import` estava em **dois** lugares, e o segundo derrubou a página
+inteira: sem empacotador e sem verificação de tipos, um `import` de um nome que
+não existe mais é erro em tempo de execução, e a única mensagem aparecia no
+console do navegador — o único lugar onde ninguém olha antes de publicar.
+
+Daí o **`test-modulos.mjs`**: ele confere estaticamente que todo `import`
+nomeado entre módulos do projeto aponta para um `export` que existe. Estático
+de propósito — importar de verdade em Node não serve, porque `main.js` mexe no
+DOM já na avaliação, e é justamente ele o que mais precisa ser conferido.
+
+Restam **nove materiais mortos** da mesma conversão (`barkMaterial`,
+`grassMaterial`, `orbMaterial` e companhia). Todos ainda compilam na entrada.
+
 ## v0.23.0 — Universo Encantado, e a trilha entrou
 
 ### O nome
