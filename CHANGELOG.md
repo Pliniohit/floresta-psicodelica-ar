@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.13.0 — Asas à deriva e versionamento
+
 ## v0.12.0 — Ritmo
 
 Tudo a ~48% da velocidade original; transições 1,6x a 2,8x mais longas. As
