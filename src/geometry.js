@@ -139,6 +139,79 @@ export function blade(height = 0.42, width = 0.028) {
   return g;
 }
 
+/**
+ * Samambaia: fronde arqueada com folíolos alternados. A curvatura vem de um
+ * arco simples — folha de samambaia lida pela silhueta, não pelo detalhe.
+ */
+export function fern(length = 0.55, leaflets = 7) {
+  const partes = [];
+  for (let i = 0; i < leaflets; i++) {
+    const t = (i + 1) / (leaflets + 1);
+    const curva = t * t * 0.42;                  // ponta pende
+    const tam = Math.sin(t * Math.PI) * 0.13 + 0.03;
+    for (const lado of [-1, 1]) {
+      partes.push(place(blade(tam, tam * 0.28), {
+        x: lado * 0.012,
+        y: length * t - curva,
+        z: 0,
+        rz: lado * (0.9 + t * 0.4),
+        ry: lado * 0.25,
+      }));
+    }
+  }
+  partes.push(place(blade(length * 0.95, 0.008), { rx: 0.28 }));   // ráquis
+  return weld(partes);
+}
+
+/** Junco: lâmina alta e fina, para variar altura no sub-bosque. */
+export function reed(height = 1.15) {
+  return weld([place(blade(height, 0.016), { rz: 0.06 })]);
+}
+
+/** Arbusto: aglomerado baixo de icosaedros. Preenche o vazio entre troncos. */
+export function shrub() {
+  const partes = [];
+  const pontos = [
+    [0, 0.26, 0, 0.28], [0.19, 0.20, 0.10, 0.20],
+    [-0.16, 0.22, -0.12, 0.22], [0.05, 0.38, -0.16, 0.17],
+  ];
+  for (const [x, y, z, r] of pontos) {
+    partes.push(place(new IcosahedronGeometry(r, 0), { x, y, z, sy: 0.8, ry: x + z }));
+  }
+  return weld(partes);
+}
+
+/** Flor: haste fina e cinco pétalas abertas. */
+export function flower(height = 0.30) {
+  const partes = [place(blade(height, 0.006), {})];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    partes.push(place(new IcosahedronGeometry(0.035, 0), {
+      x: Math.cos(a) * 0.036,
+      y: height,
+      z: Math.sin(a) * 0.036,
+      sy: 0.32, sx: 1.5, sz: 1.5,
+      ry: a,
+    }));
+  }
+  partes.push(place(new IcosahedronGeometry(0.022, 0), { y: height + 0.008, sy: 0.6 }));
+  return weld(partes);
+}
+
+/**
+ * Casulo pendurado: gota alongada com anéis, presa por um fio.
+ * A origem fica no PONTO DE SUSPENSÃO, no alto — assim a instância é colocada
+ * no galho e o casulo pende para baixo sozinho.
+ */
+export function cocoon(length = 0.16) {
+  const corpo = new IcosahedronGeometry(0.045, 1);
+  const fio = new CylinderGeometry(0.0035, 0.0035, 0.05, 4, 1, true);
+  return weld([
+    place(fio, { y: -0.025 }),
+    place(corpo, { y: -0.05 - length * 0.5, sy: length / 0.09, sx: 0.85, sz: 0.85 }),
+  ]);
+}
+
 /** Anel plano usado como retículo de posicionamento. */
 export function reticleRing(radius = 0.2) {
   const g = new BufferGeometry();

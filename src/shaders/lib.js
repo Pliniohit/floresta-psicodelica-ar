@@ -56,6 +56,68 @@ vec3 trippy(vec3 c){
 }
 
 /**
+ * CORES NATURAIS.
+ *
+ * Antes tudo saía da mesma paleta de cosseno, e por isso nada nunca parecia
+ * mata de verdade — casca, folha e cogumelo dividiam o mesmo arco-íris. Aqui
+ * cada material tem sua própria faixa realista, escolhida por semente, e a
+ * paleta passa a ser só o BRILHO mágico por cima.
+ *
+ * "uMagic" controla a mistura: 0 é floresta realista, 1 é a encantada.
+ */
+vec3 pick3(vec3 a, vec3 b, vec3 c, float s){
+  return s < 0.5 ? mix(a, b, s * 2.0) : mix(b, c, (s - 0.5) * 2.0);
+}
+
+/** Folhagem: do verde-escuro de sombra ao verde-claro de brotação. */
+vec3 leafColor(float s){
+  return pick3(
+    vec3(0.075, 0.175, 0.085),
+    vec3(0.185, 0.360, 0.140),
+    vec3(0.360, 0.500, 0.185),
+    fract(s));
+}
+
+/** Casca: castanho-escuro, castanho-acinzentado, bege-claro. */
+vec3 barkColor(float s){
+  return pick3(
+    vec3(0.145, 0.105, 0.080),
+    vec3(0.290, 0.225, 0.170),
+    vec3(0.430, 0.360, 0.280),
+    fract(s));
+}
+
+/** Chapéus: vermelho de amanita, castanho, creme. */
+vec3 capColor(float s){
+  return pick3(
+    vec3(0.520, 0.105, 0.075),
+    vec3(0.420, 0.280, 0.155),
+    vec3(0.720, 0.640, 0.480),
+    fract(s));
+}
+
+/** Pétalas: lilás, rosa, amarelo-claro. */
+vec3 petalColor(float s){
+  return pick3(
+    vec3(0.520, 0.400, 0.680),
+    vec3(0.820, 0.480, 0.560),
+    vec3(0.900, 0.780, 0.420),
+    fract(s));
+}
+
+uniform float uMagic;
+
+/**
+ * Encanta uma cor natural. Em "uMagic" 0 devolve a cor como está; subindo,
+ * a paleta invade. "amount" deixa cada material escolher o quanto cede — a
+ * casca cede pouco, o cogumelo bioluminescente cede muito.
+ */
+vec3 enchant(vec3 natural, float t, float amount){
+  float k = clamp(uMagic * amount, 0.0, 1.0);
+  return mix(natural, natural * 0.35 + palette(t) * 0.85, k);
+}
+
+/**
  * Roll-off exponencial nas altas. Sem isto, somar brilho de borda a uma paleta
  * que já chega perto de 1.0 satura os três canais no mesmo ponto e a superfície
  * vira branco chapado — exatamente o que a gente NÃO quer numa cena psicodélica.

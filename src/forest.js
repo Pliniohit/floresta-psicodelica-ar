@@ -40,12 +40,25 @@ const WALK = {
 };
 
 /** Densidades por metro quadrado de piso livre. */
-const PER_M2 = { tree: 0.42, mushroom: 1.1, crystal: 0.55, grass: 95, orb: 1.1 };
+const PER_M2 = {
+  tree: 0.42,
+  mushroom: 0.42,   // eram 1,1 — viraram acento, não tapete
+  crystal: 0.40,
+  grass: 70,
+  fern: 1.5,
+  shrub: 0.55,
+  flower: 1.9,
+  reed: 1.1,
+  orb: 1.1,
+};
 /** Densidades sobre móveis: bem mais altas, são superfícies pequenas. */
-const ON_SURFACE = { mushroom: 7, moss: 320 };
+const ON_SURFACE = { mushroom: 2.5, moss: 320 };
 /** Trepadeiras por metro linear de parede. */
 const VINES_PER_M = 3.2;
-const CAPACITY = { tree: 60, mushroom: 120, crystal: 40, grass: 2600, orb: 40 };
+const CAPACITY = {
+  tree: 60, mushroom: 60, crystal: 32, grass: 2600,
+  fern: 90, shrub: 40, flower: 120, reed: 70, cocoon: 14, orb: 40,
+};
 const SPORES = 900;
 
 class InstanceSet {
@@ -117,6 +130,27 @@ export class Forest extends Group {
     const grassMesh = new InstancedMesh(G.blade(), M.grassMaterial, CAPACITY.grass);
     this.add(grassMesh);
     this.grass = new InstanceSet([grassMesh], CAPACITY.grass);
+
+    // Sub-bosque: samambaia, junco, arbusto e flor. Cada um é uma malha
+    // instanciada só — quatro draw calls para toda a variedade do chão.
+    const fernMesh = new InstancedMesh(G.fern(), M.grassMaterial, CAPACITY.fern);
+    const reedMesh = new InstancedMesh(G.reed(), M.grassMaterial, CAPACITY.reed);
+    const shrubMesh = new InstancedMesh(G.shrub(), M.canopyMaterial, CAPACITY.shrub);
+    const flowerMesh = new InstancedMesh(G.flower(), M.flowerMaterial, CAPACITY.flower);
+    this.add(fernMesh, reedMesh, shrubMesh, flowerMesh);
+    this.ferns = new InstanceSet([fernMesh], CAPACITY.fern);
+    this.reeds = new InstanceSet([reedMesh], CAPACITY.reed);
+    this.shrubs = new InstanceSet([shrubMesh], CAPACITY.shrub);
+    this.flowers = new InstanceSet([flowerMesh], CAPACITY.flower);
+
+    // Casulos pendurados nos galhos.
+    const cocoonGeo = G.cocoon();
+    this.geo.cocoon = cocoonGeo;
+    const cocoonMesh = new InstancedMesh(cocoonGeo, M.cocoonMaterial, CAPACITY.cocoon);
+    cocoonMesh.renderOrder = 5;
+    this.add(cocoonMesh);
+    this.cocoons = new InstanceSet([cocoonMesh], CAPACITY.cocoon);
+    this.cocoonSpots = [];   // posições locais, para detectar o toque
 
     const orbMesh = new InstancedMesh(new IcosahedronGeometry(0.05, 0), M.orbMaterial, CAPACITY.orb);
     orbMesh.renderOrder = 4;
@@ -282,6 +316,8 @@ export class Forest extends Group {
     this.growing.length = 0;
     for (const sp of this.species) sp.set.clear();
     this.mushrooms.clear(); this.crystals.clear(); this.grass.clear(); this.orbs.clear();
+    this.ferns.clear(); this.reeds.clear(); this.shrubs.clear(); this.flowers.clear();
+    this.cocoons.clear(); this.cocoonSpots.length = 0;
 
     const area = polygonArea(this.footprint);
     const n = (per, cap) => Math.min(cap, Math.max(3, Math.round(area * per)));
@@ -294,13 +330,36 @@ export class Forest extends Group {
     });
     spots.forEach((pt, i) => {
       const sp = this.species[i % this.species.length];
-      const s = 0.88 + r() * 0.42;
+      const largura = 0.85 + r() * 0.35;
+
+      // Altura varia MUITO mais que a largura — é o que dá silhueta de mata em
+      // vez de fileira de clones. Mas quem está no meio do cômodo precisa
+      // continuar alto o bastante para passar por baixo; só na borda, onde
+      // ninguém circula, entram as árvores baixas do sub-bosque.
+      const borda = distanceToEdges(pt.x, pt.z, this.footprint);
+      const podeSerBaixa = borda < 1.1;
+      const altura = podeSerBaixa
+        ? 0.45 + r() * 1.15
+        : 1.0 + r() * 0.75;
+
       _p.set(pt.x, 0, pt.z);
       _q.setFromAxisAngle(_up, r() * Math.PI * 2);
-      _s.set(s, s * (0.92 + r() * 0.3), s);
+      _s.set(largura, altura, largura);
       sp.set.add(_p, _q, _s);
+
+      // Casulo pendurado num galho, em algumas árvores altas.
+      if (altura > 1.05 && this.cocoons.count < CAPACITY.cocoon && r() < 0.45) {
+        const a = r() * Math.PI * 2;
+        const raio = (0.35 + r() * 0.45) * largura;
+        const alturaGalho = (2.55 + r() * 0.7) * altura;
+        const cp = new Vector3(pt.x + Math.cos(a) * raio, alturaGalho, pt.z + Math.sin(a) * raio);
+        const cs = 0.8 + r() * 0.7;
+        this.cocoons.add(cp, _q.identity(), _s.set(cs, cs, cs));
+        this.cocoonSpots.push({ pos: cp.clone(), escala: cs, aberto: false });
+      }
     });
     for (const sp of this.species) sp.set.flush();
+    this.cocoons.flush();
 
     // Cristais: altos o bastante para atrapalhar, então respeitam os troncos.
     for (const pt of this.#scatter(r, n(PER_M2.crystal, CAPACITY.crystal), 0.8, trunks, {
@@ -314,7 +373,8 @@ export class Forest extends Group {
     }
     this.crystals.flush();
 
-    // Cogumelos: baixos, você passa por cima — lista de espaçamento própria.
+    // Cogumelos: baixos, você passa por cima — lista de espaçamento própria,
+    // compartilhada com todo o sub-bosque.
     const lowStuff = [];
     for (const pt of this.#scatter(r, n(PER_M2.mushroom, CAPACITY.mushroom), 0.34, lowStuff, {
       wallMargin: 0.12,
@@ -342,6 +402,31 @@ export class Forest extends Group {
       i++;
     }
     this.grass.flush();
+
+    // Sub-bosque. Tudo baixo o bastante para passar por cima, então divide a
+    // mesma lista de espaçamento dos cogumelos.
+    const espalhar = (set, quantos, gap, escalaFn) => {
+      for (const pt of this.#scatter(r, quantos, gap, lowStuff, { wallMargin: 0.1 })) {
+        if (set.count >= set.capacity) break;
+        const [sx, sy] = escalaFn();
+        _p.set(pt.x, 0, pt.z);
+        _q.setFromAxisAngle(_up, r() * Math.PI * 2);
+        _s.set(sx, sy, sx);
+        set.add(_p, _q, _s);
+      }
+      set.flush();
+    };
+
+    // Do maior para o menor: quem precisa de mais espaço sorteia primeiro,
+    // senão os últimos não acham vaga e a espécie quase some da cena.
+    espalhar(this.shrubs, n(PER_M2.shrub, CAPACITY.shrub), 0.55,
+      () => { const k = 0.8 + r() * 0.9; return [k, k * (0.7 + r() * 0.6)]; });
+    espalhar(this.ferns, n(PER_M2.fern, CAPACITY.fern), 0.30,
+      () => { const k = 0.7 + r() * 0.8; return [k, k]; });
+    espalhar(this.reeds, n(PER_M2.reed, CAPACITY.reed), 0.26,
+      () => [0.9 + r() * 0.3, 0.55 + r() * 0.85]);
+    espalhar(this.flowers, n(PER_M2.flower, CAPACITY.flower), 0.22,
+      () => { const k = 0.7 + r() * 0.7; return [k, k * (0.8 + r() * 0.6)]; });
 
     this.#colonize(r);
 
@@ -426,6 +511,36 @@ export class Forest extends Group {
 
     this.mushrooms.flush();
     this.grass.flush();
+  }
+
+  /**
+   * Casulo mais próximo de um ponto em coordenadas LOCAIS, ou null.
+   * Devolve o índice, porque é por ele que o casulo é aberto depois.
+   */
+  pickCocoon(local, alcance = 0.14) {
+    const inv = 1 / (this.scale.x || 1);
+    const r = alcance * inv;
+    for (let i = 0; i < this.cocoonSpots.length; i++) {
+      const c = this.cocoonSpots[i];
+      if (c.aberto) continue;
+      // O casulo pende ~10 cm abaixo do ponto de suspensão.
+      _p.copy(c.pos); _p.y -= 0.11 * c.escala;
+      if (_p.distanceTo(local) < r) return i;
+    }
+    return -1;
+  }
+
+  /** Abre o casulo: some da cena e não pode ser tocado de novo. */
+  openCocoon(index) {
+    const c = this.cocoonSpots[index];
+    if (!c || c.aberto) return null;
+    c.aberto = true;
+    _q.identity(); _s.setScalar(0.0001);
+    this.cocoons.write(index, c.pos, _q, _s);
+    this.cocoons.flush();
+    const saida = c.pos.clone();
+    saida.y -= 0.11 * c.escala;
+    return saida;
   }
 
   /** O ponto está dentro do cômodo mapeado? Usado antes de plantar. */
@@ -660,6 +775,8 @@ export class Forest extends Group {
     for (const sp of this.species) sp.set.dispose();
     this.mushrooms.dispose(); this.crystals.dispose();
     this.grass.dispose(); this.orbs.dispose();
+    this.ferns.dispose(); this.reeds.dispose();
+    this.shrubs.dispose(); this.flowers.dispose(); this.cocoons.dispose();
     this.ground?.geometry.dispose();
     this.spores?.geometry.dispose();
     this.clear();

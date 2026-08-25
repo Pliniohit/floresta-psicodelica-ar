@@ -122,6 +122,51 @@ Não é preciso rodar o Space Setup antes: o app escaneia sozinho ao abrir.
 
 Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão insegura.
 
+## A travessia para o espaço
+
+Alguns galhos têm **casulos** pendurados, pulsando. Toque num deles com a ponta
+do dedo: a borboleta nasce, sobe em espiral deixando rastro de luz, e enquanto
+ela sobe **o mundo vira espaço**. A subida dela É a transição — as duas duram
+os mesmos cinco segundos, de propósito.
+
+Lá em cima há planetas ao alcance do braço, com faixas de gasoso, continentes
+de rochoso e fendas de gelado, alguns com anéis. **Pegue-os com a pinça**: ao
+soltar, o planeta assume uma órbita nova a partir de onde ficou.
+
+O tamanho é de brinquedo por decisão: em escala real seriam pontos no céu e não
+haveria nada para fazer.
+
+Para voltar, o 🔺 do menu de pulso (ou 🌱 na barra) vira "voltar à clareira".
+
+## Cores realistas
+
+Antes tudo — casca, folha, cogumelo, capim — saía da mesma paleta de cosseno.
+Por isso nada nunca parecia mata de verdade: os materiais dividiam o mesmo
+arco-íris.
+
+Agora cada um tem sua faixa natural escolhida por semente: castanhos para a
+casca, verdes de sombra a brotação para a folhagem, vermelho de amanita a creme
+para os chapéus, lilás a amarelo para as pétalas. As borboletas ganharam três
+espécies reais — monarca, morpho azul e branca — com nervuras e borda escura.
+
+A paleta virou só o **brilho mágico** por cima, controlado por `uMagic`: em 0 é
+uma floresta realista, em 1 é a encantada. A seiva que sobe pelo tronco e as
+manchas luminosas dos cogumelos continuam vindo dela.
+
+## O sub-bosque
+
+Cogumelos caíram de 1,1 para 0,42 por m² — viraram acento, não tapete. No lugar
+entraram **samambaias** com frondes arqueadas, **juncos** altos, **arbustos** e
+**flores** de cinco pétalas.
+
+O sorteio vai do maior para o menor: quem precisa de mais espaço escolhe
+primeiro, senão as últimas espécies não acham vaga e quase somem da cena.
+
+**Alturas de árvore** agora variam muito mais que a largura — é o que dá
+silhueta de mata em vez de fileira de clones. Quem está no meio do cômodo
+continua alto o bastante para você passar por baixo; só perto da parede, onde
+ninguém circula, entram as árvores baixas.
+
 ## Encantado, não psicodélico
 
 O tom foi rebaixado de propósito, e os dois parâmetros que fazem isso valem
@@ -249,6 +294,7 @@ src/
   body.js               corpo inferido por IK e floração sobre ele
   seeds.js              semente que brota na palma
   constellation.js      constelação no céu (trocar a forma aqui)
+  space.js              cena do espaço, planetas pegáveis e a eclosão
   forest.js             semeadura no polígono, instancing, animação de brotar
   geometry.js           construtores das malhas low poly
   audio.js              drone ambiente gerado por WebAudio

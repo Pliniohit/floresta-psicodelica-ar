@@ -16,6 +16,8 @@ import { Butterflies, Fireflies } from './creatures.js';
 import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
+import { Space, Emergence } from './space.js';
+import { butterflyMaterial, cocoonMaterial, skyMaterial as _sky } from './shaders/materials.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
@@ -82,6 +84,12 @@ scene.add(bodyGrowth);
 const seeds = new Seeds('right');
 scene.add(seeds);
 
+const space = new Space();
+scene.add(space);
+
+const emergence = new Emergence(butterflies.mesh.geometry, butterflyMaterial);
+scene.add(emergence);
+
 const xr = new XRStage(renderer);
 const audio = new Ambience();
 
@@ -101,6 +109,8 @@ const state = {
   occlusionOn: true,
   bloomOn: true,      // floração no próprio corpo
   blessed: false,     // há alguém abençoado com vaga-lumes?
+  world: 'floresta',  // floresta | espaco
+  warp: 0,            // 0 floresta .. 1 espaço
   scanSweep: 0,
   scanReveal: 0,
 };
@@ -278,6 +288,32 @@ function bless(worldPoint) {
   toast('Vaga-lumes deixados ali', palettes[state.paletteIndex].swatch);
 }
 
+/**
+ * Tocar no casulo. A borboleta sai, sobe deixando rastro, e o mundo vira
+ * espaço enquanto ela sobe — a viagem dela É a transição, e é por isso que a
+ * duração da subida e a do warp são a mesma.
+ */
+function hatch(indice) {
+  const saidaLocal = forest.openCocoon(indice);
+  if (!saidaLocal) return;
+  const mundo = forest.localToWorld(saidaLocal.clone());
+
+  emergence.launch(mundo);
+  state.world = 'espaco';
+  ping(1);
+  audio.chime(24, 0.3);
+  setTimeout(() => audio.chime(31, 0.2), 400);
+  toast('Ela nasceu — siga com o olhar', palettes[state.paletteIndex].swatch);
+}
+
+function backToForest() {
+  if (state.world === 'floresta') return;
+  state.world = 'floresta';
+  ping(0.8);
+  audio.chime(5, 0.24);
+  toast('De volta à clareira', palettes[state.paletteIndex].swatch);
+}
+
 function toggleBloom() {
   state.bloomOn = !state.bloomOn;
   bodyGrowth.setBlooming(state.bloomOn);
@@ -380,6 +416,10 @@ const interaction = new Interaction(renderer, scene, camera, {
         return;
       }
       interaction.pulse(controller, 0.8, 60);
+    } else if (state.phase === 'growing' && state.world === 'espaco') {
+      const planeta = space.pick(aimPoint ?? camera.position);
+      if (planeta) { space.lift(planeta); space.drop(planeta); }
+      else backToForest();
     } else if (state.phase === 'growing' && aimPoint) {
       const local = forest.worldToLocal(aimPoint.clone());
       if (forest.accepts(local)) {
@@ -673,6 +713,9 @@ xr.onEnd = () => {
   blessedFireflies.visible = false;
   bodyGrowth.visible = false;
   state.blessed = false;
+  state.world = 'floresta';
+  state.warp = 0;
+  space.setProgress(0);
   el('enter').disabled = false;
   el('enter').textContent = 'Entrar em AR';
 };
@@ -689,7 +732,7 @@ el('preview').addEventListener('click', startPreview);
 const PAD = {
   palette: cyclePalette,
   trip: toggleTrip,
-  seed: reseed,
+  seed: () => { if (state.world === 'espaco') backToForest(); else reseed(); },
   smaller: () => { state.scale = MathUtils.clamp(state.scale * 0.85, 0.35, 2.4); },
   bigger: () => { state.scale = MathUtils.clamp(state.scale * 1.18, 0.35, 2.4); },
   recenter: () => { magic.recenter(); toast('Frente recentrada'); },
@@ -718,6 +761,16 @@ const hands = new Hands(renderer, {
       return;
     }
     if (state.phase !== 'growing') return;
+
+    // No espaço a pinça só serve para pegar planeta.
+    if (state.world === 'espaco') {
+      const planeta = space.pick(hand.pinch);
+      if (planeta) {
+        grabbed.set(hand, { espaco: true, planeta: space.lift(planeta) });
+        audio.chime(19, 0.12);
+      }
+      return;
+    }
 
     // A semente na palma tem prioridade: se ela está madura, a pinça a pega.
     if (hand.handedness === seeds.hand && seeds.take()) {
@@ -754,6 +807,9 @@ const hands = new Hands(renderer, {
     const handle = grabbed.get(hand);
     if (!handle) return;
     grabbed.delete(hand);
+
+    if (handle.espaco) { space.drop(handle.planeta); audio.chime(9, 0.12); return; }
+
     const result = forest.drop(handle, toLocal(hand.pinch));
     ping(0.5);
     audio.chime(result === 'plantado' ? 7 : -7, 0.14);
@@ -765,7 +821,7 @@ scene.add(hands);
 const wristMenu = new WristMenu({
   onPalette: () => { cyclePalette(); },
   onTrip: () => { toggleTrip(); },
-  onReseed: () => { reseed(); },
+  onReseed: () => { if (state.world === 'espaco') backToForest(); else reseed(); },
   onSky: () => { toggleSky(); },
   onBloom: () => { toggleBloom(); },
 });
@@ -782,7 +838,9 @@ function updateHands(dt) {
   for (const st of hands.states) {
     if (!st.tracked) continue;
     const handle = grabbed.get(st);
-    if (handle) {
+    if (handle?.espaco) {
+      space.carry(handle.planeta, st.pinch);
+    } else if (handle) {
       spin = clock.elapsedTime * 1.6;
       forest.carry(handle, toLocal(st.pinch), spin);
     } else if (!hover) {
@@ -790,6 +848,16 @@ function updateHands(dt) {
     }
   }
   forest.highlight(hover);
+
+  // Tocar no casulo com a ponta do indicador — sem precisar pinçar, porque
+  // encostar é o gesto que a cena pede.
+  if (state.world === 'floresta') {
+    for (const st of hands.states) {
+      if (!st.tracked) continue;
+      const i = forest.pickCocoon(toLocal(st.indexTip));
+      if (i >= 0) { hatch(i); break; }
+    }
+  }
 
   wristMenu.update(dt, hands.byHandedness('left'), hands.byHandedness('right'));
 }
@@ -856,10 +924,38 @@ function frame(time, xrFrame) {
   updateHands(dt);
   forest.update(dt);
 
+  camera.getWorldPosition(_head);
   if (sky.visible) {
-    camera.getWorldPosition(_head);
     sky.update(clock.elapsedTime, _head);
     constelacao.update(_head);
+  }
+
+  // --- travessia entre os dois mundos -------------------------------------
+  if (state.phase === 'growing') {
+    const alvoWarp = state.world === 'espaco' ? 1 : 0;
+    // Ida lenta (acompanha a subida da borboleta), volta rápida.
+    const vel = alvoWarp > state.warp ? 1 / 5.0 : 1 / 1.6;
+    state.warp += Math.sign(alvoWarp - state.warp)
+      * Math.min(Math.abs(alvoWarp - state.warp), dt * vel);
+
+    const w = state.warp;
+    space.setProgress(w);
+    emergence.update(dt, clock.elapsedTime);
+
+    // A floresta encolhe e afunda para longe, em vez de sumir de uma vez.
+    forest.visible = w < 0.99;
+    butterflies.visible = w < 0.6;
+    bodyGrowth.visible = w < 0.8;
+
+    // O céu abre até cobrir tudo: no espaço não há mais horizonte de sala.
+    skyMaterial.uniforms.uHorizon.value = 0.10 - w * 1.3;
+    skyMaterial.uniforms.uFull.value = 0.62 - w * 1.3;
+    skyMaterial.uniforms.uSpace.value = w;
+    // E o oclusor sai de cena: paredes não fazem sentido no espaço.
+    if (roomMesh.entries.length) {
+      const querOcluir = state.occlusionOn && w < 0.5;
+      if (querOcluir !== roomMesh.occlusionEnabled) roomMesh.setOcclusion(querOcluir);
+    }
   }
 
   if (state.phase === 'growing') {
@@ -875,6 +971,7 @@ function frame(time, xrFrame) {
 
     butterflies.update(t);
     seeds.update(dt, t, hands);
+    space.update(t, dt, _head);
   }
 
   if (state.phase === 'growing') {
@@ -883,9 +980,11 @@ function frame(time, xrFrame) {
       const e = 1 - Math.pow(1 - state.intro, 4);
       forest.scale.setScalar(Math.max(0.001, state.scale * e));
     } else {
-      forest.scale.setScalar(state.scale);
+      // Encolhe conforme o warp: a clareira fica para trás.
+      forest.scale.setScalar(state.scale * (1 - state.warp * 0.85));
     }
     forest.rotation.y = state.spin;
+    forest.position.y = shared.uOrigin.value.y - state.warp * 2.4;
   }
 
   renderer.render(scene, camera);
@@ -949,7 +1048,7 @@ detect().then((res) => {
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, roomMesh, sky, constelacao, butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = { forest, room, roomMesh, sky, constelacao, space, emergence, hatch, backToForest, butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
 
 window.addEventListener('beforeunload', () => {
   roomMesh.dispose();
@@ -960,6 +1059,8 @@ window.addEventListener('beforeunload', () => {
   blessedFireflies.dispose();
   bodyGrowth.dispose();
   seeds.dispose();
+  space.dispose();
+  emergence.dispose();
   hands.dispose();
   wristMenu.dispose();
   forest.dispose();

@@ -1,0 +1,247 @@
+import {
+  Group, Mesh, InstancedMesh, Points, BufferGeometry, BufferAttribute,
+  SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion,
+} from '../vendor/three/three.module.min.js';
+import { planetMaterial, trailMaterial, skyLifeMaterial } from './shaders/materials.js';
+import { rng } from './forest.js';
+
+/**
+ * A cena do espaço, para onde a borboleta leva.
+ *
+ * Planetas ficam ao alcance do braço de propósito: a graça é poder pegá-los.
+ * Escala de brinquedo, distância de mesa — se estivessem em escala real seriam
+ * pontos no céu e não haveria nada para fazer.
+ */
+
+const PLANETS = 7;
+const _m = new Matrix4();
+const _p = new Vector3();
+const _q = new Quaternion();
+const _s = new Vector3();
+const _up = new Vector3(0, 1, 0);
+
+export class Space extends Group {
+  constructor() {
+    super();
+    this.name = 'espaco';
+    this.frustumCulled = false;
+    this.visible = false;
+    this.progress = 0;      // 0 floresta .. 1 espaço
+
+    const r = rng(90210);
+    this.planets = [];
+
+    // Um único InstancedMesh não serve aqui: cada planeta precisa de matriz
+    // própria mexida pela mão, e são só sete — sete draw calls é barato.
+    for (let i = 0; i < PLANETS; i++) {
+      const raio = 0.20 + r() * 0.40;   // tamanho de bola de praia: dá vontade de pegar
+      const corpo = new Mesh(new SphereGeometry(raio, 20, 14), planetMaterial);
+      corpo.frustumCulled = false;
+
+      const grupo = new Group();
+      grupo.add(corpo);
+
+      // Anéis em alguns, inclinados.
+      if (r() < 0.4) {
+        const anel = new Mesh(
+          new TorusGeometry(raio * 1.9, raio * 0.055, 3, 28), skyLifeMaterial);
+        anel.rotation.x = Math.PI / 2 + (r() - 0.5) * 0.7;
+        anel.rotation.z = (r() - 0.5) * 0.5;
+        anel.frustumCulled = false;
+        grupo.add(anel);
+      }
+
+      const orbita = {
+        raio: 1.1 + r() * 1.7,     // ao alcance do braço, não no horizonte
+        alt: 0.75 + r() * 1.35,
+        fase: r() * Math.PI * 2,
+        vel: 0.035 + r() * 0.085,
+        giro: 0.15 + r() * 0.4,
+        inclina: (r() - 0.5) * 0.6,
+      };
+      grupo.userData = { orbita, corpo, raio, preso: false };
+      this.planets.push(grupo);
+      this.add(grupo);
+    }
+
+    // Campo de estrelas: pontos numa casca distante.
+    this.stars = this.#buildStars(1400, 26);
+    this.add(this.stars);
+  }
+
+  #buildStars(n, dist) {
+    const pos = new Float32Array(n * 3);
+    const age = new Float32Array(n);
+    const r = rng(555);
+    for (let i = 0; i < n; i++) {
+      // Distribuição uniforme na esfera, sem acúmulo nos polos.
+      const u = r() * 2 - 1;
+      const a = r() * Math.PI * 2;
+      const k = Math.sqrt(1 - u * u);
+      const d = dist * (0.7 + r() * 0.5);
+      pos[i * 3 + 0] = k * Math.cos(a) * d;
+      pos[i * 3 + 1] = u * d;
+      pos[i * 3 + 2] = k * Math.sin(a) * d;
+      age[i] = r() * 0.55;      // varia o brilho pelo mesmo canal da idade
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(pos, 3));
+    g.setAttribute('aAge', new BufferAttribute(age, 1));
+    const p = new Points(g, trailMaterial);
+    p.frustumCulled = false;
+    p.renderOrder = -1997;
+    return p;
+  }
+
+  /** 0 esconde tudo, 1 mostra por inteiro. */
+  setProgress(v) {
+    this.progress = v;
+    this.visible = v > 0.01;
+    planetMaterial.uniforms.uWarp.value = v;
+    return v;
+  }
+
+  update(t, dt, head) {
+    if (!this.visible) return;
+    this.position.set(head.x, 0, head.z);
+
+    for (const g of this.planets) {
+      const o = g.userData.orbita;
+      if (!g.userData.preso) {
+        const a = o.fase + t * o.vel;
+        g.position.set(
+          Math.cos(a) * o.raio,
+          o.alt + Math.sin(a * 1.6 + o.fase) * 0.35,
+          Math.sin(a) * o.raio * (1 + o.inclina),
+        );
+      }
+      g.userData.corpo.rotation.y = t * o.giro;
+    }
+  }
+
+  /** Planeta ao alcance de `world`, ou null. */
+  pick(world) {
+    let melhor = null, dist = Infinity;
+    for (const g of this.planets) {
+      const d = g.getWorldPosition(_p).distanceTo(world);
+      const limite = g.userData.raio * 1.9 + 0.12;
+      if (d < limite && d < dist) { dist = d; melhor = g; }
+    }
+    return melhor;
+  }
+
+  lift(planeta) {
+    planeta.userData.preso = true;
+    return planeta;
+  }
+
+  carry(planeta, world) {
+    this.worldToLocal(_p.copy(world));
+    planeta.position.copy(_p);
+  }
+
+  /** Solta o planeta: ele volta à órbita a partir de onde foi deixado. */
+  drop(planeta) {
+    planeta.userData.preso = false;
+    const o = planeta.userData.orbita;
+    const p = planeta.position;
+    o.raio = Math.max(0.9, Math.hypot(p.x, p.z));
+    o.alt = Math.max(0.35, p.y);
+    o.fase = Math.atan2(p.z, p.x);
+  }
+
+  dispose() {
+    for (const g of this.planets) {
+      g.traverse((o) => o.isMesh && o.geometry.dispose());
+    }
+    this.stars.geometry.dispose();
+    this.clear();
+  }
+}
+
+/**
+ * A borboleta que sai do casulo e sobe, deixando rastro de luz.
+ *
+ * O rastro é um anel de posições reaproveitado: o índice mais velho é
+ * sobrescrito a cada emissão, então o buffer nunca cresce e não há alocação
+ * durante a animação.
+ */
+export class Emergence extends Group {
+  constructor(butterflyGeometry, butterflyMaterial, trailLength = 90) {
+    super();
+    this.name = 'eclosao';
+    this.frustumCulled = false;
+    this.visible = false;
+
+    this.mesh = new Mesh(butterflyGeometry, butterflyMaterial);
+    this.mesh.scale.setScalar(2.2);       // maior que as comuns: é a protagonista
+    this.mesh.frustumCulled = false;
+    this.add(this.mesh);
+
+    this.n = trailLength;
+    this.pos = new Float32Array(trailLength * 3);
+    this.age = new Float32Array(trailLength).fill(1);
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(this.pos, 3));
+    g.setAttribute('aAge', new BufferAttribute(this.age, 1));
+    this.trail = new Points(g, trailMaterial);
+    this.trail.frustumCulled = false;
+    this.trail.renderOrder = 12;
+    this.add(this.trail);
+
+    this.cursor = 0;
+    this.t = 0;
+    this.duration = 5.0;
+    this.from = new Vector3();
+    this.active = false;
+  }
+
+  /** Dispara a subida a partir de `origem` (mundo). */
+  launch(origem) {
+    this.from.copy(origem);
+    this.t = 0;
+    this.active = true;
+    this.visible = true;
+    this.age.fill(1);
+    for (let i = 0; i < this.n; i++) {
+      this.pos[i * 3] = origem.x; this.pos[i * 3 + 1] = origem.y; this.pos[i * 3 + 2] = origem.z;
+    }
+    this.trail.geometry.attributes.position.needsUpdate = true;
+    this.trail.geometry.attributes.aAge.needsUpdate = true;
+  }
+
+  /** @returns {number} 0..1 de quanto da subida já passou */
+  update(dt, t) {
+    if (!this.active) return 0;
+    this.t = Math.min(1, this.t + dt / this.duration);
+
+    // Sobe acelerando, em espiral que abre com a altura.
+    const k = this.t * this.t;
+    const altura = k * 16;
+    const giro = this.t * 9;
+    const abre = 0.18 + this.t * 0.9;
+    _p.set(
+      this.from.x + Math.cos(giro) * abre,
+      this.from.y + altura,
+      this.from.z + Math.sin(giro) * abre,
+    );
+    this.mesh.position.copy(_p);
+    this.mesh.rotation.y = giro + Math.PI / 2;
+    this.mesh.rotation.z = Math.sin(t * 8) * 0.25;
+
+    // Emite no anel, envelhecendo o resto.
+    const i = this.cursor;
+    this.pos[i * 3] = _p.x; this.pos[i * 3 + 1] = _p.y; this.pos[i * 3 + 2] = _p.z;
+    this.age[i] = 0;
+    this.cursor = (this.cursor + 1) % this.n;
+    for (let j = 0; j < this.n; j++) this.age[j] = Math.min(1, this.age[j] + dt * 0.55);
+
+    this.trail.geometry.attributes.position.needsUpdate = true;
+    this.trail.geometry.attributes.aAge.needsUpdate = true;
+
+    if (this.t >= 1) { this.active = false; this.visible = false; }
+    return this.t;
+  }
+
+  dispose() { this.trail.geometry.dispose(); this.clear(); }
+}
