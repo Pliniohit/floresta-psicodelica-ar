@@ -17,6 +17,102 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.18.0 — A jornada: sete cenários em cadeia
 
+Esta versão nasceu de uma leitura: os 5.773 quadros de *Odada*, analisados um
+por segundo. A conclusão que governou tudo o que veio depois é formal, não
+temática — **a animação não tem um único corte duro em 3min06**. Detecção de
+cena com limiar 0,30 não encontra nada. Tudo é metamorfose: cada coisa vira a
+próxima.
+
+A tradução disso para um lugar habitado é uma **cadeia**. Todo cenário tem um
+casulo; tocá-lo solta a borboleta; ela sobe levando o mundo embora; quando a
+luz baixa, você está no próximo. O sétimo devolve ao primeiro.
+
+### O teto que precisou cair primeiro
+
+As cores de superfície eram três conjuntos literais dentro do shader,
+misturados por um float de bioma. Isso travava a experiência em três mundos
+**para sempre** — um quarto cenário exigiria reescrever dez funções de cor.
+
+Agora elas viajam por uniform e são perseguidas pelo laço de animação.
+Acrescentar um cenário virou acrescentar dados em `cenas.js`, e a travessia
+virou interpolação em vez de recompilação.
+
+### Os sete
+
+| | Parede | Lâmina |
+| --- | --- | --- |
+| A Crisálida | registros ornamentais | poça, 1,5 cm |
+| A Gota | ondas atravessando a alvenaria | cintura, 95 cm |
+| A Montanha | a parede racha e o magma aparece | névoa rasa |
+| O Abismo | dendrito: coral, raiz e raio | submerso, 1,78 m |
+| A Dançarina | filigrana de volutas encadeadas | pétalas no chão |
+| O Olho | tinta sobre água | — |
+| O Palco | moldura de rocha pintada | nebulosa no assoalho |
+
+As cores não foram inventadas: saíram da própria animação, amostrando os
+quadros de cada ato e agrupando por matiz. Por isso os azuis são de tinta e
+não de céu, e os verdes quase não existem — o verde daquela paleta é teal.
+
+Durante a passagem, **dois padrões de parede vivem ao mesmo tempo** e o peso
+migra de um para o outro. Interpolar índice de padrão daria um desenho
+intermediário que não existe.
+
+### O céu virou noite
+
+As medusas saíram. No lugar entraram **quatro planetas gigantes** parados em
+direções fixas do firmamento — sem algo de tamanho reconhecível lá em cima, a
+cúpula é só um fundo —, e **estrelas cadentes** com relógio próprio dentro do
+shader, de períodos sem razão simples entre si, para que nunca caiam juntas.
+
+E três densidades de estrela em vez de uma. Uma só dá chuvisco uniforme; o
+que lê como céu é a mistura de poucas grandes com muitas pequenas e uma poeira
+quase invisível por baixo.
+
+### Os planetas ganharam física
+
+Deixaram de ter órbita escrita à mão. Agora são força: mola fraca para o
+centro (que é o que segura o enxame ao seu redor), gravidade entre eles, e
+**contato**, que é o que os impede de se tocar.
+
+O teste `test-planetas.mjs` mediu **33 cm de interpenetração** com a força
+sozinha — com passo grande, dois planetas já entraram um no outro antes de ela
+agir. Entrou separação posicional por cima, e a invariante virou exata: 11 mm
+de folga mínima em dois minutos, a 60 e a 30 quadros por segundo.
+
+Os buracos negros caíram de um por parede para **dois**, maiores — e viraram
+um par de **portais**: o planeta que entra num sai pelo outro, com a velocidade
+virada para vir da parede em vez de ir contra ela.
+
+### As mãos deixaram de ser bolinhas
+
+Ganharam **ossos** entre as juntas, o que fecha os vãos e funde as peças numa
+forma contínua. E o material virou vidro: fresnel no lugar do aditivo chapado,
+com veios de líquido ancorados em mundo — ancorados ali de propósito, para
+atravessarem a fronteira entre uma junta e o osso seguinte sem costura.
+
+### Tudo reage à presença
+
+As pisadas são memória: onde você esteve. Entrou o presente: onde o seu corpo
+está neste quadro. A vegetação cede antes de o pé chegar, e a bioluminescência
+acende no halo em volta de você. Memória não reage a você parar e se abaixar;
+presença sim.
+
+### E mais
+
+- **Menos** borboletas (12), menos árvores, menos buracos. Poucas e grandes
+  leem melhor que muitas e pequenas — com enxame a batida da asa, que custou a
+  acertar, virava ruído no canto do olho.
+- No mundo aquático não voa borboleta: **nada cardume**. O que separa um peixe
+  de uma folha que anda é a onda correndo da cabeça para a cauda.
+- `cloneMaterial` conserta um bug silencioso: clonar um material duplicava
+  também os uniforms globais, e o clone congelava no tempo. Os planetas do
+  espaço estavam parados desde a v0.14.1.
+- Dois testes novos, e os dois pegaram defeito real no mesmo dia em que
+  nasceram: o de planetas achou a interpenetração; o de uniforms achou quatro
+  materiais que não compilavam porque o uniform existia no JavaScript e não no
+  GLSL.
+
+
 ## v0.17.0 — Floresta bioluminescente
 
 ### A regra
