@@ -101,8 +101,9 @@ export class Shell extends Group {
       malha.position.set(meioX, w.y + altura * 0.5 - SOBRA * 0.5, meioZ);
       _q.setFromUnitVectors(FRENTE, _n);
       malha.quaternion.copy(_q);
-      // Um dedo para dentro: encostada na parede ela brigaria com o oclusor.
-      malha.position.addScaledVector(_n, 0.03);
+      // Seis centímetros para dentro: encostada na parede ela perderia o teste
+      // de profundidade contra o oclusor em cada irregularidade da alvenaria.
+      malha.position.addScaledVector(_n, 0.06);
       malha.frustumCulled = false;
       malha.renderOrder = 3;
 

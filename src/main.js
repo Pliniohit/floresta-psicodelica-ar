@@ -224,6 +224,8 @@ function commitRoom() {
 
   // A malha deixa de ser desenhada e passa a só escrever profundidade: daqui
   // em diante ela existe para esconder a floresta atrás dos móveis reais.
+  // Menos o teto: ele vira abertura, para a copa passar por ele.
+  roomMesh.setCeiling(room.ceilingY);
   roomMesh.setMode('occlude');
 
   sky.visible = state.skyOn;
@@ -1289,11 +1291,25 @@ function frame(time, xrFrame) {
     butterflies.visible = w < 0.6;
     bodyGrowth.visible = w < 0.8;
 
-    // O céu abre, mas NUNCA fecha em volta: abaixo da linha do horizonte
-    // continua sendo a sua sala. É deliberado — isto é realidade mista, e o
-    // preço de virar realidade virtual seria perder as paredes de vista.
-    skyMaterial.uniforms.uHorizon.value = 0.10 - w * 0.30;
-    skyMaterial.uniforms.uFull.value = 0.62 - w * 0.34;
+    // QUEM RECORTA O CÉU.
+    //
+    // Com o oclusor ativo, quem recorta é a própria sala: parede e chão
+    // escondem o céu, e o buraco do teto o mostra. Aí ele pode ser opaco de
+    // verdade — todo o teto vira virtual, e a copa da árvore aparece contra
+    // ele em vez de contra o gesso.
+    //
+    // Sem oclusor não há o que recorte, e um céu opaco cobriria a sala
+    // inteira. Nesse caso ele volta a abrir por ÂNGULO, como sempre abriu:
+    // à frente você vê o cômodo, e o céu só toma conta quando você levanta
+    // a cabeça. Pior, mas é o que dá para fazer sem saber onde estão as
+    // paredes.
+    const recortado = roomMesh.entries.length > 0
+      && roomMesh.occlusionEnabled && state.occlusionOn;
+    const h0 = recortado ? -0.15 : 0.10;
+    const f0 = recortado ? 0.12 : 0.62;
+    skyMaterial.uniforms.uHorizon.value = h0 - w * 0.30;
+    skyMaterial.uniforms.uFull.value = f0 - w * 0.34;
+    skyMaterial.uniforms.uMaxVeil.value = recortado ? 1.0 : 0.72;
     skyMaterial.uniforms.uSpace.value = w;
     // E o oclusor sai de cena: paredes não fazem sentido no espaço.
     if (roomMesh.entries.length) {

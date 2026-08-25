@@ -1,5 +1,5 @@
 import {
-  Group, Mesh, BufferGeometry, BufferAttribute, MeshBasicMaterial, Matrix4,
+  Group, Mesh, BufferGeometry, BufferAttribute, ShaderMaterial, Box3, Matrix4,
 } from '../vendor/three/three.module.min.js';
 import { scanMaterial } from './shaders/materials.js';
 
@@ -22,22 +22,63 @@ const FURNITURE = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'cabinet', 
 const STRUCTURE = new Set(['floor', 'ceiling', 'wall', 'wall_face', 'door', 'window', 'screen']);
 
 /**
- * O TETO NÃO OCLUI.
+ * O TETO NÃO OCLUI — e o corte é por ALTURA, não por rótulo.
  *
- * Ele é a única superfície do cômodo que precisa virar abertura: se o teto
- * escreve profundidade, a copa da árvore que passa dos 2,6 m fica escondida
- * atrás dele, e olhar para cima não mostra nem céu nem árvore — mostra o
- * gesso. Parede e chão continuam ocluindo, porque ali a sala é sala.
+ * Se o teto escreve profundidade, a copa que passa dele fica escondida atrás
+ * do gesso, e olhar para cima não mostra nem céu nem árvore. Ele precisa virar
+ * abertura. Parede e chão continuam ocluindo, porque ali a sala é sala.
+ *
+ * A tentativa anterior filtrava pelo rótulo `ceiling`, e não funcionou: o
+ * Quest costuma entregar o cômodo inteiro como UMA malha, rotulada
+ * `global mesh` — teto, parede, chão e móveis no mesmo objeto. Não há o que
+ * excluir da lista. Por altura funciona nos dois casos, porque a decisão passa
+ * a ser por fragmento: acima da linha, descarta.
+ *
+ * Margem abaixo do teto. Sem ela, o corte exato na altura do teto deixaria
+ * escapar a irregularidade da malha, que raramente é um plano.
+ *
+ * Duas margens porque as duas fontes têm confiabilidade diferente. A detecção
+ * de PLANOS entrega um plano de verdade, e ali dá para cortar rente — cada
+ * centímetro a mais é parede real que some e vira céu. O topo da MALHA é
+ * estimativa: um lustre, uma viga ou um pedaço de leitura ruim empurram o
+ * máximo para cima, e a margem larga absorve isso.
  */
-const NAO_OCLUI = new Set(['ceiling']);
+const MARGEM_PLANO = 0.10;
+const MARGEM_MALHA = 0.32;
 
-/** Só o oclusor precisa deste material — ele escreve profundidade e mais nada. */
+/**
+ * Só o oclusor precisa deste material — ele escreve profundidade e mais nada.
+ *
+ * É shader cru em vez de MeshBasicMaterial por causa do `uCorte`: acima
+ * daquela altura de mundo o fragmento é descartado e deixa de ocupar o
+ * Z-buffer. É assim que o teto vira abertura sem depender de rótulo.
+ */
 function makeOccluderMaterial() {
-  const m = new MeshBasicMaterial();
+  const m = new ShaderMaterial({
+    uniforms: { uCorte: { value: Infinity } },
+    vertexShader: /* glsl */ `
+      varying float vAltura;
+      void main(){
+        vec4 mundo = modelMatrix * vec4(position, 1.0);
+        vAltura = mundo.y;
+        gl_Position = projectionMatrix * viewMatrix * mundo;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uCorte;
+      varying float vAltura;
+      void main(){
+        if (vAltura > uCorte) discard;
+        gl_FragColor = vec4(0.0);
+      }
+    `,
+  });
   m.colorWrite = false;   // invisível, mas ocupa o Z-buffer
   m.name = 'oclusor';
   return m;
 }
+
+const _caixa = new Box3();
 
 export class RoomMesh extends Group {
   constructor() {
@@ -46,6 +87,7 @@ export class RoomMesh extends Group {
     this.matrixAutoUpdate = false;
 
     this.occluderMaterial = makeOccluderMaterial();
+    this.ceilingY = null;      // altura do teto informada de fora, se houver
     this.mode = 'scan';        // scan | occlude | off
     this.occlusionEnabled = true;
 
@@ -125,15 +167,45 @@ export class RoomMesh extends Group {
     this.visible = mode !== 'off' && (mode === 'scan' || occluding);
 
     for (const e of this.entries) {
-      const ocultaEsta = occluding && !NAO_OCLUI.has(e.label);
-      e.mesh.material = ocultaEsta ? this.occluderMaterial : scanMaterial;
+      e.mesh.material = occluding ? this.occluderMaterial : scanMaterial;
       // Profundidade primeiro: o oclusor tem de estar no Z-buffer antes de
       // qualquer parte da floresta ser testada contra ele.
-      e.mesh.renderOrder = ocultaEsta ? -1000 : 6;
-      // Fora do escaneamento, o teto simplesmente não é desenhado: nem
-      // oclusor nem malha de varredura.
-      e.mesh.visible = mode === 'scan' || ocultaEsta;
+      e.mesh.renderOrder = occluding ? -1000 : 6;
     }
+    this.#applyCut();
+  }
+
+  /**
+   * Altura do teto, quando a detecção de planos souber dizer. Sem ela, o topo
+   * da própria malha serve: o ponto mais alto de um cômodo é o teto.
+   */
+  setCeiling(y) {
+    this.ceilingY = Number.isFinite(y) ? y : null;
+    this.#applyCut();
+    return this.cutY;
+  }
+
+  /** Altura acima da qual nada oclui. Infinity = oclusão inteira. */
+  get cutY() { return this.occluderMaterial.uniforms.uCorte.value; }
+
+  /** Ponto mais alto da malha lida, em coordenadas de mundo. */
+  get topY() {
+    let topo = -Infinity;
+    for (const e of this.entries) {
+      const g = e.mesh.geometry;
+      if (!g.boundingBox) g.computeBoundingBox();
+      _caixa.copy(g.boundingBox).applyMatrix4(e.mesh.matrix);
+      topo = Math.max(topo, _caixa.max.y);
+    }
+    return topo;
+  }
+
+  #applyCut() {
+    const doPlano = this.ceilingY != null;
+    const teto = doPlano ? this.ceilingY : this.topY;
+    const margem = doPlano ? MARGEM_PLANO : MARGEM_MALHA;
+    this.occluderMaterial.uniforms.uCorte.value =
+      Number.isFinite(teto) ? teto - margem : Infinity;
   }
 
   setOcclusion(on) {

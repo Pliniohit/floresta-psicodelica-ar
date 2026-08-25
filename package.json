@@ -8,7 +8,7 @@
     "start": "node serve.mjs",
     "dev": "node serve.mjs",
     "dev:http": "node serve.mjs --http",
-    "test": "node test-shaders.mjs && node test-geometry.mjs && node test-layout.mjs && node test-grab.mjs",
+    "test": "node test-shaders.mjs && node test-geometry.mjs && node test-layout.mjs && node test-grab.mjs && node test-occlusion.mjs",
     "release": "node scripts/release.mjs"
   }
 }
