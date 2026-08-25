@@ -35,6 +35,7 @@ export class Interaction {
       c.add(beam);
       c.userData.beam = beam;
       c.addEventListener('selectstart', () => this.#select(c));
+      c.addEventListener('selectend', () => this.on.onSelectEnd?.(c));
       c.addEventListener('squeezestart', () => this.enabled && this.on.onPalette?.());
       c.addEventListener('connected', (e) => {
         c.userData.source = e.data;
@@ -86,6 +87,26 @@ export class Interaction {
     controller.getWorldQuaternion(_quat);
     _dir.copy(FORWARD).applyQuaternion(_quat);
     return this.#castToGround(_origin, _dir);
+  }
+
+  /**
+   * Ponto ao longo do raio do controle, a uma distância dada. É por aqui que
+   * um objeto agarrado de longe é carregado: ele fica preso ao raio, e mexer
+   * o pulso o move.
+   */
+  rayPoint(controller, distancia, out) {
+    controller.getWorldPosition(_origin);
+    controller.getWorldQuaternion(_quat);
+    _dir.copy(FORWARD).applyQuaternion(_quat);
+    return out.copy(_origin).addScaledVector(_dir, distancia);
+  }
+
+  /** Origem e direção do raio, para buscar o que está sob a mira. */
+  ray(controller, origem, direcao) {
+    controller.getWorldPosition(origem);
+    controller.getWorldQuaternion(_quat);
+    direcao.copy(FORWARD).applyQuaternion(_quat);
+    return direcao;
   }
 
   /**

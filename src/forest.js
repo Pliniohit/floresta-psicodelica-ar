@@ -25,6 +25,7 @@ const _p = new Vector3();
 const _q = new Quaternion();
 const _s = new Vector3();
 const _up = new Vector3(0, 1, 0);
+const _p2 = new Vector3();
 
 // ---------------------------------------------------------------------------
 // Regras de caminhabilidade. São o coração do ajuste: o tronco é o que bloqueia
@@ -774,6 +775,46 @@ export class Forest extends Group {
       }
     }
     return best;
+  }
+
+  /**
+   * O que o raio atravessa, em coordenadas LOCAIS. Procura o objeto cuja
+   * distância perpendicular ao raio é menor — pegar de longe precisa perdoar
+   * mira imprecisa, então o corredor é generoso.
+   */
+  pickAlongRay(origem, direcao, alcance = 8, corredor = 0.35) {
+    const inv = 1 / (this.scale.x || 1);
+    const raio = corredor * inv;
+    let melhor = null, melhorT = Infinity;
+
+    const testar = (kind, set, i, centro) => {
+      if (this.#isHeld(set, i)) return;
+      _p2.copy(centro).sub(origem);
+      const t = _p2.dot(direcao);
+      if (t < 0.25 || t > alcance * inv) return;      // atrás, ou longe demais
+      _p2.copy(origem).addScaledVector(direcao, t);   // ponto mais próximo no raio
+      if (_p2.distanceTo(centro) > raio) return;
+      if (t < melhorT) { melhorT = t; melhor = { kind, set, idx: i, dist: t }; }
+    };
+
+    for (const [kind, set, hFrac] of [
+      ['mushroom', this.mushrooms, 0.60],
+      ['crystal', this.crystals, 0.66],
+    ]) {
+      for (let i = 0; i < set.count; i++) {
+        set.read(i, _p, _q, _s);
+        _p.y += hFrac * _s.y;
+        testar(kind, set, i, _p);
+      }
+    }
+    for (const sp of this.species) {
+      for (let i = 0; i < sp.set.count; i++) {
+        sp.set.read(i, _p, _q, _s);
+        _p.y += 1.2 * _s.y;                            // mira na altura do tronco
+        testar('tree', sp.set, i, _p);
+      }
+    }
+    return melhor;
   }
 
   #isHeld(set, idx) {

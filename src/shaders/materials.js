@@ -2,7 +2,9 @@ import {
   ShaderMaterial, Vector3, DoubleSide, FrontSide, BackSide,
   AdditiveBlending, NormalBlending,
 } from '../../vendor/three/three.module.min.js';
-import { NOISE, PALETTE, SWAY, VERT_HEAD, VERT_EMIT, FRAG_HEAD, FRAG_FADE } from './lib.js';
+import {
+  NOISE, PALETTE, SWAY, TRAMPLE, VERT_HEAD, VERT_EMIT, FRAG_HEAD, FRAG_FADE,
+} from './lib.js';
 
 /**
  * Um único conjunto de uniforms compartilhado por todos os materiais.
@@ -15,6 +17,8 @@ export const shared = {
   uMagic:  { value: 0.35 },   // 0 = mata realista, 1 = encantada
   uBiome:  { value: 0 },      // 0 clareira, 1 fogo, 2 água
   uCalm:   { value: 0.45 },   // amortecedor de cintilação; 0 = sem oscilação
+  uTrample: { value: 1.0 },   // vegetação cede à passagem do usuário
+  uSteps:  { value: Array.from({ length: 12 }, () => new Vector3(0, 0, 0)) },
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
   uOrigin: { value: new Vector3() },
@@ -24,7 +28,7 @@ export const shared = {
   uPalD:   { value: new Vector3(0.0, 0.33, 0.67) },
 };
 
-const VS_PRELUDE = NOISE + PALETTE + SWAY + VERT_HEAD + VERT_EMIT;
+const VS_PRELUDE = NOISE + PALETTE + SWAY + TRAMPLE + VERT_HEAD + VERT_EMIT;
 const FS_PRELUDE = NOISE + PALETTE + FRAG_HEAD;
 
 const registry = [];
@@ -131,7 +135,7 @@ export const stemMaterial = make('caule', {
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
-      emit(sway(position, root, 1.6), normal);
+      emit(sway(mix(position, trample(position, root), 0.45), root, 1.6), normal);
     }
   `,
   frag: /* glsl */ `
@@ -193,7 +197,7 @@ export const flowerMaterial = make('flores', {
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
-      emit(sway(position, root, 3.0), normal);
+      emit(sway(trample(position, root), root, 3.0), normal);
     }
   `,
   frag: /* glsl */ `
@@ -370,7 +374,7 @@ export const grassMaterial = make('capim', {
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
-      emit(sway(position, root, 5.0), normal);
+      emit(sway(trample(position, root), root, 5.0), normal);
     }
   `,
   frag: /* glsl */ `
@@ -673,6 +677,56 @@ export const trailMaterial = make('rastro', {
       float suave = pow(1.0 - d * 4.0, 2.0);
       vec3 col = palette(0.15 + vSeed * 0.4 + uTime * 0.05);
       gl_FragColor = vec4(col * suave * vFade * vFade * 2.4, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// BURACO NEGRO — disco na parede. O centro é preto absoluto, em volta gira o
+// disco de acreção, e o anel de luz na borda sugere a luz sendo curvada.
+// Fica na parede porque é lá que o cômodo real termina: é o buraco no mundo.
+// ---------------------------------------------------------------------------
+export const blackHoleMaterial = make('buraco-negro', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  uniforms: { uOpen: { value: 0 } },   // 0 parede intacta, 1 rompida
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uOpen;
+    void main(){
+      if (uOpen < 0.02) discard;
+      // Abre de dentro para fora: no começo só o miolo, e o disco cresce.
+      float r = length(vLocal.xy) / max(uOpen, 0.05);
+      if (r > 1.0) discard;
+
+      float a = atan(vLocal.y, vLocal.x);
+
+      // Rotação diferencial: perto do centro gira mais rápido, como um disco
+      // de verdade. É o que faz a espiral se enrolar sozinha com o tempo.
+      float giro = uTime * 0.16 / max(r, 0.18);
+      float faixas = fbm2(vec3(cos(a + giro) * r * 2.4, sin(a + giro) * r * 2.4, uTime * 0.02));
+
+      float horizonte = smoothstep(0.34, 0.30, r);         // preto absoluto
+      float disco = smoothstep(0.30, 0.40, r) * smoothstep(1.0, 0.55, r);
+      float anel = exp(-abs(r - 0.345) * 42.0);            // luz curvada na borda
+
+      vec3 quente = mix(vec3(0.85, 0.35, 0.06), vec3(1.0, 0.86, 0.62), faixas);
+      vec3 col = quente * disco * (0.45 + faixas * 0.9);
+      col += vec3(1.0, 0.88, 0.70) * anel * 1.5;
+      col = mix(col, vec3(0.0), horizonte);
+
+      // Some suave na borda externa, sem recorte duro.
+      float alpha = max(max(disco * 0.85, anel), horizonte);
+      alpha *= smoothstep(1.0, 0.86, r) * min(1.0, uOpen * 1.6);
+      if (alpha <= 0.004) discard;
+
+      gl_FragColor = vec4(filmic(col), alpha);
     }
   `,
 });

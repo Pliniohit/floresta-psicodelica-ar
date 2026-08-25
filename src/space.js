@@ -2,7 +2,7 @@ import {
   Group, Mesh, InstancedMesh, Points, BufferGeometry, BufferAttribute,
   SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
-import { planetMaterial, trailMaterial, skyLifeMaterial } from './shaders/materials.js';
+import { planetMaterial, trailMaterial } from './shaders/materials.js';
 import { rng } from './forest.js';
 import { biomes } from './biomes.js';
 
@@ -12,6 +12,11 @@ import { biomes } from './biomes.js';
  * Planetas ficam ao alcance do braço de propósito: a graça é poder pegá-los.
  * Escala de brinquedo, distância de mesa — se estivessem em escala real seriam
  * pontos no céu e não haveria nada para fazer.
+ *
+ * E ficam PARADOS no mundo. A cúpula do céu acompanha a cabeça, porque céu não
+ * se aproxima; planeta ao alcance da mão é o oposto — se ele te seguisse, você
+ * nunca conseguiria dar a volta nele, e a cena inteira pareceria colada ao
+ * rosto. Andar tem que aproximar.
  */
 
 const PLANETS = 7;
@@ -53,8 +58,10 @@ export class Space extends Group {
 
       // Anéis em alguns, inclinados.
       if (r() < 0.4) {
+        // Anel com o mesmo material do corpo: aditivo fazia o anel brilhar
+        // e sumir conforme o ângulo, que lia como piscada.
         const anel = new Mesh(
-          new TorusGeometry(raio * 1.9, raio * 0.055, 3, 28), skyLifeMaterial);
+          new TorusGeometry(raio * 1.9, raio * 0.045, 5, 36), mat);
         anel.rotation.x = Math.PI / 2 + (r() - 0.5) * 0.7;
         anel.rotation.z = (r() - 0.5) * 0.5;
         anel.frustumCulled = false;
@@ -74,33 +81,10 @@ export class Space extends Group {
       this.add(grupo);
     }
 
-    // Campo de estrelas: pontos numa casca distante.
-    this.stars = this.#buildStars(1400, 26);
-    this.add(this.stars);
-  }
-
-  #buildStars(n, dist) {
-    const pos = new Float32Array(n * 3);
-    const age = new Float32Array(n);
-    const r = rng(555);
-    for (let i = 0; i < n; i++) {
-      // Distribuição uniforme na esfera, sem acúmulo nos polos.
-      const u = r() * 2 - 1;
-      const a = r() * Math.PI * 2;
-      const k = Math.sqrt(1 - u * u);
-      const d = dist * (0.7 + r() * 0.5);
-      pos[i * 3 + 0] = k * Math.cos(a) * d;
-      pos[i * 3 + 1] = u * d;
-      pos[i * 3 + 2] = k * Math.sin(a) * d;
-      age[i] = r() * 0.55;      // varia o brilho pelo mesmo canal da idade
-    }
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(pos, 3));
-    g.setAttribute('aAge', new BufferAttribute(age, 1));
-    const p = new Points(g, trailMaterial);
-    p.frustumCulled = false;
-    p.renderOrder = -1997;
-    return p;
+    // Sem campo de estrelas em Points aqui: pontos de um pixel numa casca
+    // distante serrilham a cada movimento de cabeça, e era isso que fazia o
+    // espaço piscar. As estrelas do espaço vêm do shader do céu, onde nascem
+    // no centro de uma célula e somem suavemente na borda.
   }
 
   /** 0 esconde tudo, 1 mostra por inteiro. */
@@ -132,9 +116,8 @@ export class Space extends Group {
     }
   }
 
-  update(t, dt, head) {
+  update(t, dt) {
     if (!this.visible) return;
-    this.position.set(head.x, 0, head.z);
 
     for (const g of this.planets) {
       const o = g.userData.orbita;
@@ -186,7 +169,6 @@ export class Space extends Group {
       g.traverse((o) => o.isMesh && o.geometry.dispose());
       g.userData.mat.dispose();
     }
-    this.stars.geometry.dispose();
     this.clear();
   }
 }

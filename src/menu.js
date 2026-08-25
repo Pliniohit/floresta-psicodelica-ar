@@ -19,8 +19,8 @@ const POKE_RADIUS = 0.042;   // ponta do dedo até o centro do orbe
 const COOLDOWN = 0.7;        // segundos, evita disparo repetido no mesmo toque
 const ORB_SIZE = 0.032;
 
-/** Acima deste valor a palma é considerada virada para cima. */
-const PALM_UP_THRESHOLD = 0.12;
+/** Acima desta abertura de mão o menu fica acionável. */
+const OPEN_THRESHOLD = 0.5;
 
 const _v = new Vector3();
 const _side = new Vector3();
@@ -64,7 +64,10 @@ export class WristMenu extends Group {
     // as convenções de eixo variam entre runtimes, as posições não.
     _side.crossVectors(left.handForward, left.palmNormal).normalize();
 
-    const facing = left.palmUp > PALM_UP_THRESHOLD;
+    // Mão aberta, não palma virada: o sinal da normal da palma depende da
+    // lateralidade e não foi confirmado em hardware. Gesto essencial não pode
+    // depender de um palpite.
+    const facing = left.openness > OPEN_THRESHOLD;
     this.visible = true;
 
     for (const orb of this.orbs) {

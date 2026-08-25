@@ -6,27 +6,34 @@ import { crystalMaterial } from './shaders/materials.js';
 /**
  * Sementes plantáveis.
  *
- * Vira a palma para cima e uma semente brota nela; pince para pegá-la e solte
- * perto do chão para plantar. A palma aberta é o gesto certo aqui porque é o
- * mesmo que se faz para receber algo — e porque já temos a normal da palma
- * calculada para o menu de pulso.
+ * Abra a mão e uma semente brota nela; pince para pegá-la e solte perto do
+ * chão para plantar. Mão aberta é o gesto de quem recebe algo, e é medido por
+ * quanto os dedos estão estendidos — sem depender de para onde a palma aponta.
  *
- * A palma ESQUERDA é do menu; a semente nasce na DIREITA, para os dois gestos
- * não disputarem a mesma mão.
+ * Vale para as DUAS mãos: obrigar uma mão específica é mais uma chance de o
+ * usuário não achar o gesto.
  */
 
-const PALM_UP = 0.25;      // limiar mais exigente que o do menu: evita brotar sem querer
+/**
+ * Limiar de mão aberta para a semente brotar.
+ *
+ * Antes isto era "palma virada para cima", medida por um produto vetorial cujo
+ * sinal depende da lateralidade — e que eu não tinha como conferir sem headset.
+ * Se o sinal estivesse invertido, a semente NUNCA nascia, e o ciclo inteiro do
+ * jogo travava aí. Abertura de mão não tem esse risco.
+ */
+const OPEN = 0.55;
 const GROW = 1.1;          // velocidade de crescimento e murcha
 const SIZE = 0.032;
 
 const _v = new Vector3();
 
 export class Seeds extends Group {
-  constructor(hand = 'right') {
+  constructor() {
     super();
     this.name = 'sementes';
     this.frustumCulled = false;
-    this.hand = hand;
+    this.hand = null;      // qual mão está oferecendo agora
 
     this.mesh = new Mesh(new IcosahedronGeometry(SIZE, 0), crystalMaterial);
     this.mesh.frustumCulled = false;
@@ -51,7 +58,17 @@ export class Seeds extends Group {
   get ready() { return this.offered && this.growth > 0.55; }
 
   update(dt, t, hands) {
-    const h = hands?.byHandedness(this.hand);
+    // A mão que estiver mais aberta oferece a semente.
+    let h = null;
+    if (this.held) {
+      h = hands?.byHandedness(this.hand);
+    } else {
+      for (const st of hands?.states ?? []) {
+        if (!st.tracked) continue;
+        if (!h || st.openness > h.openness) h = st;
+      }
+      if (h) this.hand = h.handedness;
+    }
 
     if (this.held) {
       // Na pinça: segue a mão e gira.
@@ -68,7 +85,7 @@ export class Seeds extends Group {
 
     // Brota com a palma virada para cima, murcha quando ela vira.
     const antes = this.offered;
-    this.offered = !!h && h.palmUp > PALM_UP;
+    this.offered = !!h && h.openness > OPEN;
     if (this.offered && !antes) {
       this.kind = this.plantadas % this.cadaCasulo === this.cadaCasulo - 1 ? 'cocoon' : 'normal';
     }
@@ -78,10 +95,12 @@ export class Seeds extends Group {
     if (this.growth < 0.02) { this.mesh.visible = false; return; }
 
     if (h) {
-      // Pairando um palmo acima da palma.
+      // Pairando sobre a mão. Usa a normal da palma só para AFASTAR do dorso;
+      // se o sinal estiver invertido a semente aparece do outro lado da mão,
+      // o que é feio mas não impede nada.
       _v.copy(h.wrist)
-        .addScaledVector(h.handForward, 0.075)
-        .addScaledVector(h.palmNormal, 0.055 + Math.sin(t * 0.8) * 0.010);
+        .addScaledVector(h.handForward, 0.085)
+        .addScaledVector(h.palmNormal, 0.050 + Math.sin(t * 0.8) * 0.010);
       this.position0.copy(_v);
     }
     this.mesh.position.copy(this.position0);

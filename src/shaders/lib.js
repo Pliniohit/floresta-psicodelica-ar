@@ -206,6 +206,53 @@ vec3 sway(vec3 pos, vec3 root, float rigidity){
 `;
 
 /**
+ * PISADAS.
+ *
+ * Guarda os últimos passos do usuário em coordenadas de mundo. `xy` é a
+ * posição no chão e `z` é a força, que decai com o tempo — pisada velha some
+ * e a vegetação levanta de novo.
+ *
+ * Um buffer curto de posições, e não uma textura de trilha, porque assim não
+ * há alocação nem escrita de GPU: são doze vec3 num uniform, lidos por vértice.
+ */
+export const TRAMPLE = /* glsl */ `
+#define PASSOS 12
+uniform vec3 uSteps[PASSOS];
+uniform float uTrample;   // 0 desliga o efeito inteiro
+
+/**
+ * Amassa e afasta a planta perto de onde o usuário pisou. Recebe a raiz da
+ * instância em mundo, e devolve a posição local deslocada.
+ */
+vec3 trample(vec3 pos, vec3 root){
+  if (uTrample < 0.01) return pos;
+
+  float forca = 0.0;
+  vec2 fuga = vec2(0.0);
+
+  for (int i = 0; i < PASSOS; i++){
+    vec2 d = root.xz - uSteps[i].xy;
+    float dist = length(d);
+    // Raio de meio metro: largura de quem passa, não de quem pisa num ponto.
+    float f = uSteps[i].z * smoothstep(0.52, 0.05, dist);
+    if (f > forca){
+      forca = f;
+      fuga = dist > 1e-4 ? d / dist : vec2(1.0, 0.0);
+    }
+  }
+
+  forca *= uTrample;
+  if (forca < 0.01) return pos;
+
+  // Abaixa e inclina para fora: a planta deita no sentido oposto ao passo.
+  float altura = max(pos.y, 0.0);
+  pos.y *= 1.0 - forca * 0.72;
+  pos.xz += fuga * forca * altura * 0.85;
+  return pos;
+}
+`;
+
+/**
  * Cabeçalho comum do vertex shader. Resolve instancing na mão porque
  * usamos ShaderMaterial cru — o three.js declara `instanceMatrix` e o
  * define USE_INSTANCING sozinho quando o objeto é um InstancedMesh.

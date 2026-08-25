@@ -30,10 +30,18 @@ const UP = new Vector3(0, 1, 0);
 
 /**
  * Sinal do produto vetorial que faz a normal apontar para FORA da palma.
- * Depende da lateralidade. Se em teste a palma parecer invertida, é este
- * número que se troca — e só ele.
+ * Depende da lateralidade.
+ *
+ * ATENÇÃO: nada de essencial pode depender disto. O sinal certo só se
+ * confirma com um headset na mão, e enquanto não se confirma, qualquer gesto
+ * amarrado a ele pode simplesmente nunca disparar. `palmUp` serve para
+ * ORIENTAR coisas, nunca para liberá-las — para isso existe `openness`, que
+ * não tem como estar invertido.
  */
 const PALM_SIGN = { left: 1, right: -1 };
+
+/** Dedos usados para medir se a mão está aberta. */
+const FINGERS = ['index-finger-tip', 'middle-finger-tip', 'ring-finger-tip', 'pinky-finger-tip'];
 
 class HandState {
   constructor(index) {
@@ -47,6 +55,7 @@ class HandState {
     this.palmUp = 0;                 // -1 (para baixo) .. 1 (para cima)
     this.palmNormal = new Vector3(0, 1, 0);   // aponta para fora da palma
     this.handForward = new Vector3(0, 0, -1); // do punho em direção aos dedos
+    this.openness = 0;               // 0 punho fechado .. 1 mão aberta
   }
 }
 
@@ -136,6 +145,26 @@ export class Hands extends Group {
       }
       if (mm?.visible) {
         st.handForward.copy(mm.position).sub(wrist.position).normalize();
+      }
+
+      // Abertura da mão: média da distância punho->ponta dividida pelo
+      // tamanho da própria palma. Sai adimensional, então serve para
+      // qualquer mão, e não depende de orientação nenhuma — é por isso que
+      // os gestos que PRECISAM funcionar se penduram aqui.
+      const palma = mm?.visible ? mm.position.distanceTo(wrist.position) : 0;
+      if (palma > 1e-4) {
+        let soma = 0, n = 0;
+        for (const nome of FINGERS) {
+          const tip = j[nome];
+          if (!tip?.visible) continue;
+          soma += tip.position.distanceTo(wrist.position) / palma;
+          n++;
+        }
+        if (n) {
+          const razao = soma / n;
+          // punho fechado fica perto de 1,35x a palma; mão aberta, de 2,05x
+          st.openness = Math.min(1, Math.max(0, (razao - 1.45) / 0.55));
+        }
       }
 
       // Escreve as juntas nas malhas instanciadas.

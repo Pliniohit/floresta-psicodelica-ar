@@ -17,6 +17,7 @@ import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
 import { Space, Emergence, ENTER_SCALE } from './space.js';
+import { BlackHoles } from './blackholes.js';
 import { biomes, byId } from './biomes.js';
 import { butterflyMaterial, cocoonMaterial, skyMaterial as _sky } from './shaders/materials.js';
 import { Ambience } from './audio.js';
@@ -82,11 +83,14 @@ const bodyGrowth = new BodyGrowth(forest.geo.cap, capMaterial, 27);
 bodyGrowth.visible = false;
 scene.add(bodyGrowth);
 
-const seeds = new Seeds('right');
+const seeds = new Seeds();
 scene.add(seeds);
 
 const space = new Space();
 scene.add(space);
+
+const buracos = new BlackHoles();
+scene.add(buracos);
 
 const emergence = new Emergence(butterflies.mesh.geometry, butterflyMaterial);
 scene.add(emergence);
@@ -217,6 +221,12 @@ function commitRoom() {
   constelacao.visible = state.skyOn;
   skyMaterial.uniforms.uSky.value = state.skyOn ? 1 : 0;
 
+  // Buracos ancorados nas paredes lidas. Ficam preparados aqui, mas só
+  // aparecem quando você atravessa para o espaço.
+  buracos.applyWalls(forest.wallBases, state.seed);
+  buracos.position.copy(forest.position);
+  buracos.setProgress(0);
+
   butterflies.fitTo(Math.sqrt(room.area / Math.PI));
   butterflies.visible = true;
   auraFireflies.visible = true;
@@ -300,6 +310,9 @@ function hatch(indice) {
   const mundo = forest.localToWorld(saidaLocal.clone());
 
   emergence.launch(mundo);
+  // Planetas nascem em volta de onde você está AGORA e ficam parados ali:
+  // é o que permite dar a volta neles caminhando.
+  space.position.set(_head.x, forest.position.y, _head.z);
   state.world = 'espaco';
   ping(1);
   audio.chime(24, 0.3);
@@ -327,6 +340,8 @@ function enterWorld(biomeId) {
   state.intro = 0;
 
   space.resetScales();
+  for (const p of passos) p.z = 0;   // mundo novo, chão intacto
+  _ultimoPasso.set(1e9, 0, 1e9);
   ping(1);
   audio.chime(12, 0.3);
   toast(`${b.name} — ${b.saudacao}`, b.swatch);
@@ -351,6 +366,7 @@ function backToForest() {
 function toggleCalm() {
   state.calm = state.calm > 0.05 ? 0 : 0.45;
   shared.uCalm.value = state.calm;
+  shared.uTrample.value = state.calm === 0 ? 0.45 : 1.0;
   toast(state.calm === 0
     ? 'Sem cintilação — brilho constante'
     : 'Cintilação suave restaurada', palettes[state.paletteIndex].swatch);
@@ -436,7 +452,22 @@ function aheadOfCamera(distance = 2.0) {
 // ---------------------------------------------------------------------------
 // Controles XR
 // ---------------------------------------------------------------------------
+/** O que cada controle está puxando de longe. */
+const puxando = new Map();
+const _origem = new Vector3();
+const _direcao = new Vector3();
+
 const interaction = new Interaction(renderer, scene, camera, {
+  onSelectEnd: (controller) => {
+    const alca = puxando.get(controller);
+    if (!alca) return;
+    puxando.delete(controller);
+    if (alca.espaco) { space.drop(alca.planeta); audio.chime(9, 0.12); return; }
+    const r = forest.drop(alca, forest.worldToLocal(alca.ponto.clone()));
+    if (r === 'devolvido') toast('Não coube ali — voltou para o lugar');
+    audio.chime(r === 'plantado' ? 7 : -7, 0.14);
+  },
+
   onSelect: (aimPoint, controller) => {
     // Com mão rastreada o three.js dispara select na pinça também. Quem manda
     // nesse caso é a lógica de mãos, senão a pinça planta e pega ao mesmo tempo.
@@ -462,7 +493,23 @@ const interaction = new Interaction(renderer, scene, camera, {
       const planeta = space.pick(aimPoint ?? camera.position);
       if (planeta) { space.lift(planeta); space.drop(planeta); }
       else backToForest();
-    } else if (state.phase === 'growing' && aimPoint) {
+    } else if (state.phase === 'growing' && state.world === 'floresta' && controller) {
+      // Primeiro tenta agarrar de longe pelo raio. Só se não houver nada sob
+      // a mira é que o gesto vira plantar ou abençoar.
+      interaction.ray(controller, _origem, _direcao);
+      const distante = forest.pickAlongRay(
+        forest.worldToLocal(_origem.clone()),
+        _direcao.clone().transformDirection(forest.matrixWorld.clone().invert()).normalize());
+      if (distante) {
+        const alca = forest.lift(distante);
+        alca.distancia = distante.dist * forest.scale.x;
+        alca.ponto = new Vector3();
+        puxando.set(controller, alca);
+        interaction.pulse(controller, 0.5, 30);
+        audio.chime(19, 0.1);
+        return;
+      }
+      if (!aimPoint) return;
       const local = forest.worldToLocal(aimPoint.clone());
       if (forest.accepts(local)) {
         if (plantAt(aimPoint) === 'ok') interaction.pulse(controller, 0.6, 40);
@@ -750,6 +797,7 @@ xr.onEnd = () => {
   room.view.visible = false;
   roomMesh.setMode('off');
   sky.visible = false;
+  buracos.setProgress(0);
   constelacao.visible = false;
   butterflies.visible = false;
   auraFireflies.visible = false;
@@ -817,8 +865,19 @@ const hands = new Hands(renderer, {
       return;
     }
 
-    // A semente na palma tem prioridade: se ela está madura, a pinça a pega.
-    if (hand.handedness === seeds.hand && seeds.take()) {
+    // Planta ao alcance vem PRIMEIRO. Com a semente em primeiro lugar,
+    // qualquer pinça a pegava e nunca dava para agarrar um cogumelo — e
+    // quando você pinça a semente sua mão está no ar, longe de qualquer
+    // planta, então esta ordem não atrapalha o plantio.
+    const local = toLocal(hand.pinch);
+    const target = forest.pick(local);
+    if (target) {
+      grabbed.set(hand, forest.lift(target));
+      audio.chime(19, 0.1);
+      return;
+    }
+
+    if (seeds.hand === hand.handedness && seeds.take()) {
       audio.chime(seeds.kind === 'cocoon' ? 28 : 24, 0.12);
       toast(seeds.kind === 'cocoon'
         ? 'Semente de casulo — dela nasce a árvore que leva ao espaço'
@@ -827,13 +886,6 @@ const hands = new Hands(renderer, {
       return;
     }
 
-    const local = toLocal(hand.pinch);
-    const target = forest.pick(local);
-    if (target) {
-      grabbed.set(hand, forest.lift(target));
-      audio.chime(19, 0.1);
-      return;
-    }
     // Pinça no vazio, perto do chão: brota uma árvore ali.
     if (hand.pinch.y - forest.position.y < 1.3) {
       const ground = new Vector3(hand.pinch.x, forest.position.y, hand.pinch.z);
@@ -843,7 +895,7 @@ const hands = new Hands(renderer, {
 
   onPinchEnd: (hand) => {
     // Semente solta: planta onde caiu, se couber.
-    if (hand.handedness === seeds.hand) {
+    if (seeds.hand === hand.handedness) {
       const kind = seeds.kind;
       const onde = seeds.release();
       if (onde) {
@@ -961,6 +1013,35 @@ function syncTouchUI() {
 // ---------------------------------------------------------------------------
 const clock = new Clock();
 const _head = new Vector3();
+
+/**
+ * Trilha de pisadas.
+ *
+ * Guarda onde você passou e por quanto tempo aquilo ainda conta. Um passo novo
+ * só entra depois de PASSO_MIN de distância — gravar por tempo encheria o
+ * buffer inteiro com o mesmo ponto quando você para, e a trilha sumiria.
+ *
+ * A força decai ao longo de PASSO_VIDA, então o caminho se fecha sozinho: a
+ * vegetação levanta de novo atrás de você.
+ */
+const PASSO_MIN = 0.30;      // metros entre pisadas registradas
+const PASSO_VIDA = 14;       // segundos até a vegetação levantar de vez
+const passos = shared.uSteps.value;
+let passoCursor = 0;
+const _ultimoPasso = new Vector3(1e9, 0, 1e9);
+
+function registrarPasso(pos) {
+  const dx = pos.x - _ultimoPasso.x, dz = pos.z - _ultimoPasso.z;
+  if (dx * dx + dz * dz < PASSO_MIN * PASSO_MIN) return;
+  _ultimoPasso.copy(pos);
+  passos[passoCursor].set(pos.x, pos.z, 1);
+  passoCursor = (passoCursor + 1) % passos.length;
+}
+
+function envelhecerPassos(dt) {
+  const queda = dt / PASSO_VIDA;
+  for (const p of passos) p.z = Math.max(0, p.z - queda);
+}
 let scanTick = 0;
 let scanning = false;
 
@@ -1009,10 +1090,25 @@ function frame(time, xrFrame) {
 
   interaction.groundY = forest.position.y;
   interaction.update(dt);
+
+  // Objetos presos ao raio acompanham a mira, mantendo a distância.
+  for (const [controller, alca] of puxando) {
+    interaction.rayPoint(controller, alca.distancia, alca.ponto);
+    if (alca.espaco) space.carry(alca.planeta, alca.ponto);
+    else forest.carry(alca, forest.worldToLocal(alca.ponto.clone()), clock.elapsedTime * 1.2);
+  }
   updateHands(dt);
   forest.update(dt);
 
   camera.getWorldPosition(_head);
+
+  // A vegetação cede por onde você passa. Só na floresta: no espaço não há
+  // chão para pisar.
+  if (state.phase === 'growing' && state.world === 'floresta') {
+    registrarPasso(_head);
+    envelhecerPassos(dt);
+  }
+
   if (sky.visible) {
     sky.update(clock.elapsedTime, _head);
     constelacao.update(_head);
@@ -1028,6 +1124,8 @@ function frame(time, xrFrame) {
 
     const w = state.warp;
     space.setProgress(w);
+    // As paredes do seu cômodo se rompem junto com a travessia.
+    buracos.setProgress(w);
     emergence.update(dt, clock.elapsedTime);
 
     // A floresta encolhe e afunda para longe, em vez de sumir de uma vez.
@@ -1059,7 +1157,7 @@ function frame(time, xrFrame) {
 
     butterflies.update(t);
     seeds.update(dt, t, hands);
-    space.update(t, dt, _head);
+    space.update(t, dt);
   }
 
   if (state.phase === 'growing') {
@@ -1138,7 +1236,17 @@ detect().then((res) => {
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, roomMesh, sky, constelacao, space, emergence, hatch, backToForest, enterWorld, biomes, butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = {
+  // cena
+  forest, room, roomMesh, sky, constelacao, space, emergence, buracos,
+  butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds,
+  hands, wristMenu, magic,
+  // estado
+  state, shared, passos, renderer, camera, orbit,
+  // ações
+  cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
+  toggleCalm, bless, rescan, hatch, backToForest, enterWorld, biomes,
+};
 
 window.addEventListener('beforeunload', () => {
   roomMesh.dispose();
@@ -1151,6 +1259,7 @@ window.addEventListener('beforeunload', () => {
   seeds.dispose();
   space.dispose();
   emergence.dispose();
+  buracos.dispose();
   hands.dispose();
   wristMenu.dispose();
   forest.dispose();

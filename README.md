@@ -104,9 +104,15 @@ clareira, e um enxame de vaga-lumes fica ali. Você é o reconhecedor.
 
 ## Sementes
 
-Vire a **palma direita para cima** e uma semente brota nela. Pince para pegá-la
-e solte perto do chão para plantar uma árvore. A palma esquerda é do menu, para
-os dois gestos não disputarem a mesma mão.
+**Abra a mão** e uma semente brota nela. Pince para pegá-la e solte perto do
+chão para plantar. Vale para as duas mãos.
+
+O gesto é medido por quanto os dedos estão estendidos, e não por para onde a
+palma aponta. A versão anterior usava "palma para cima", calculada por um
+produto vetorial cujo sinal depende da lateralidade — e que eu não tinha como
+conferir sem um headset. Com o sinal invertido, a semente simplesmente nunca
+nascia, e o ciclo inteiro do jogo travava aí. Abertura de mão não tem esse
+risco.
 
 ## O céu
 
@@ -190,12 +196,34 @@ O botão **🌙 Sem brilho** (ou a tecla `C`) zera toda modulação: o brilho fi
 constante. Quem pede *menos movimento* nas preferências do sistema já entra
 assim, sem precisar achar o botão.
 
+## O ambiente cede à sua passagem
+
+Capim, samambaias, juncos, flores e cogumelos **deitam onde você pisa** e
+levantam de novo depois — o caminho se abre à sua frente e se fecha atrás.
+
+São doze pisadas guardadas num uniform, com a força decaindo ao longo de 14
+segundos. Um passo novo só entra depois de 30 cm de distância: gravar por tempo
+encheria o buffer inteiro com o mesmo ponto quando você para, e a trilha
+sumiria justo quando você quer olhar para ela.
+
+Buffer curto em vez de textura de trilha porque assim não há alocação nem
+escrita de GPU — são doze `vec3` lidos por vértice.
+
+## Pegar de longe
+
+O raio que sai do controle não serve só para mirar: **segure o gatilho apontando
+para uma árvore, cogumelo ou cristal e ele vem junto com a mira**. Soltar
+replanta ali, com as mesmas regras de sempre — se não couber, volta ao lugar.
+
+O corredor de acerto é generoso (35 cm de raio em volta do raio), porque mira à
+distância perdoa menos que a mão.
+
 ## O ciclo dos mundos
 
 Todo mundo começa **descampado**: chão nu e capim ralo. A floresta é obra de
 quem planta.
 
-Vire a palma para cima, pegue a semente, solte no chão. A árvore leva **dez
+Abra a mão, pegue a semente, solte no chão. A árvore leva **dez
 segundos** para crescer — a espera é o que dá peso ao gesto. A cada três
 sementes, uma é de **casulo**: maior na mão, e dela nasce a árvore de galhos
 abertos com um casulo pendurado.
@@ -231,6 +259,14 @@ soltar, o planeta assume uma órbita nova a partir de onde ficou.
 
 O tamanho é de brinquedo por decisão: em escala real seriam pontos no céu e não
 haveria nada para fazer.
+
+Ao atravessar, **as paredes do seu cômodo se rompem**: buracos negros se abrem
+nelas, com disco de acreção girando mais rápido perto do centro e o anel de luz
+curvada na borda. Eles existem só no espaço — na floresta, parede é parede.
+
+Os planetas ficam **parados no mundo**. A cúpula do céu acompanha a cabeça,
+porque céu não se aproxima; planeta ao alcance da mão é o oposto — se ele te
+seguisse, você nunca daria a volta nele e a cena pareceria colada ao rosto.
 
 Para voltar, o 🔺 do menu de pulso (ou 🌱 na barra) vira "voltar à clareira".
 
