@@ -15,6 +15,28 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.22.1 — Borboletas coloridas, partículas pequenas
+
+Elas estavam brancas, e a causa era de escala.
+
+São **2600 pontos numa borboleta de doze centímetros e meio**. A um metro do
+olho, isso é cerca de um ponto por pixel — a nuvem já cobre a silhueta inteira
+sem folga nenhuma. O ponto estava com **trinta pixels**, então cada um cobria
+novecentos vizinhos. E como a mistura é **aditiva**, novecentas somas de
+laranja dão branco: a borboleta perdia a cor e virava um borrão claro.
+
+Agora o ponto tem cinco pixels a um metro — a escala em que cada ponto ainda é
+um ponto — com piso de 1,1 px para a borboleta que voa longe não sumir (abaixo
+de um pixel o rasterizador simplesmente descarta). Junto foram o halo do ponto,
+que só empilhava claridade sobre o vizinho, e o ganho de 1,4x na saída.
+
+E as três espécies ganharam **pigmento fundo**: elas partiam de tons já claros,
+e o aditivo terminava de lavá-las — de longe as três davam a mesma borboleta
+branca. A monarca agora nasce de um laranja queimado, a morpho de um azul
+quase noturno, e a terceira deixou de ser branca: virou amarela-creme, porque
+branco sobre céu claro não lê como bicho. É a **ponta da asa** que clareia, que
+é como asa de borboleta funciona.
+
 ## v0.22.0 — Um sistema solar de verdade
 
 Quatro pedidos numa versão só, e eles se encaixam: atmosfera, peso na mão,

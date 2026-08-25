@@ -1318,10 +1318,15 @@ export const butterflyMaterial = make('borboletas', {
     void main(){
       // Três espécies reais em vez da paleta: monarca, morpho azul e branca.
       float esp = fract(vSeed * 5.9);
-      vec3 monarca = mix(vec3(0.82, 0.34, 0.05), vec3(0.95, 0.58, 0.12), vSpan);
-      vec3 morpho  = mix(vec3(0.10, 0.22, 0.62), vec3(0.32, 0.60, 0.92), vSpan);
-      vec3 branca  = mix(vec3(0.86, 0.84, 0.78), vec3(0.98, 0.97, 0.92), vSpan);
-      vec3 asa = esp < 0.4 ? monarca : (esp < 0.72 ? morpho : branca);
+      // As três eram claras demais e o aditivo terminava de lavá-las: de
+      // longe as três davam a mesma borboleta branca. Agora cada uma tem um
+      // pigmento fundo de onde partir, e é a ponta da asa que clareia.
+      vec3 monarca = mix(vec3(0.62, 0.20, 0.02), vec3(0.95, 0.52, 0.09), vSpan);
+      vec3 morpho  = mix(vec3(0.03, 0.09, 0.42), vec3(0.16, 0.42, 0.90), vSpan);
+      // A "branca" não é branca: é creme com veia quente, senão ela some
+      // contra qualquer coisa clara e não lê como bicho.
+      vec3 amarela = mix(vec3(0.58, 0.44, 0.06), vec3(0.92, 0.82, 0.34), vSpan);
+      vec3 asa = esp < 0.4 ? monarca : (esp < 0.72 ? morpho : amarela);
 
       // Nervuras escuras, como as veias da asa.
       float nervura = smoothstep(0.40, 0.5, abs(fract(vSpan * 3.2) - 0.5));
@@ -2116,7 +2121,20 @@ export const butterflyCloudMaterial = make('borboleta-nuvem', {
   transparent: true,
   depthWrite: false,
   blending: AdditiveBlending,
-  uniforms: { uTamanho: { value: 30.0 } },
+  /**
+   * TAMANHO DO PONTO.
+   *
+   * São 2600 pontos numa borboleta de doze centímetros e meio. A um metro do
+   * olho isso é cerca de um ponto por pixel — a nuvem já cobre a silhueta
+   * inteira sem folga nenhuma. Com pontos de trinta pixels cada um cobria
+   * novecentos vizinhos, e como a mistura é ADITIVA, novecentas somas de
+   * laranja dão branco: a borboleta perdia a cor e virava um borrão claro.
+   *
+   * Cinco pixels a um metro é a escala em que cada ponto ainda é um ponto.
+   * O piso existe para a borboleta que voa longe não sumir de vez — abaixo de
+   * um pixel o rasterizador simplesmente descarta.
+   */
+  uniforms: { uTamanho: { value: 5.0 } },
   vert: /* glsl */ `
     attribute vec3 iPos;
     attribute vec4 iQuat;
@@ -2171,7 +2189,8 @@ export const butterflyCloudMaterial = make('borboleta-nuvem', {
       vNormalW = normalize(mat3(modelMatrix) * rotQ(iQuat, vec3(0.0, 1.0, 0.0)));
       vec4 mv = viewMatrix * mundo;
       vFade = clamp(1.0 - (-mv.z - 6.0) / 10.0, 0.0, 1.0);
-      gl_PointSize = uTamanho * (0.55 + aPonto * 0.7) * max(iEsc.y, 0.05) / max(-mv.z, 0.25);
+      gl_PointSize = max(1.1,
+        uTamanho * (0.55 + aPonto * 0.7) * max(iEsc.y, 0.05) / max(-mv.z, 0.25));
       gl_Position = projectionMatrix * mv;
     }
   `,
@@ -2184,7 +2203,9 @@ export const butterflyCloudMaterial = make('borboleta-nuvem', {
       float d = dot(uv, uv);
       if (d > 0.25) discard;
       float k = 1.0 - d * 4.0;
-      float perfil = pow(k, 5.0) * 1.3 + pow(k, 1.5) * 0.4;
+      // Menos halo e mais miolo: com o ponto grande o halo era o que dava
+      // corpo à asa, e agora ele só empilharia claridade sobre o vizinho.
+      float perfil = pow(k, 2.5) * 0.9 + pow(k, 1.0) * 0.25;
 
       // Três espécies, sorteadas pela borboleta e não pelo ponto: senão cada
       // ponto de uma mesma asa sairia de uma espécie diferente.
@@ -2197,12 +2218,14 @@ export const butterflyCloudMaterial = make('borboleta-nuvem', {
       // A borda escura, que é o que faz a silhueta ler como asa.
       asa = mix(asa, asa * 0.28, smoothstep(0.74, 1.0, vSpan));
 
-      vec3 col = enchant(asa, vSeed + uTime * 0.04, 0.30);
-      col += bio(vSpan * 0.5 + presenca(vWorld), vSeed + 0.3, 0.9);
+      vec3 col = enchant(asa, vSeed + uTime * 0.04, 0.16);
+      col += bio(vSpan * 0.5 + presenca(vWorld), vSeed + 0.3, 0.45);
 
       float a = perfil * vFade * (0.6 + 0.4 * vPonto);
       if (a <= 0.004) discard;
-      gl_FragColor = vec4(filmic(col) * a * 1.4, a);
+      // Sem ganho extra: em aditivo, o ganho de cada ponto se soma ao de
+      // todos os que caem no mesmo pixel, e é assim que laranja vira branco.
+      gl_FragColor = vec4(filmic(col) * a, a);
     }
   `,
 });
