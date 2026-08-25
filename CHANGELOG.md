@@ -17,6 +17,52 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.16.1 — O teto vira abertura por altura, não por rótulo
 
+Correção da v0.16.0, que não resolveu o problema que dizia resolver.
+
+### O que estava errado
+
+A v0.16.0 tirava do oclusor a malha rotulada `ceiling`. A premissa era que o
+cômodo chega em malhas separadas e rotuladas. Muitas vezes não chega: o Quest
+costuma entregar o cômodo **inteiro como uma malha só**, rotulada
+`global mesh` — teto, parede, chão e móveis no mesmo objeto.
+
+Nesse caso não havia nada a excluir da lista. O teto seguiu escrevendo
+profundidade, e a copa que passa dele continuou escondida atrás do gesso.
+
+### O que passou a ser
+
+O oclusor deixou de ser `MeshBasicMaterial` e virou shader cru com um
+`uCorte`: acima daquela altura de mundo o fragmento é descartado e deixa de
+ocupar o Z-buffer.
+
+A decisão passa a ser **por fragmento**, e por isso vale igual nos dois casos
+— malha única ou malhas rotuladas. Abaixo da linha a parede continua parede;
+acima, não há mais nada ocluindo, e a copa aparece.
+
+Duas margens, porque as duas fontes de altura têm confiabilidade diferente:
+
+| Fonte | Margem | Por quê |
+| --- | --- | --- |
+| Detecção de planos (`ceilingY`) | 10 cm | É um plano de verdade. Cada centímetro a mais é parede real que some e vira céu. |
+| Topo da malha lida | 32 cm | É estimativa: lustre, viga ou leitura ruim empurram o máximo para cima. |
+
+### E o céu pôde ficar opaco
+
+Com o oclusor recortando, quem decide onde o céu aparece passa a ser a
+própria sala: parede e chão escondem, o buraco do teto mostra. Não é mais
+preciso abrir o céu por ângulo e torcer para a conta fechar — **todo o teto
+vira virtual**, e a copa aparece contra ele.
+
+Sem oclusor a coisa volta ao que era, abrindo por ângulo, porque um céu opaco
+sem nada que o recorte cobriria a sala inteira.
+
+### Teste
+
+`test-occlusion.mjs`, agora no `npm test`, cobre quatro casos — e o
+cômodo-numa-malha-só é o primeiro deles, por ser exatamente o que falhou
+calado.
+
+
 ## v0.16.0 — Teto aberto, árvore de galhos com frutos, e lugar para a trilha
 
 ### O teto vira abertura
