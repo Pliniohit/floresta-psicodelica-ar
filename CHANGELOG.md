@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.16.1 — O teto vira abertura por altura, não por rótulo
+
 ## v0.16.0 — Teto aberto, árvore de galhos com frutos, e lugar para a trilha
 
 ### O teto vira abertura
