@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.21.1 — A borboleta parou de rodopiar
+
 ## v0.21.0 — A floresta virou nuvem de pontos
 
 Mudança de conceito, vinda do estudo de partículas guardado no Drive. A
