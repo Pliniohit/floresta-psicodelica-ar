@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.19.0 — Aquarela como interruptor, e o céu começa no teto
+
 ## v0.18.0 — A jornada: sete cenários em cadeia
 
 Esta versão nasceu de uma leitura: os 5.773 quadros de *Odada*, analisados um
