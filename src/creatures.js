@@ -1,10 +1,10 @@
 import {
   Group, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
-  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion, Points, Euler,
+  BufferAttribute, Matrix4, Vector3, Quaternion, Points, Euler,
 } from '../vendor/three/three.module.min.js';
 import {
-  butterflyMaterial, fireflyMaterial, fishMaterial, fireflyFieldMaterial,
-  butterflyCloudMaterial,
+  butterflyMaterial, fishMaterial, fireflyFieldMaterial,
+  butterflyCloudMaterial, starPointMaterial,
 } from './shaders/materials.js';
 import { NuvemDePontos } from './nuvem.js';
 import { nuvem as nuvemBorboleta } from './nuvens/borboleta.js';
@@ -257,12 +257,23 @@ export class Fireflies extends Group {
     this.name = 'vagalumes';
     this.frustumCulled = false;
 
-    const geo = new IcosahedronGeometry(0.016, 0);
-    geo.setAttribute('aSeed', seedAttribute(count, seed * 31 + 7));
-    this.mesh = new InstancedMesh(geo, fireflyMaterial, count);
+    // UM PONTO por vaga-lume, e não um icosaedro.
+    //
+    // Eram sólidos de vinte faces com um centímetro e meio, e a essa escala
+    // um poliedro não lê como luz: lê como cascalho colorido flutuando em
+    // volta da pessoa. É a mesma queixa que já tinha tirado os orbes e as
+    // estrelas da constelação de cena — este bando tinha escapado.
+    this.pos = new Float32Array(count * 3);
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(this.pos, 3));
+    const sem = new Float32Array(count);
+    const rs = rng(seed * 31 + 7);
+    for (let i = 0; i < count; i++) sem[i] = rs();
+    geo.setAttribute('aSeed', new BufferAttribute(sem, 1));
+
+    this.mesh = new Points(geo, starPointMaterial);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 7;
-    this.mesh.count = count;
     this.add(this.mesh);
 
     this.count = count;
@@ -300,12 +311,12 @@ export class Fireflies extends Group {
         this.follow.y + o.alt * this.height + Math.sin(t * o.wb + o.fase) * o.bob,
         this.follow.z + Math.sin(a) * o.raio * (1 + o.inc) * this.spread / 0.55,
       );
-      _q.identity();
-      _s.setScalar(1);
-      _m.compose(_p, _q, _s);
-      this.mesh.setMatrixAt(i, _m);
+      // Ponto não tem matriz: a posição vai direto no atributo.
+      this.pos[i * 3] = _p.x;
+      this.pos[i * 3 + 1] = _p.y;
+      this.pos[i * 3 + 2] = _p.z;
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.geometry.attributes.position.needsUpdate = true;
   }
 
   dispose() { this.mesh.geometry.dispose(); this.clear(); }
@@ -517,8 +528,22 @@ export class Pirilampos extends Group {
  * caixa da nuvem disse —, então o lado é o sinal de x e a envergadura é |x|
  * normalizado.
  */
+/**
+ * Envergadura da borboleta, em metros, antes da variação de tamanho.
+ *
+ * A nuvem assada sai NORMALIZADA — o maior lado dela vale 1 —, enquanto a
+ * geometria procedural que ela substituiu já vinha em metros, com uns doze
+ * centímetros de ponta a ponta. Trocar uma pela outra sem reescalar deu
+ * borboletas de UM METRO de envergadura.
+ *
+ * Doze centímetros é uma monarca; com a variação de tamanho do enxame, o
+ * conjunto vai de dez a dezenove centímetros, que é a faixa real.
+ */
+const ENVERGADURA = 0.125;
+
 export function criarNuvemDeBorboletas(quantas, semente) {
   const pts = nuvemBorboleta();
+  for (let i = 0; i < pts.length; i++) pts[i] *= ENVERGADURA;
   const n = pts.length / 3;
   const aWing = new Float32Array(n);
   const aSpan = new Float32Array(n);

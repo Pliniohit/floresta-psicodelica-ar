@@ -393,6 +393,8 @@ export class Emergence extends Group {
     this.add(this.mesh);
     this._m = new Matrix4();
     this._q = new Quaternion();
+    // A protagonista é maior que as do enxame, mas não é um planador: 2,2x
+    // a envergadura base dá uns vinte e nove centímetros.
     this._e = new Vector3(2.2, 2.2, 2.2);
 
     this.n = trailLength;
