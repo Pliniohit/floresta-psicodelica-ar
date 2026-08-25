@@ -1,6 +1,6 @@
 import {
   Group, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
-  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion, Points,
+  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion, Points, Euler,
 } from '../vendor/three/three.module.min.js';
 import {
   butterflyMaterial, fireflyMaterial, fishMaterial, fireflyFieldMaterial,
@@ -17,6 +17,7 @@ const _s = new Vector3();
 const _v = new Vector3();
 const _qRoll = new Quaternion();
 const _upY = new Vector3(0, 1, 0);
+const _e = new Euler();
 const _dir = new Vector3();
 const _up = new Vector3(0, 1, 0);
 
@@ -149,6 +150,9 @@ export class Butterflies extends Group {
         rx: 0.5 + r() * 0.9, rz: 0.5 + r() * 0.9,
         wx: 0.065 + r() * 0.10, wz: 0.055 + r() * 0.11,
         px: r() * 6.28, pz: r() * 6.28,
+        // Estado de VOO, e não de caminho: o rumo de onde ela vinha, para a
+        // virada saber de onde está virando, e a inclinação lateral corrente.
+        rumo: new Vector3(0, 0, 1), rumoAnt: 0, banco: 0,
         alt: 0.7 + r() * 1.5, bob: 0.18 + r() * 0.30, wb: 0.22 + r() * 0.36,
         escala: 0.75 + r() * 0.7,
       });
@@ -180,14 +184,50 @@ export class Butterflies extends Group {
       const y = p.alt + Math.sin(t * p.wb + p.px) * p.bob;
       _p.set(x, y, z);
 
-      // Aponta para onde está indo: a direção sai do próprio deslocamento,
-      // sem precisar derivar a curva analiticamente.
+      // ORIENTAÇÃO COM CIMA.
+      //
+      // Antes isto era `setFromUnitVectors(cima, direção)`, e havia dois
+      // erros num só lugar. O primeiro é o eixo: no modelo assado o corpo
+      // corre em Z, e alinhar o Y punha a borboleta voando de pé.
+      //
+      // O segundo é mais fundo. Aquela função dá o arco MAIS CURTO entre dois
+      // vetores, e um arco curto não tem nenhuma referência de cima — o
+      // rolamento sobra livre. Conforme a direção varria o círculo do voo, a
+      // borboleta rodopiava sobre o próprio eixo. Era literalmente uma
+      // rotação sem gravidade.
+      //
+      // Agora a pose é montada com o mundo como referência: o rumo vem do
+      // deslocamento horizontal, a subida vira INCLINAÇÃO do nariz, e o giro
+      // vira INCLINAÇÃO LATERAL. Bicho que voa não rola de barriga para cima.
       _dir.copy(_p).sub(this._prev[i]);
       this._prev[i].copy(_p);
-      if (_dir.lengthSq() > 1e-8) {
-        _dir.normalize();
-        _q.setFromUnitVectors(_up, _dir);
-      }
+
+      const subida = _dir.y;
+      _dir.y = 0;
+      const passo = _dir.length();
+      if (passo > 1e-6) { _dir.divideScalar(passo); p.rumo.copy(_dir); }
+      else _dir.copy(p.rumo);
+
+      const rumo = Math.atan2(_dir.x, _dir.z);
+      // Diferença angular no menor caminho, senão a virada de -π para +π
+      // produz um tombo de meia volta num quadro só.
+      let giro = rumo - p.rumoAnt;
+      while (giro > Math.PI) giro -= Math.PI * 2;
+      while (giro < -Math.PI) giro += Math.PI * 2;
+      p.rumoAnt = rumo;
+
+      // O banco persegue o giro em vez de segui-lo de imediato: virar tem que
+      // custar um instante, senão a inclinação vibra junto com o ruído do
+      // deslocamento.
+      const alvoBanco = Math.max(-0.45, Math.min(0.45, -giro * 7.0));
+      p.banco += (alvoBanco - p.banco) * 0.10;
+
+      const nariz = Math.max(-0.40, Math.min(0.40, Math.atan2(subida, Math.max(passo, 1e-4)) * 0.5));
+
+      // YXZ: o rumo primeiro, depois o nariz, e o banco por último em torno
+      // do eixo do corpo — que é a ordem em que as três coisas acontecem.
+      _e.set(nariz, rumo, p.banco, 'YXZ');
+      _q.setFromEuler(_e);
 
       _s.setScalar(p.escala);
       _m.compose(_p, _q, _s);
