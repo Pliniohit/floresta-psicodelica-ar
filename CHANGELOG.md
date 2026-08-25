@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.18.0 — A jornada: sete cenários em cadeia
+
 ## v0.17.0 — Floresta bioluminescente
 
 ### A regra
