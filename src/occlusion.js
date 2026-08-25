@@ -128,6 +128,14 @@ export class RoomMesh extends Group {
     return this.occlusionEnabled;
   }
 
+  /** Esquece a malha lida. A assinatura precisa ir junto, senão a leitura
+   *  nova é descartada como "nada mudou". */
+  reset() {
+    this.#clear();
+    this._signature = '';
+    this.revision++;
+  }
+
   #clear() {
     for (const e of this.entries) {
       e.mesh.geometry.dispose();

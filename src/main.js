@@ -103,6 +103,12 @@ function status(msg) { el('status').innerHTML = msg; }
 
 function updateScanPanel() {
   if (!scanEl) return;
+  if (scanning) {
+    scanTitle.textContent = 'Escaneando o cômodo';
+    scanInfo.innerHTML = 'Siga as instruções do Quest e varra as paredes,'
+      + '<br>o chão e os móveis. Volto quando você terminar.';
+    return;
+  }
   if (room.ready) {
     const partes = [`${room.area.toFixed(1)} m²`];
     if (roomMesh.volumeCount) partes.push(`${roomMesh.triangleCount.toLocaleString('pt-BR')} triângulos de volume`);
@@ -175,21 +181,44 @@ function commitRoom() {
     palettes[state.paletteIndex].swatch);
 }
 
-/** Pede ao Quest um novo escaneamento do cômodo. */
-async function rescan() {
-  if (!xr.canCapture) { toast('Este aparelho não permite escanear pelo app'); return; }
-  toast('Abrindo o escaneamento do sistema…');
-  const ok = await xr.captureRoom();
-  if (ok) {
-    // Força releitura: a geometria antiga não vale mais nada.
-    room.reset();
-    roomMesh.setMode('scan');
-    state.scanReveal = 0;
-    toast('Espaço reescaneado — olhe ao redor');
-  } else {
-    toast('Não foi possível escanear agora');
+/**
+ * Escaneia o cômodo de verdade, do zero.
+ *
+ * Descartar o que já está lido ANTES de chamar a captura é o ponto: o Quest
+ * guarda o Space Setup de sessões anteriores, e sem o reset o app aproveitaria
+ * a leitura antiga e nunca abriria o escaneamento — que era exatamente o
+ * sintoma de "ele não escaneou, lembrou de um escaneamento antigo da minha
+ * sala".
+ */
+async function freshScan({ automatico = false } = {}) {
+  if (!xr.canCapture) {
+    if (!automatico) toast('Este aparelho não permite escanear pelo app');
+    return false;
   }
+  if (scanning) return false;
+  scanning = true;
+
+  room.reset();
+  roomMesh.reset();
+  roomMesh.setMode('scan');
+  state.scanReveal = 0;
+  updateScanPanel();
+
+  const ok = await xr.captureRoom();
+  scanning = false;
+
+  if (ok) {
+    // A leitura nova chega assíncrona; o painel acompanha sozinho.
+    toast('Espaço escaneado — olhe ao redor');
+  } else if (!automatico) {
+    toast('O sistema recusou escanear agora');
+  }
+  updateScanPanel();
+  return ok;
 }
+
+/** Reescaneio manual, pelo grip. */
+function rescan() { freshScan(); }
 
 function toggleSky() {
   state.skyOn = !state.skyOn;
@@ -539,6 +568,14 @@ async function enterXR(mode) {
     state.scanReveal = 0;
     state.phase = 'mapping';
     updateScanPanel();
+
+    // A experiência começa escaneando. Sem isto o app usaria o Space Setup
+    // antigo e o usuário nunca veria o escaneamento acontecer.
+    if (xr.canCapture) {
+      await freshScan({ automatico: true });
+    } else {
+      toast('Este navegador não abre o escaneamento — usando o espaço já mapeado');
+    }
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Entrar em AR';
@@ -547,6 +584,7 @@ async function enterXR(mode) {
 }
 
 xr.onEnd = () => {
+  scanning = false;
   overlay.classList.remove('on', 'touch');
   touchUI = null;
   scanEl?.classList.remove('on');
@@ -674,6 +712,7 @@ function syncTouchUI() {
 const clock = new Clock();
 const _head = new Vector3();
 let scanTick = 0;
+let scanning = false;
 
 renderer.setAnimationLoop((time, frame) => {
   const dt = Math.min(0.05, clock.getDelta());
@@ -688,7 +727,9 @@ renderer.setAnimationLoop((time, frame) => {
   shared.uPalD.value.lerp(target.uPalD, k);
   shared.uTrip.value += (state.tripTarget - shared.uTrip.value) * k;
 
-  if (state.phase === 'mapping' && renderer.xr.isPresenting) {
+  if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
+    // Durante a captura a tela é do sistema, e ler os planos antigos aqui só
+    // repovoaria o cômodo com a leitura que acabamos de descartar.
     room.update(frame, xr.refSpace);
     roomMesh.update(frame, xr.refSpace);
 

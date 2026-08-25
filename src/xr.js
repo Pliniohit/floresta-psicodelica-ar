@@ -32,7 +32,7 @@ export class XRStage {
     this.granted = new Set();
     this.onEnd = null;
     this._capturing = false;
-    this._captured = false;
+    this.captures = 0;
   }
 
   async start(mode, overlayRoot) {
@@ -61,7 +61,7 @@ export class XRStage {
     session.addEventListener('end', () => {
       this.session = null;
       this.granted.clear();
-      this._captured = false;
+      this.captures = 0;
       this.onEnd?.();
     });
 
@@ -85,14 +85,14 @@ export class XRStage {
    * chamada por sessão — daí o guarda.
    */
   async captureRoom() {
-    if (!this.canCapture || this._capturing || this._captured) return false;
+    if (!this.canCapture || this._capturing) return false;
     this._capturing = true;
     try {
       await this.session.initiateRoomCapture();
-      this._captured = true;
+      this.captures++;
       return true;
     } catch (err) {
-      // Recusa mais comum: já houve captura nesta sessão.
+      // Recusa mais comum: o runtime só aceita uma captura por sessão.
       console.warn('captura do cômodo recusada:', err?.message ?? err);
       return false;
     } finally {

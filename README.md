@@ -18,14 +18,21 @@ que você chegue de um cogumelo.
 
 ## O escaneamento
 
-A experiência **sempre começa lendo o espaço**. Ao entrar em AR o app varre o
-que o headset conhece do cômodo e mostra na sua frente: superfícies, volumes,
-contagem de triângulos e os rótulos do que reconheceu — `couch`, `table`,
-`wall`, `window`.
+A experiência **sempre começa escaneando de verdade**. Ao entrar em AR, antes
+de qualquer outra coisa, o app descarta o que estiver lido e chama
+`session.initiateRoomCapture()` — o escaneamento do próprio Quest, na hora.
 
-Se nada for conhecido, o gatilho dispara `session.initiateRoomCapture()`, que
-abre o escaneamento do próprio sistema ali na hora. Não é preciso ter rodado o
-Space Setup antes. Com o espaço já lido, o **grip** reescaneia.
+A ordem aí não é detalhe. O Quest guarda o Space Setup de sessões anteriores,
+e se o app olhasse `detectedPlanes` primeiro encontraria a leitura antiga,
+concluiria que já sabe o cômodo e nunca abriria o escaneamento. O reset vem
+antes da captura exatamente por isso.
+
+Terminada a varredura, o painel mostra o que foi lido: superfícies, volumes,
+contagem de triângulos e os rótulos reconhecidos — `couch`, `table`, `wall`,
+`window`. O **grip** reescaneia quando quiser.
+
+Se o runtime recusar (alguns só aceitam uma captura por sessão) ou não tiver a
+API, o app avisa e volta a usar o espaço já mapeado — não fica sem chão.
 
 O que sai daí alimenta três coisas:
 
@@ -63,14 +70,12 @@ Liga e desliga no 🌌 da barra, ou no quarto orbe do menu de pulso.
 
 1. No headset, abra o **Meta Quest Browser** e vá até a URL do projeto.
 2. Toque em **Entrar em AR** e permita o acesso quando o sistema pedir.
-3. **Olhe ao redor** enquanto a varredura corre. O painel mostra o que foi lido.
-4. **Aperte o gatilho.** Se já houver espaço conhecido, a floresta brota nele;
-   se não houver, abre o escaneamento do sistema e você varre o cômodo.
+3. **O escaneamento abre sozinho.** Varra paredes, chão e móveis como o Quest
+   pedir. Ao terminar, o painel mostra o que foi lido.
+4. **Aperte o gatilho** e a floresta brota naquele espaço.
 5. **Caminhe entre as árvores. Olhe para cima.**
 
-Rodar o **Space Setup** antes (Configurações → Espaço físico) dá o melhor
-resultado, porque traz os rótulos semânticos dos móveis — mas não é necessário:
-o app sabe pedir o escaneamento sozinho.
+Não é preciso rodar o Space Setup antes: o app escaneia sozinho ao abrir.
 
 Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão insegura.
 
