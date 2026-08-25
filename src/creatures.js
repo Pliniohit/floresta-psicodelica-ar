@@ -2,13 +2,16 @@ import {
   Group, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
   BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
-import { butterflyMaterial, fireflyMaterial } from './shaders/materials.js';
+import { butterflyMaterial, fireflyMaterial, fishMaterial } from './shaders/materials.js';
 import { rng } from './forest.js';
 
 const _m = new Matrix4();
 const _p = new Vector3();
 const _q = new Quaternion();
 const _s = new Vector3();
+const _v = new Vector3();
+const _qRoll = new Quaternion();
+const _upY = new Vector3(0, 1, 0);
 const _dir = new Vector3();
 const _up = new Vector3(0, 1, 0);
 
@@ -120,7 +123,7 @@ function seedAttribute(count, seed) {
  * obviamente cíclico como uma órbita simples ficaria.
  */
 export class Butterflies extends Group {
-  constructor(count = 22) {
+  constructor(count = 12) {
     super();
     this.name = 'borboletas';
     this.frustumCulled = false;
@@ -258,6 +261,129 @@ export class Fireflies extends Group {
       );
       _q.identity();
       _s.setScalar(1);
+      _m.compose(_p, _q, _s);
+      this.mesh.setMatrixAt(i, _m);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  dispose() { this.mesh.geometry.dispose(); this.clear(); }
+}
+
+
+/**
+ * Estações do corpo: (y ao longo do comprimento, meia-altura).
+ *
+ * A cabeça é o +Y e a cauda o -Y, e a onda do shader desloca em X — que é o
+ * lado. Peixe ondula de lado; ondular para cima e para baixo é golfinho, e a
+ * silhueta denunciaria na hora.
+ */
+const CORPO_PEIXE = [
+  [0.058, 0.000], [0.046, 0.012], [0.026, 0.021], [0.000, 0.023],
+  [-0.026, 0.016], [-0.048, 0.008], [-0.058, 0.004],
+];
+/** Ponta da cauda: forquilha aberta. */
+const CAUDA_PEIXE = [[-0.088, 0.030], [-0.074, 0.006], [-0.088, -0.030]];
+
+function fishGeometry() {
+  const pos = [], span = [];
+  const total = CORPO_PEIXE[0][0] - CAUDA_PEIXE[0][0];
+  const s = (y) => Math.min(1, Math.max(0, (CORPO_PEIXE[0][0] - y) / total));
+  const push = (y, z) => { pos.push(0, y, z); span.push(s(y)); };
+
+  // Corpo: um quadrilátero entre cada par de estações.
+  for (let i = 0; i < CORPO_PEIXE.length - 1; i++) {
+    const [y0, h0] = CORPO_PEIXE[i];
+    const [y1, h1] = CORPO_PEIXE[i + 1];
+    push(y0, h0); push(y0, -h0); push(y1, -h1);
+    push(y0, h0); push(y1, -h1); push(y1, h1);
+  }
+
+  // Cauda em forquilha, saindo do pedúnculo.
+  const [yp, hp] = CORPO_PEIXE[CORPO_PEIXE.length - 1];
+  push(yp, hp); push(...CAUDA_PEIXE[0]); push(...CAUDA_PEIXE[1]);
+  push(yp, -hp); push(...CAUDA_PEIXE[1]); push(...CAUDA_PEIXE[2]);
+
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('aSpan', new BufferAttribute(new Float32Array(span), 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * CARDUME — os seres do mundo aquático, no lugar das borboletas.
+ *
+ * O caminho é o mesmo princípio do enxame de borboletas: duas senóides de
+ * frequências não múltiplas, que levam minutos para se repetir. O que muda é
+ * a atitude — eles vão mais devagar, mais fundo, e se inclinam na curva em
+ * vez de flutuar sempre nivelados.
+ */
+export class Cardume extends Group {
+  constructor(count = 18) {
+    super();
+    this.name = 'cardume';
+    this.frustumCulled = false;
+
+    const geo = fishGeometry();
+    geo.setAttribute('aSeed', seedAttribute(count, 5501));
+    this.mesh = new InstancedMesh(geo, fishMaterial, count);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 6;
+    this.mesh.count = 0;
+    this.add(this.mesh);
+
+    this.count = count;
+    this.radius = 3.0;
+    this.paths = [];
+    this._prev = [];
+    const r = rng(6203);
+    for (let i = 0; i < count; i++) {
+      this.paths.push({
+        cx: 0, cz: 0,
+        rx: 0.5 + r() * 1.5, rz: 0.5 + r() * 1.5,
+        wx: 0.10 + r() * 0.14, wz: 0.09 + r() * 0.13,
+        px: r() * 6.28318, pz: r() * 6.28318,
+        alt: 0.5 + r() * 1.1, sobe: 0.10 + r() * 0.22,
+        escala: 0.8 + r() * 1.1,
+      });
+      this._prev.push(new Vector3());
+    }
+  }
+
+  fitTo(radius) {
+    this.radius = Math.max(1.0, radius);
+    const r = rng(311 + Math.round(radius * 100));
+    for (const p of this.paths) {
+      const a = r() * Math.PI * 2;
+      const d = Math.sqrt(r()) * this.radius * 0.75;
+      p.cx = Math.cos(a) * d;
+      p.cz = Math.sin(a) * d;
+    }
+    this.mesh.count = this.count;
+  }
+
+  update(t) {
+    if (!this.mesh.count) return;
+    for (let i = 0; i < this.count; i++) {
+      const p = this.paths[i];
+      const x = p.cx + Math.cos(t * p.wx + p.px) * p.rx;
+      const z = p.cz + Math.sin(t * p.wz + p.pz) * p.rz;
+      const y = p.alt + Math.sin(t * p.sobe + p.px) * 0.28;
+      _p.set(x, y, z);
+
+      // Olha para onde está indo. Sem isto o peixe anda de lado, que é o
+      // erro mais fácil de cometer e o mais fácil de ver.
+      _v.copy(_p).sub(this._prev[i]);
+      if (_v.lengthSq() < 1e-8) _v.set(0, 0, 1);
+      _v.normalize();
+      // A geometria aponta para +Y; girar de Y para a direção do nado.
+      _q.setFromUnitVectors(_upY, _v);
+      // Inclina na curva, como quem faz a volta apoiado na barbatana.
+      _q.multiply(_qRoll.setFromAxisAngle(_upY, Math.sin(t * p.wx * 1.7 + p.px) * 0.5));
+
+      this._prev[i].copy(_p);
+      _s.setScalar(p.escala);
       _m.compose(_p, _q, _s);
       this.mesh.setMatrixAt(i, _m);
     }

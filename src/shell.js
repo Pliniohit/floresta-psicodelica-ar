@@ -129,9 +129,6 @@ export class Shell extends Group {
   dispose() { this.#clear(); this.clear(); }
 }
 
-/** Altura da lâmina acima do piso, por bioma: terra, fogo, água. */
-const NIVEL = [0.0, 0.09, 0.95];
-
 export class Tide extends Group {
   constructor() {
     super();
@@ -140,10 +137,10 @@ export class Tide extends Group {
     this.visible = false;
     this.mesh = null;
     this.amount = 0;
-    this.nivel = 0;
+    this.nivel = 0;      // altura corrente, em metros acima do piso
+    this.alvo = 0;       // para onde ela está subindo ou descendo
   }
 
-  /** Estende a lâmina sobre a pegada do cômodo. `footprint` em local. */
   applyFootprint(footprint) {
     this.#clear();
     if (!footprint?.length) return this;
@@ -172,21 +169,26 @@ export class Tide extends Group {
   }
 
   /**
-   * A lâmina sobe e desce conforme o mundo: sem ela na terra, rente ao chão
-   * no fogo, na cintura na água. `biome` é o mesmo float contínuo do shader,
-   * então a subida acompanha a travessia em vez de saltar.
+   * A altura que esta cena pede. Ela não salta: a lâmina SOBE até ali, e é
+   * essa subida que dá a sensação de estar sendo submerso em vez de aparecer
+   * dentro d'água de repente.
    */
-  setBiome(biome, amount) {
-    this.amount = amount;
-    tideMaterial.uniforms.uShell.value = amount;
-    const b = Math.max(0, Math.min(2, biome));
-    // No mundo de terra não há lâmina nenhuma: em vez de desenhar um plano
-    // que o shader descarta inteiro, ele sai da fila.
-    const peso = Math.max(b >= 1 ? (b - 1) : 0, 1 - Math.abs(b - 1)) ;
-    this.visible = amount > 0.01 && peso > 0.02 && !!this.mesh;
+  setNivel(altura) {
+    this.alvo = altura;
+    return this;
+  }
+
+  /**
+   * @param {number} dt
+   * @param {number} forca  0 esconde a lâmina, 1 mostra por inteiro
+   */
+  update(dt, forca) {
+    this.amount = forca;
+    tideMaterial.uniforms.uShell.value = forca;
+    tideMaterial.uniforms.uLaminaForca.value = forca;
+    this.visible = forca > 0.01 && !!this.mesh;
     if (!this.mesh) return;
-    const i = Math.floor(b), f = b - i;
-    this.nivel = NIVEL[i] * (1 - f) + NIVEL[Math.min(2, i + 1)] * f;
+    this.nivel += (this.alvo - this.nivel) * (1 - Math.exp(-dt * 0.9));
     this.mesh.position.y = this.nivel;
   }
 

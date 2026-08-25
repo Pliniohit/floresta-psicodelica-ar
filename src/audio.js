@@ -136,17 +136,26 @@ export class Ambience {
   }
 
   /**
-   * Cada mundo abafa a trilha à sua maneira: debaixo d'água as altas somem,
-   * no fogo ela abre. É o mesmo float contínuo do shader, então a mudança
-   * acompanha a travessia em vez de saltar.
+   * Cada cenário tem o seu timbre. O drone muda de fundamental e a trilha,
+   * quando existe, passa por um passa-baixa próprio: no fundo do abismo as
+   * altas somem, no fogo ela abre.
+   *
+   * Tudo com constante de tempo longa — a mudança acompanha a travessia da
+   * borboleta em vez de saltar junto com a imagem.
    */
-  setBiome(biome) {
-    if (!this.ctx || !this.hasTrack) return;
-    const b = Math.max(0, Math.min(2, biome));
-    // terra 18k (limpa) · fogo 12k (áspera) · água 1,6k (submersa)
-    const alvo = b < 1 ? 18000 + (12000 - 18000) * b
-                       : 12000 + (1600 - 12000) * (b - 1);
-    this.trackFilter.frequency.setTargetAtTime(alvo, this.ctx.currentTime, 1.6);
+  setCena({ hz = 73.42, filtro = 420 } = {}) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.filter.frequency.setTargetAtTime(filtro, t, 2.2);
+    // As vozes acompanham a fundamental, mantendo os intervalos entre si.
+    const base = this.voices[0]?.base ?? 73.42;
+    for (const v of this.voices) {
+      v.osc.frequency.setTargetAtTime(v.base * (hz / base), t, 2.6);
+    }
+    if (this.hasTrack) {
+      this.trackFilter.frequency.setTargetAtTime(
+        Math.max(1200, filtro * 26), t, 2.2);
+    }
   }
 
   /** Sino curto disparado ao plantar ou trocar de paleta. */

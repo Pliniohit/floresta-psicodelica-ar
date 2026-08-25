@@ -108,6 +108,9 @@ export class Forest extends Group {
     this.obstacles = [];
     this.surfaces = [];        // tampos de móveis, em coordenadas locais
     this.wallBases = [];       // linha pé-de-parede
+    // Multiplicadores de população da cena corrente. 1 é a densidade base;
+    // 0 significa mesmo nenhum.
+    this.densidade = {};
     this.seedValue = 1;
 
     this.geo = {};
@@ -326,6 +329,15 @@ export class Forest extends Group {
    * Cenário descampado: só o chão e um capim ralo. É o estado inicial de
    * todo mundo — a floresta é obra de quem planta, não da geração.
    */
+  /**
+   * Densidade por espécie, vinda da cena. Precisa vir ANTES de semear —
+   * quem lê estes números é o `n()` de `seed`.
+   */
+  setDensidade(mult = {}) {
+    this.densidade = mult;
+    return this;
+  }
+
   seedBare(seedValue = 1) {
     if (!this.footprint) return this;
     const r = rng(seedValue);
@@ -365,11 +377,22 @@ export class Forest extends Group {
     this.cocoons.clear(); this.cocoonSpots.length = 0;
 
     const area = polygonArea(this.footprint);
-    const n = (per, cap) => Math.min(cap, Math.max(3, Math.round(area * per)));
+    /**
+     * Quantos cabem, já pesados pela densidade da CENA.
+     *
+     * O piso de 3 que havia aqui não podia ficar: A Crisálida precisa ser
+     * mesmo vazia — um casulo pendurado no escuro e mais nada —, e um piso
+     * mínimo espalharia três árvores nela sem que ninguém pedisse.
+     */
+    const n = (per, cap, chave) => {
+      const k = this.densidade[chave] ?? 1;
+      if (k <= 0.001) return 0;
+      return Math.min(cap, Math.max(1, Math.round(area * per * k)));
+    };
     const trunks = [];   // só troncos entram aqui: é o que precisa de folga
 
     // Árvores, distribuídas em rodízio entre as três espécies.
-    const spots = this.#scatter(r, n(PER_M2.tree, CAPACITY.tree), Forest.trunkGap, trunks, {
+    const spots = this.#scatter(r, n(PER_M2.tree, CAPACITY.tree, 'arvore'), Forest.trunkGap, trunks, {
       wallMargin: WALK.wallMargin,
       obstacleMargin: WALK.obstacleMargin,
     });
@@ -406,7 +429,7 @@ export class Forest extends Group {
     this.cocoons.flush();
 
     // Cristais: altos o bastante para atrapalhar, então respeitam os troncos.
-    for (const pt of this.#scatter(r, n(PER_M2.crystal, CAPACITY.crystal), 0.8, trunks, {
+    for (const pt of this.#scatter(r, n(PER_M2.crystal, CAPACITY.crystal, 'cristal'), 0.8, trunks, {
       wallMargin: 0.3,
     })) {
       const s = 0.4 + r() * 0.85;
@@ -420,7 +443,7 @@ export class Forest extends Group {
     // Cogumelos: baixos, você passa por cima — lista de espaçamento própria,
     // compartilhada com todo o sub-bosque.
     const lowStuff = [];
-    for (const pt of this.#scatter(r, n(PER_M2.mushroom, CAPACITY.mushroom), 0.34, lowStuff, {
+    for (const pt of this.#scatter(r, n(PER_M2.mushroom, CAPACITY.mushroom, 'cogumelo'), 0.34, lowStuff, {
       wallMargin: 0.12,
     })) {
       const s = 0.35 + r() * 0.5;   // chapéu de 0,15 a 0,36 m de raio
@@ -433,7 +456,7 @@ export class Forest extends Group {
 
     // Capim: sem checagem de distância, só precisa cair dentro do cômodo.
     const b = polygonBounds(this.footprint);
-    const wanted = n(PER_M2.grass, CAPACITY.grass);
+    const wanted = n(PER_M2.grass, CAPACITY.grass, 'capim');
     for (let i = 0, guard = 0; i < wanted && guard < wanted * 12; guard++) {
       const x = b.minX + r() * (b.maxX - b.minX);
       const z = b.minZ + r() * (b.maxZ - b.minZ);
@@ -463,19 +486,19 @@ export class Forest extends Group {
 
     // Do maior para o menor: quem precisa de mais espaço sorteia primeiro,
     // senão os últimos não acham vaga e a espécie quase some da cena.
-    espalhar(this.shrubs, n(PER_M2.shrub, CAPACITY.shrub), 0.55,
+    espalhar(this.shrubs, n(PER_M2.shrub, CAPACITY.shrub, 'arbusto'), 0.55,
       () => { const k = 0.8 + r() * 0.9; return [k, k * (0.7 + r() * 0.6)]; });
-    espalhar(this.ferns, n(PER_M2.fern, CAPACITY.fern), 0.30,
+    espalhar(this.ferns, n(PER_M2.fern, CAPACITY.fern, 'samambaia'), 0.30,
       () => { const k = 0.7 + r() * 0.8; return [k, k]; });
-    espalhar(this.reeds, n(PER_M2.reed, CAPACITY.reed), 0.26,
+    espalhar(this.reeds, n(PER_M2.reed, CAPACITY.reed, 'junco'), 0.26,
       () => [0.9 + r() * 0.3, 0.55 + r() * 0.85]);
-    espalhar(this.flowers, n(PER_M2.flower, CAPACITY.flower), 0.22,
+    espalhar(this.flowers, n(PER_M2.flower, CAPACITY.flower, 'flor'), 0.22,
       () => { const k = 0.7 + r() * 0.7; return [k, k * (0.8 + r() * 0.6)]; });
 
     this.#colonize(r);
 
     // Orbes: pairam acima da cabeça, sem restrição de piso.
-    const orbCount = n(PER_M2.orb, CAPACITY.orb);
+    const orbCount = n(PER_M2.orb, CAPACITY.orb, 'orbe');
     for (let i = 0, guard = 0; i < orbCount && guard < orbCount * 12; guard++) {
       const x = b.minX + r() * (b.maxX - b.minX);
       const z = b.minZ + r() * (b.maxZ - b.minZ);
@@ -572,6 +595,41 @@ export class Forest extends Group {
       if (_p.distanceTo(local) < r) return i;
     }
     return -1;
+  }
+
+  /**
+   * GARANTE que existe um casulo por onde sair daqui.
+   *
+   * É o que impede a jornada de morrer num beco. O casulo é semeado junto com
+   * as árvores altas, por sorteio — e um cenário sem árvore nenhuma, como A
+   * Crisálida, simplesmente não ganharia nenhum. Aí não haveria mais como
+   * seguir, e a única saída seria reiniciar.
+   *
+   * Quando falta, este método pendura um no ar mesmo, sem galho: é o primeiro
+   * plano da animação, um casulo suspenso no escuro por um fio.
+   */
+  garantirCasulo(r = Math.random) {
+    const abertos = this.cocoonSpots.filter((c) => !c.aberto).length;
+    if (abertos > 0 || !this.footprint) return abertos;
+    if (this.cocoons.count >= CAPACITY.cocoon) return 0;
+
+    // Um ponto caminhável, longe da parede e de qualquer móvel, e não bem em
+    // cima de quem está entrando: 1,2 m do centro dá para vê-lo inteiro.
+    let alvo = null;
+    for (let t = 0; t < 240 && !alvo; t++) {
+      const a = r() * Math.PI * 2;
+      const d = 0.7 + r() * 1.6;
+      const p = new Vector3(Math.cos(a) * d, 0, Math.sin(a) * d);
+      if (this.accepts(p) && this.#nearestTrunk(p.x, p.z) > 0.5) alvo = p;
+    }
+    if (!alvo) alvo = new Vector3(0, 0, 0);
+
+    const cs = 1.7 + r() * 0.4;
+    const cp = new Vector3(alvo.x, 1.95 + r() * 0.2, alvo.z);
+    const ci = this.cocoons.add(cp, _q.identity(), _s.setScalar(cs));
+    this.cocoons.flush();
+    if (ci >= 0) this.cocoonSpots.push({ pos: cp.clone(), escala: cs, aberto: false });
+    return 1;
   }
 
   /**

@@ -1,5 +1,6 @@
 import {
-  Group, InstancedMesh, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
+  Group, InstancedMesh, IcosahedronGeometry, CylinderGeometry,
+  Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
 import { handMaterial } from './shaders/materials.js';
 
@@ -18,6 +19,29 @@ const TIPS = [
 /** Até 25 juntas por mão no perfil do WebXR. */
 const MAX_JOINTS = 25;
 const MAX_TIPS = TIPS.length;
+
+/**
+ * OS OSSOS — os segmentos entre uma junta e a seguinte.
+ *
+ * Sem eles a mão é um punhado de esferas soltas, e o olho lê exatamente isso:
+ * bolinhas. Preenchendo o vão, as peças fundem numa forma contínua, e o
+ * material de vidro passa a envolver uma mão em vez de vinte e cinco contas.
+ *
+ * Cada cadeia começa no punho, então a palma também ganha corpo.
+ */
+const CADEIAS = [
+  ['wrist', 'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'],
+  ...['index', 'middle', 'ring', 'pinky'].map((d) => [
+    'wrist', `${d}-finger-metacarpal`, `${d}-finger-phalanx-proximal`,
+    `${d}-finger-phalanx-intermediate`, `${d}-finger-phalanx-distal`, `${d}-finger-tip`,
+  ]),
+];
+const MAX_OSSOS = CADEIAS.reduce((n, c) => n + c.length - 1, 0) * 2;
+
+const _de = new Vector3();
+const _para = new Vector3();
+const _eixo = new Vector3();
+const CIMA = new Vector3(0, 1, 0);
 
 const _m = new Matrix4();
 const _p = new Vector3();
@@ -98,7 +122,12 @@ export class Hands extends Group {
       new IcosahedronGeometry(1, 0), handMaterial, MAX_JOINTS * 2);
     this.tipMesh = new InstancedMesh(
       new IcosahedronGeometry(1, 1), handMaterial, MAX_TIPS * 2);
-    for (const m of [this.jointMesh, this.tipMesh]) {
+    // Os ossos: um cilindro por segmento, esticado de uma junta à seguinte.
+    // É o que costura as esferas numa coisa só.
+    this.boneMesh = new InstancedMesh(
+      new CylinderGeometry(1, 1, 1, 7, 1, false), handMaterial, MAX_OSSOS);
+
+    for (const m of [this.jointMesh, this.tipMesh, this.boneMesh]) {
       m.frustumCulled = false;
       m.renderOrder = 8;
       m.count = 0;
@@ -189,11 +218,50 @@ export class Hands extends Group {
     this.tipMesh.count = tips;
     this.jointMesh.instanceMatrix.needsUpdate = true;
     this.tipMesh.instanceMatrix.needsUpdate = true;
+    this.#ossos();
+  }
+
+  /** Estica um cilindro de cada junta até a seguinte, em toda cadeia. */
+  #ossos() {
+    let n = 0;
+    for (let i = 0; i < 2; i++) {
+      const j = this.sources[i].joints;
+      if (!this.states[i].tracked || !j) continue;
+
+      for (const cadeia of CADEIAS) {
+        for (let k = 0; k < cadeia.length - 1; k++) {
+          const a = j[cadeia[k]], b = j[cadeia[k + 1]];
+          if (!a?.visible || !b?.visible) continue;
+          if (n >= this.boneMesh.instanceMatrix.count) break;
+
+          _de.copy(a.position);
+          _para.copy(b.position);
+          const comp = _de.distanceTo(_para);
+          if (comp < 1e-4) continue;
+
+          // O cilindro nasce ao longo de Y; girá-lo para a direção do osso é
+          // uma rotação de eixo único, do Y para o vetor entre as juntas.
+          _eixo.copy(_para).sub(_de).divideScalar(comp);
+          _q.setFromUnitVectors(CIMA, _eixo);
+          _p.copy(_de).add(_para).multiplyScalar(0.5);
+
+          // Um pouco mais fino que as juntas, para elas ainda lerem como
+          // articulação e o conjunto não virar uma luva lisa.
+          const r = (a.jointRadius ?? 0.008) * 0.82;
+          _s.set(r, comp, r);
+          _m.compose(_p, _q, _s);
+          this.boneMesh.setMatrixAt(n++, _m);
+        }
+      }
+    }
+    this.boneMesh.count = n;
+    this.boneMesh.instanceMatrix.needsUpdate = true;
   }
 
   dispose() {
     this.jointMesh.geometry.dispose();
     this.tipMesh.geometry.dispose();
+    this.boneMesh.geometry.dispose();
     this.clear();
   }
 }

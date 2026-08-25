@@ -15,10 +15,36 @@ export const shared = {
   uTime:   { value: 0 },
   uTrip:   { value: 0.35 },
   uMagic:  { value: 0.35 },   // 0 = mata realista, 1 = encantada
-  uBiome:  { value: 0 },      // 0 clareira, 1 fogo, 2 água
+  // --- A CENA CORRENTE ---------------------------------------------------
+  // Toda cor de superfície viaja por aqui. Eram literais no shader, em três
+  // conjuntos fixos misturados por um float de bioma, e isso travava a
+  // experiência em três mundos para sempre. Acrescentar um cenário passou a
+  // ser acrescentar dados em cenas.js; o laço de animação persegue estes
+  // valores e a travessia vira interpolação, sem recompilar nada.
+  uFolha:  { value: [new Vector3(), new Vector3(), new Vector3()] },
+  uCasca:  { value: [new Vector3(), new Vector3(), new Vector3()] },
+  uChapeu: { value: [new Vector3(), new Vector3(), new Vector3()] },
+  uPetala: { value: [new Vector3(), new Vector3(), new Vector3()] },
+  uFruta:  { value: [new Vector3(), new Vector3(), new Vector3()] },
+  uBio:    { value: [new Vector3(), new Vector3(), new Vector3()] },
+
+  // Padrão de parede: o de saída, o de entrada, e onde a travessia está.
+  uPadA:   { value: 0 },
+  uPadB:   { value: 0 },
+  uPadMix: { value: 0 },
+  uParedeCor:   { value: new Vector3(1, 1, 1) },
+  uParedeForca: { value: 1 },
+  uLaminaCor:   { value: new Vector3(0.1, 0.3, 0.5) },
+  uLaminaForca: { value: 0 },
+  uCeuBaixo: { value: new Vector3(0.03, 0.05, 0.11) },
+  uCeuAlto:  { value: new Vector3(0.08, 0.13, 0.25) },
+  uEstrelas: { value: 1.0 },
+  uNebulosa: { value: 0.5 },
   uCalm:   { value: 0.45 },   // amortecedor de cintilação; 0 = sem oscilação
   uTrample: { value: 1.0 },   // vegetação cede à passagem do usuário
   uSteps:  { value: Array.from({ length: 12 }, () => new Vector3(0, 0, 0)) },
+  uPresenca:  { value: new Vector3(0, -100, 0) },   // longe até alguém chegar
+  uPresencaR: { value: 1.15 },
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
   uGlow:   { value: 0.80 },   // bioluminescência: 0 mata apagada, 1 tudo aceso
@@ -130,15 +156,9 @@ export const fruitMaterial = make('frutos', {
   frag: /* glsl */ `
     void main(){
       ${FRAG_FADE}
-      // Três frutas por bosque, sorteadas pela árvore: rubi, âmbar e ameixa.
-      vec3 fruta = pick3(
-        vec3(0.66, 0.10, 0.13),
-        vec3(0.84, 0.44, 0.07),
-        vec3(0.33, 0.10, 0.36),
-        fract(vSeed * 4.3));
-      // No fogo elas assam; na água ficam nacaradas.
-      fruta = biomeMix(fruta, mix(fruta, vec3(0.95, 0.52, 0.14), 0.55),
-                              mix(fruta, vec3(0.72, 0.86, 0.90), 0.45));
+      // Três frutas por cenário, sorteadas pela árvore. As cores vêm da cena
+      // corrente, como todo o resto das superfícies.
+      vec3 fruta = fruitColor(vSeed * 4.3);
 
       // Ponto de luz especular fixo: é o que faz a baga parecer lisa e
       // molhada em vez de uma pedrinha fosca.
@@ -200,6 +220,7 @@ export const canopyMaterial = make('copa', {
       // inteira leria como placa retroiluminada.
       float nervura = 1.0 - smoothstep(0.0, 0.055, abs(n - 0.52));
       col += bio(nervura, t + 0.12, 1.05);
+      col += bio(nervura * presenca(vWorld), t + 0.30, 1.6);
       // E a borda da massa, onde a folhagem é fina e a luz atravessa.
       col += bio(rim * 0.7, t + 0.42, 0.60);
       gl_FragColor = vec4(filmic(col), 1.0);
@@ -465,9 +486,12 @@ export const groundMaterial = make('micelio', {
       // sozinha conforme a pisada envelhece — é plâncton na areia. A mesma
       // pisada que amassa o capim no vertex shader acende o micélio aqui.
       float passo = stepGlow(vWorld, 0.62);
+      // E o halo do corpo que está aqui agora, mais forte que a memória do pé.
+      float aqui = presenca(vWorld) * uGlow;
 
       float trama = veins * (0.30 + 0.45 * wave) + fina * 0.22 * uGlow;
-      float a = (trama + shock * 0.8 + passo * (0.55 + fina * 0.9)) * vFade;
+      float a = (trama + shock * 0.8 + passo * (0.55 + fina * 0.9)
+              + aqui * (0.35 + fina * 0.7)) * vFade;
       if (a <= 0.004) discard;
 
       vec3 col = palette(r * 0.15 + n * 0.5 + uTime * 0.05);
@@ -476,6 +500,7 @@ export const groundMaterial = make('micelio', {
       // a leitura de profundidade que uma só não dá.
       col += bio(fina, n * 0.4 + uTime * 0.03 + 0.35, 1.5);
       col += bio(passo, r * 0.1 + 0.62, 2.6);
+      col += bio(aqui, r * 0.1 + 0.28, 2.0);
       gl_FragColor = vec4(trippy(col) * (1.0 + uTrip), a);
     }
   `,
@@ -509,6 +534,8 @@ export const grassMaterial = make('capim', {
       // tela: acender a lâmina inteira viraria um tapete cintilante a cada
       // mexida de cabeça, que é exatamente o que não se pode fazer.
       col += bio(pow(h, 3.0) * 0.9, t + 0.45, 0.85);
+      // A lâmina acende inteira quando você chega perto dela.
+      col += bio(presenca(vWorld) * h, t + 0.2, 1.1);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -640,7 +667,14 @@ export const skyMaterial = make('ceu', {
       float veu = smoothstep(uHorizon, uFull, up) * uSky * teto;
       if (veu <= 0.004) discard;
 
-      // Nebulosa: fbm com domain warping, girando devagar.
+      // É NOITE.
+      //
+      // O fundo é o gradiente escuro da cena e quem faz o trabalho são as
+      // estrelas. Antes a nebulosa carregava a cor e o céu clareava até
+      // deixar de ser noite; agora ela é um véu por cima, com peso próprio
+      // por cenário.
+      vec3 base = mix(uCeuBaixo, uCeuAlto, smoothstep(-0.10, 0.85, up));
+
       vec3 q = dir * 2.6;
       float warp = vnoise(q * 0.8 + uTime * 0.02);
       float neb = fbm3(q + warp * 1.6 + vec3(uTime * 0.012, 0.0, uTime * 0.008));
@@ -650,24 +684,28 @@ export const skyMaterial = make('ceu', {
                   * sin(dir.z * 2.3 - neb * 4.0 - uTime * 0.085);
       faixa = pow(max(faixa, 0.0), 2.2);
 
-      // Estrelas com borda suave: as de borda dura piscavam a cada movimento
-      // de cabeça, porque a célula de direção mudava de golpe.
-      float estrela = softStar(dir, 170.0, 0.9988);
-      estrela *= smoothstep(0.25, 0.7, up);
-
       float t = neb * 0.9 + up * 0.35 + uTime * 0.03;
+      float nebK = uNebulosa * mix(1.0, 0.35, uSpace);
 
-      // No espaço a nebulosa recua e as estrelas dominam: um fundo claro
-      // demais engoliria os planetas, que são o que interessa lá.
-      float nebK = mix(1.0, 0.28, uSpace);
-      vec3 col = palette(t) * (0.16 + neb * 0.5) * nebK;
-      col += palette(t + 0.42) * faixa * (0.55 + uTrip * 1.0) * nebK;
-      col += vec3(estrela) * (0.7 + uTrip * 0.8) * (1.0 + uSpace * 2.2);
-      col += palette(t + 0.5) * uPulse * 0.35 * neb;
+      vec3 col = base;
+      col += bioHue(t) * neb * 0.32 * nebK;
+      col += bioHue(t + 0.42) * faixa * (0.30 + uTrip * 0.65) * nebK;
 
-      // Em espaço profundo as estrelas aparecem em todas as direções.
-      float estrelaBaixa = softStar(dir, 195.0, 0.9990) * uSpace;
-      col += vec3(estrelaBaixa) * 1.4;
+      // TRÊS DENSIDADES DE ESTRELA. Uma só dá um chuvisco uniforme, que não
+      // lê como céu — o que lê é a mistura de poucas grandes com muitas
+      // pequenas e uma poeira quase invisível por baixo. Todas com borda
+      // macia: as de borda dura piscam a cada movimento de cabeça.
+      float e1 = softStar(dir, 118.0, 0.99730);
+      float e2 = softStar(dir, 212.0, 0.99900);
+      float e3 = softStar(dir, 335.0, 0.99955);
+      float estrela = (e1 * 1.65 + e2 * 0.95 + e3 * 0.55) * uEstrelas;
+      estrela *= smoothstep(-0.06, 0.34, up);
+      col += vec3(estrela) * (0.95 + uTrip * 0.5);
+
+      col += bioHue(t + 0.5) * uPulse * 0.30 * neb;
+
+      // Em espaço profundo as estrelas aparecem também para baixo.
+      col += vec3(softStar(dir, 240.0, 0.99920) * uSpace) * 1.5;
 
       gl_FragColor = vec4(trippy(col) * (1.0 + uTrip * 0.6), veu);
     }
@@ -675,11 +713,11 @@ export const skyMaterial = make('ceu', {
 });
 
 // ---------------------------------------------------------------------------
-// VIDA NO CÉU — medusas à deriva. Moram além do teto; como o teto virou
-// abertura, elas podem ser testadas em profundidade como todo o resto, e
-// assim passam por trás das copas em vez de por cima.
+// BRILHO DE CÉU — hoje só a constelação usa. As medusas que moravam aqui
+// saíram: o céu virou noite de verdade, com planetas gigantes e cadentes, e
+// bicho à deriva lá em cima competia com eles.
 // ---------------------------------------------------------------------------
-export const skyLifeMaterial = make('medusas', {
+export const skyLifeMaterial = make('brilho-de-ceu', {
   transparent: true,
   depthWrite: false,
   depthTest: true,
@@ -1083,8 +1121,7 @@ export const fireflyMaterial = make('vagalumes', {
 export const handMaterial = make('maos', {
   transparent: true,
   depthWrite: false,
-  blending: AdditiveBlending,
-  uniforms: { uGlow: { value: 1.0 } },
+  side: DoubleSide,
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
@@ -1092,14 +1129,29 @@ export const handMaterial = make('maos', {
     }
   `,
   frag: /* glsl */ `
-    uniform float uGlow;
     void main(){
       vec3 N = normalize(vNormalW);
       vec3 V = normalize(cameraPosition - vWorld);
-      float core = pow(max(dot(N, V), 0.0), 1.2);
-      float rim  = pow(1.0 - abs(dot(N, V)), 2.0);
-      vec3 col = palette(vSeed * 0.4 + uTime * 0.15);
-      gl_FragColor = vec4(trippy(col) * (0.35 + core * 1.3 + rim * 0.9) * uGlow, 1.0);
+
+      // FRESNEL é o que faz isto ser vidro. No meio da forma, onde a
+      // superfície aponta para você, ela quase some; de raspão, acende. Era
+      // aditivo e chapado antes, e é por isso que cada junta lia como uma
+      // bolinha acesa em vez de parte de uma coisa só.
+      float fres = pow(1.0 - abs(dot(N, V)), 2.6);
+
+      // Veios de líquido escorrendo para baixo pela superfície, ancorados em
+      // mundo — assim eles atravessam a fronteira entre uma junta e o osso
+      // seguinte sem costura, e as peças param de se ler separadas.
+      float veio = fbm2(vec3(vWorld * 11.0 + vec3(0.0, -uTime * 0.30, 0.0)));
+      float nervura = 1.0 - smoothstep(0.0, 0.085, abs(veio - 0.5));
+
+      vec3 tom = bioHue(0.12 + veio * 0.25);
+      vec3 col = tom * (0.22 + nervura * 0.85) + vec3(1.0) * fres * 0.85;
+
+      // Quase transparente no corpo, sólida só na borda: é assim que se lê
+      // uma casca de vidro com algo vivo dentro.
+      float a = clamp(fres * 0.80 + nervura * 0.30 + 0.07, 0.0, 0.92);
+      gl_FragColor = vec4(filmic(col * 1.5), a);
     }
   `,
 });
@@ -1164,6 +1216,28 @@ export const reticleMaterial = make('reticulo', {
 });
 
 /** Todos os materiais criados, para descarte no fim da sessão. */
+/**
+ * Clona um material preservando os uniforms COMPARTILHADOS por referência.
+ *
+ * `ShaderMaterial.clone()` clona os uniforms em profundidade — e é isso que
+ * se quer para os uniforms próprios do objeto (a semente do planeta, o
+ * elemento que ele guarda). Mas ele clona `uTime`, `uGlow`, `uCalm` e as
+ * cores da cena junto, e aí o clone congela: o laço de animação continua
+ * escrevendo no objeto original, que o clone já não olha. O planeta para no
+ * tempo e nunca mais troca de cena.
+ *
+ * Aqui os globais voltam a apontar para os de verdade depois do clone.
+ */
+export function cloneMaterial(base, proprios = {}) {
+  const m = base.clone();
+  for (const k of Object.keys(shared)) m.uniforms[k] = shared[k];
+  for (const [k, v] of Object.entries(proprios)) {
+    if (m.uniforms[k]) m.uniforms[k].value = v;
+  }
+  registry.push(m);
+  return m;
+}
+
 export const allMaterials = registry;
 
 export function disposeMaterials() {
@@ -1197,6 +1271,93 @@ export const wallMaterial = make('paredes', {
   frag: /* glsl */ `
     uniform float uShell;
 
+    // Cada padrão devolve vec2(corpo, realce): a massa do desenho e a linha
+    // acesa por cima dela. A COR não mora aqui — vem da cena, por uniform.
+    // Assim um padrão serve a qualquer paleta, e trocar de cenário não exige
+    // reescrever desenho nenhum.
+
+    /** FAIXAS — registros ornamentais horizontais, como a borda de um têxtil. */
+    vec2 padFaixas(vec3 w, float h){
+      float y = fract(h * 0.85);
+      float dentro = smoothstep(0.04, 0.12, y) * smoothstep(0.46, 0.34, y);
+      float u = w.x * 1.9 + w.z * 1.5;
+      // Grega de degraus: quantizar u e y e alternar dá o zigue-zague sem
+      // desenhar um único segmento.
+      float degrau = step(0.5, fract(floor(u * 7.0) * 0.5 + floor(y * 6.0) * 0.5));
+      float conta = smoothstep(0.40, 0.50, abs(fract(u * 11.0) - 0.5));
+      float fio = smoothstep(0.030, 0.0, abs(y - 0.045))
+                + smoothstep(0.030, 0.0, abs(y - 0.455));
+      return vec2(dentro * mix(0.18, 1.0, degrau) * conta, fio);
+    }
+
+    /** ONDAS — cristas atravessando a alvenaria, subindo devagar. */
+    vec2 padOndas(vec3 w, float h){
+      float onda = sin((w.y - uTime * 0.20) * 5.0
+                     + fbm2(vec3(w.xz * 1.5, uTime * 0.045)) * 3.6);
+      float crista = pow(max(onda, 0.0), 3.0);
+      return vec2(0.28 + crista * 1.05, crista * crista);
+    }
+
+    /** BRASA — a parede racha e o que está atrás dela brilha. */
+    vec2 padBrasa(vec3 w, float h){
+      float veia = fbm2(vec3(w.xz * 3.1, w.y * 1.2 - uTime * 0.035));
+      float fenda = pow(max(0.0, 1.0 - abs(veia - 0.5) * 2.4), 6.0);
+      float vivo = damp(0.78 + 0.22 * sin(uTime * 0.55 + w.y * 1.6), 0.86);
+      return vec2(fenda * vivo * (0.55 + exp(-h * 0.34)), fenda * fenda * vivo);
+    }
+
+    /** DENDRITO — a ramificação que é coral, raiz e raio ao mesmo tempo. */
+    vec2 padDendrito(vec3 w, float h){
+      float n = fbm2(vec3(w.xz * 2.2, w.y * 1.4 + uTime * 0.02));
+      float m = fbm2(vec3(w.xz * 4.7 + 31.0, w.y * 2.1 - uTime * 0.03));
+      // O ramo é onde dois ruídos de escalas diferentes se cruzam. Traçar
+      // galho por galho custaria caro e ficaria regular demais.
+      float ramo = pow(max(0.0, 1.0 - abs(n - m) * 7.0), 4.0);
+      return vec2(ramo * (0.5 + exp(-h * 0.22)), ramo * ramo * 1.6);
+    }
+
+    /** FILIGRANA — volutas encadeadas, o arabesco vermelho e ouro. */
+    vec2 padFiligrana(vec3 w, float h){
+      // Duas ondas moduladas uma pela outra: o encadeamento nasce do
+      // cruzamento delas, sem desenhar voluta nenhuma.
+      vec2 p = vec2(w.x * 2.3 + w.z * 1.1, w.y * 2.0);
+      float a = sin(p.x * 3.1 + sin(p.y * 2.3) * 2.2);
+      float b = sin(p.y * 3.7 - sin(p.x * 1.9) * 2.6);
+      float laco = pow(max(0.0, 1.0 - abs(a - b) * 2.4), 5.0);
+      float fino = smoothstep(0.46, 0.5, abs(fract(p.x * 2.0 + p.y) - 0.5));
+      return vec2(laco * 1.2 + fino * 0.09, laco * laco * 1.8);
+    }
+
+    /** MÁRMORE — tinta sobre água, com domain warping. */
+    vec2 padMarmore(vec3 w, float h){
+      vec3 q = vec3(w.xz * 1.2, w.y * 0.7 + uTime * 0.012);
+      float warp = vnoise(q * 0.9);
+      float v = fbm3(q + warp * 2.0);
+      float veio = 1.0 - smoothstep(0.0, 0.05, abs(fract(v * 3.0) - 0.5));
+      return vec2(0.18 + v * 0.50, veio);
+    }
+
+    /** ROCHA — a moldura de rocha pintada do proscênio. */
+    vec2 padRocha(vec3 w, float h){
+      float estria = fbm2(vec3(w.xz * 5.5, w.y * 0.35));
+      float sulco = smoothstep(0.40, 0.5, abs(fract(estria * 4.0 + w.y * 0.5) - 0.5));
+      // A moldura vive no rodapé e perto do teto; o meio da parede é a boca
+      // do palco e fica limpo para a cena aparecer nela.
+      float moldura = exp(-h * 1.7) + smoothstep(1.75, 2.35, h);
+      return vec2((0.22 + sulco * 0.70) * (0.35 + moldura), moldura * sulco);
+    }
+
+    vec2 padraoPor(float qual, vec3 w, float h){
+      int i = int(qual + 0.5);
+      if (i == 0) return padFaixas(w, h);
+      if (i == 1) return padOndas(w, h);
+      if (i == 2) return padBrasa(w, h);
+      if (i == 3) return padDendrito(w, h);
+      if (i == 4) return padFiligrana(w, h);
+      if (i == 5) return padMarmore(w, h);
+      return padRocha(w, h);
+    }
+
     void main(){
       if (uShell < 0.004) discard;
 
@@ -1206,39 +1367,18 @@ export const wallMaterial = make('paredes', {
       float borda = smoothstep(0.5, 0.34, q.x) * smoothstep(0.5, 0.26, q.y);
       if (borda <= 0.004) discard;
 
-      float b = clamp(uBiome, 0.0, 2.0);
-      float wTerra = 1.0 - smoothstep(0.0, 1.0, b);
-      float wFogo  = 1.0 - clamp(abs(b - 1.0), 0.0, 1.0);
-      float wAgua  = smoothstep(1.0, 2.0, b);
-
       float h = max(vWorld.y - uOrigin.y, 0.0);
 
-      // TERRA — trepadeiras subindo do rodapé, rareando com a altura.
-      // Filete fino e folha destacada: gavinha larga vira mancha de tinta
-      // verde na parede, e o que se quer é ver a alvenaria por entre elas.
-      float trilha = fbm2(vec3(vWorld.xz * 2.6, vWorld.y * 0.5));
-      float fio = vWorld.x * 3.4 + vWorld.z * 2.6 + trilha * 3.0;
-      float gavinha = smoothstep(0.44, 0.50, abs(fract(fio) - 0.5));
-      float folha = smoothstep(0.66, 0.96, fract(vWorld.y * 6.0 + trilha * 4.0)) * gavinha;
-      vec3 cTerra = (vec3(0.11, 0.34, 0.15) * gavinha + vec3(0.26, 0.58, 0.21) * folha)
-                  * exp(-h * 0.50) * 1.4;
+      // Dois padrões vivos ao mesmo tempo durante a travessia: o que sai e o
+      // que entra. Fora dela os dois são o mesmo e o mix não custa nada.
+      vec2 pa = padraoPor(uPadA, vWorld, h);
+      vec2 pb = padraoPor(uPadB, vWorld, h);
+      vec2 pd = mix(pa, pb, uPadMix);
 
-      // FOGO — a parede racha e o que está atrás dela brilha.
-      float veia = fbm2(vec3(vWorld.xz * 3.1, vWorld.y * 1.2 - uTime * 0.035));
-      float fenda = pow(max(0.0, 1.0 - abs(veia - 0.5) * 2.4), 6.0);
-      vec3 cFogo = mix(vec3(0.52, 0.11, 0.03), vec3(1.0, 0.60, 0.16), fenda)
-                 * fenda
-                 * damp(0.78 + 0.22 * sin(uTime * 0.55 + vWorld.y * 1.6), 0.86)
-                 * (0.55 + exp(-h * 0.34));
+      vec3 col = uParedeCor * pd.x
+               + mix(uParedeCor, vec3(1.0), 0.55) * pd.y;
+      col *= uParedeForca;
 
-      // ÁGUA — ondas horizontais atravessando a alvenaria, subindo devagar.
-      float onda = sin((vWorld.y - uTime * 0.20) * 5.0
-                     + fbm2(vec3(vWorld.xz * 1.5, uTime * 0.045)) * 3.6);
-      float crista = pow(max(onda, 0.0), 3.0);
-      vec3 cAgua = mix(vec3(0.03, 0.22, 0.40), vec3(0.32, 0.80, 0.95), crista)
-                 * (0.30 + crista * 1.15);
-
-      vec3 col = cTerra * wTerra + cFogo * wFogo + cAgua * wAgua;
       float a = borda * uShell;
       if (a <= 0.004) discard;
       gl_FragColor = vec4(filmic(col), a);
@@ -1286,11 +1426,7 @@ export const tideMaterial = make('lamina', {
       float borda = smoothstep(0.5, 0.28, q.x) * smoothstep(0.5, 0.28, q.y);
       if (borda <= 0.004) discard;
 
-      float b = clamp(uBiome, 0.0, 2.0);
-      float wFogo = 1.0 - clamp(abs(b - 1.0), 0.0, 1.0);
-      float wAgua = smoothstep(1.0, 2.0, b);
-      float peso = wAgua + wFogo * 0.55;
-      if (peso < 0.01) discard;
+      if (uLaminaForca < 0.01) discard;
 
       // Cáustica: a interferência de dois ruídos que deslizam em sentidos
       // opostos. É mais barato que traçar refração e lê igual.
@@ -1298,15 +1434,182 @@ export const tideMaterial = make('lamina', {
       float c2 = fbm2(vec3(vWorld.xz * 3.1 - vec2(uTime * 0.042, uTime * 0.065), 4.0));
       float caustica = pow(max(0.0, 1.0 - abs(c1 - c2) * 4.2), 3.0);
 
-      vec3 agua = mix(vec3(0.02, 0.18, 0.32), vec3(0.18, 0.60, 0.78), caustica);
-      agua += vec3(0.55, 0.95, 1.0) * caustica * 0.75;
-
-      vec3 brasa = vec3(0.92, 0.34, 0.06) * (0.25 + caustica * 0.9);
-
-      vec3 col = agua * wAgua + brasa * wFogo;
-      float a = borda * uShell * peso * (0.26 + caustica * 0.44);
+      // A lâmina é a cor da cena, aberta pela cáustica em direção à luz viva
+      // dela. Uma cor só, sem "água" e "brasa" cravadas no shader: é a cena
+      // que diz se aqui embaixo tem oceano, névoa de brasa ou nebulosa.
+      vec3 col = mix(uLaminaCor, uLaminaCor * 2.2 + bioHue(0.15) * 0.55, caustica);
+      col += bioHue(0.4) * caustica * 0.7;
+      float a = borda * uShell * uLaminaForca * (0.26 + caustica * 0.44);
       if (a <= 0.004) discard;
       gl_FragColor = vec4(filmic(col), a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// ESTRELAS CADENTES.
+//
+// Cada meteoro carrega o próprio relógio: período longo e fase própria, tirados
+// da semente da instância. Ninguém precisa sortear nada por quadro no
+// JavaScript, e como os períodos não são múltiplos entre si, eles nunca caem
+// juntos — o céu fica com aquela irregularidade que faz esperar o próximo.
+//
+// Fora da sua fatia de vida o meteoro colapsa num ponto: os triângulos
+// degeneram e não custam pixel nenhum.
+//
+// Sobre fotossensibilidade: é um risco de segurança e vale ser explícito. Um
+// meteoro atravessa em pouco mais de um segundo, ocupa uma fração mínima do
+// campo e cresce e apaga por envelope suave. Não é um clarão de tela cheia,
+// que é o que dispara crise; e a raridade dos períodos mantém a frequência
+// média bem abaixo de 1 Hz mesmo com o enxame inteiro.
+// ---------------------------------------------------------------------------
+export const meteorMaterial = make('meteoros', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  side: DoubleSide,
+  uniforms: { uRaio: { value: 40 } },
+  vert: /* glsl */ `
+    attribute float aSeed;
+    uniform float uRaio;
+    varying float vCauda;    // 0 na cabeça .. 1 na ponta do rastro
+    varying float vLarg;     // -1 .. 1 através da largura
+    varying float vVivo;
+
+    void main(){
+      vSeed = aSeed;
+
+      // Períodos entre 9 e 31 s, sem razão simples entre eles.
+      float periodo = 9.0 + fract(aSeed * 7.3) * 22.0;
+      float fase = fract(uTime / periodo + fract(aSeed * 13.7));
+
+      // Ele existe em 16% do próprio ciclo — cerca de dois segundos.
+      float vivo = smoothstep(0.0, 0.035, fase) * (1.0 - smoothstep(0.10, 0.16, fase));
+      vVivo = vivo;
+
+      // Onde nasce, no alto da cúpula, e para onde vai.
+      float az = fract(aSeed * 3.1) * 6.28318;
+      float el = 0.35 + fract(aSeed * 5.7) * 0.95;
+      vec3 origem = vec3(sin(az) * cos(el), sin(el), cos(az) * cos(el));
+      vec3 lado = normalize(cross(origem, vec3(0.0, 1.0, 0.0)));
+      vec3 tang = normalize(mix(lado, cross(origem, lado), fract(aSeed * 11.3)));
+
+      // Avança ao longo de um arco. A trajetória é uma rotação do vetor de
+      // origem na direção da tangente: assim ela acompanha a cúpula em vez
+      // de sair reta e furá-la.
+      float andar = smoothstep(0.0, 0.16, fase);
+      float avanco = mix(-0.30, 0.42, andar);
+
+      float u = position.x + 0.5;                       // 0 cabeça .. 1 cauda
+      vCauda = u;
+      vLarg = position.y * 2.0;
+
+      float comp = 0.09 + fract(aSeed * 2.7) * 0.13;    // rastro, em radianos
+      float ang = avanco - u * comp;
+      vec3 p = normalize(origem * cos(ang) + tang * sin(ang));
+      vec3 lateral = normalize(cross(p, tang));
+
+      // Afina para a cauda. Em vivo = 0 tudo colapsa e nada é rasterizado.
+      float larg = mix(0.0035, 0.0009, u) * vivo;
+      vec3 mundo = (p + lateral * vLarg * larg) * uRaio * mix(0.0001, 1.0, step(0.001, vivo));
+
+      vec4 w = modelMatrix * vec4(mundo, 1.0);
+      vWorld = w.xyz; vLocal = mundo; vNormalW = normalize(p);
+      vFade = 1.0;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }
+  `,
+  frag: /* glsl */ `
+    varying float vCauda;
+    varying float vLarg;
+    varying float vVivo;
+
+    void main(){
+      if (vVivo < 0.004) discard;
+      // Borda macia na largura e apagamento ao longo do rastro.
+      float perfil = (1.0 - smoothstep(0.0, 1.0, abs(vLarg)));
+      float rastro = pow(1.0 - vCauda, 2.2);
+      float a = perfil * rastro * vVivo;
+      if (a <= 0.004) discard;
+
+      // A cabeça é quase branca; o rastro pega a cor viva do cenário.
+      vec3 col = mix(bioHue(vSeed), vec3(1.0), pow(1.0 - vCauda, 3.0) * 0.85);
+      gl_FragColor = vec4(col * a * 2.4, a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// SERES MARINHOS.
+//
+// O que separa um peixe de uma folha que anda é a ONDA: o corpo dele não se
+// desloca rígido, ele ondula, e a onda corre da cabeça para a cauda. É a mesma
+// lição da asa da borboleta — o que identifica o bicho não é a forma parada,
+// é como a forma se deforma.
+//
+// `aSpan` vai de 0 na cabeça a 1 na ponta da cauda, e a amplitude cresce com
+// ele: a cabeça quase não mexe, a cauda varre. O contrário — amplitude
+// uniforme — dá uma tábua balançando.
+// ---------------------------------------------------------------------------
+export const fishMaterial = make('peixes', {
+  side: DoubleSide,
+  transparent: true,
+  depthWrite: false,
+  vert: /* glsl */ `
+    attribute float aSpan;    // 0 cabeça .. 1 cauda
+    attribute float aSeed;
+    varying float vSpan;
+
+    void main(){
+      ${ROOT_AND_ATTR_SEED}
+      vSpan = aSpan;
+
+      // Batida lenta: peixe em cardume à deriva, não em fuga.
+      float freq = (1.15 + vSeed * 0.5) * mix(0.6, 1.0, uCalm);
+      float onda = sin(uTime * freq * 6.28318 - aSpan * 3.4 + vSeed * 7.0);
+
+      vec3 p = position;
+      // A onda corre no eixo do corpo e desloca de lado, crescendo para trás.
+      p.x += onda * aSpan * aSpan * 0.055;
+      // E a cauda gira um pouco em torno do próprio eixo, como leme.
+      float torce = onda * aSpan * 0.35;
+      float c = cos(torce), sn = sin(torce);
+      float y = p.y, z = p.z;
+      p.y = y * c - z * sn;
+      p.z = y * sn + z * c;
+
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    varying float vSpan;
+    void main(){
+      ${FRAG_FADE}
+      // Dorso escuro, ventre claro: é a contra-sombra de quase todo peixe, e
+      // é ela que dá volume a um corpo chapado.
+      float ventre = smoothstep(-0.02, 0.03, vLocal.y);
+      vec3 corpo = mix(leafColor(vSeed * 3.7) * 0.45,
+                       chapeuClaro(vSeed), ventre);
+
+      // Faixas transversais, apertando na cauda.
+      float faixa = smoothstep(0.42, 0.5, abs(fract(vSpan * 7.0 + vSeed * 3.0) - 0.5));
+      corpo = mix(corpo * 0.55, corpo, faixa);
+
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float iris = pow(1.0 - abs(dot(N, V)), 3.0);
+
+      // Sem "nightBody" aqui, ao contrário da vegetação. Peixe é pequeno e
+      // está sempre contra a água clara: escurecer o corpo o transforma numa
+      // silhueta preta, e some a onda do nado, que é o que o identifica.
+      vec3 col = enchant(corpo, vSeed + uTime * 0.03, 0.35);
+      col *= 0.72 + 0.60 * wrapLight(N);
+      col += bioHue(vSeed * 0.6) * iris * 1.2 * (0.4 + uGlow);
+      // A linha lateral acesa, que é onde o peixe do fundo carrega a luz.
+      float lateral = 1.0 - smoothstep(0.0, 0.009, abs(vLocal.y));
+      col += bio(lateral * (0.5 + vSpan * 0.6), vSeed + 0.4, 2.2);
+
+      gl_FragColor = vec4(filmic(col), (0.88 + 0.12 * vSpan) * vFade);
     }
   `,
 });

@@ -12,14 +12,14 @@ import { MagicWindow } from './magicwindow.js';
 import { RoomMesh } from './occlusion.js';
 import { Sky } from './sky.js';
 import { skyMaterial, scanMaterial, capMaterial } from './shaders/materials.js';
-import { Butterflies, Fireflies } from './creatures.js';
+import { Butterflies, Fireflies, Cardume } from './creatures.js';
 import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
 import { Space, Emergence, ENTER_SCALE } from './space.js';
 import { BlackHoles } from './blackholes.js';
 import { Shell, Tide, wallsFromFootprint } from './shell.js';
-import { biomes, byId } from './biomes.js';
+import { CENAS, cenaPor, proxima, N_CENAS } from './cenas.js';
 import { butterflyMaterial, cocoonMaterial, skyMaterial as _sky } from './shaders/materials.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
@@ -81,9 +81,17 @@ const constelacao = new Constellation();
 constelacao.visible = false;
 sky.add(constelacao);
 
-const butterflies = new Butterflies(22);
+// Poucas e grandes lê melhor que muitas e pequenas: com enxame a asa vira
+// ruído no canto do olho, e a batida — que é o que custou a acertar — se
+// perde. Doze basta para o ar não parecer vazio.
+const butterflies = new Butterflies(12);
+
+// Debaixo d'água não voa borboleta. O cardume ocupa o mesmo lugar na cena e
+// nunca aparece junto com elas — é um ou outro, conforme o cenário.
+const cardume = new Cardume(18);
 butterflies.visible = false;
 scene.add(butterflies);
+scene.add(cardume);
 
 // Um enxame preso a você, outro para deixar em cima de alguém.
 const auraFireflies = new Fireflies(24, 11);
@@ -104,6 +112,7 @@ scene.add(seeds);
 
 const space = new Space();
 scene.add(space);
+space.onTravessia = () => { audio.chime(-12, 0.22); ping(0.45); };
 
 const buracos = new BlackHoles();
 scene.add(buracos);
@@ -140,7 +149,8 @@ const state = {
   blessed: false,     // há alguém abençoado com vaga-lumes?
   world: 'floresta',  // floresta | espaco
   warp: 0,            // 0 floresta .. 1 espaço
-  biome: 0,           // índice em biomes.js
+  cena: 0,            // índice em cenas.js — onde da jornada você está
+  subindo: false,     // a borboleta está levando este mundo embora
   calm: 0.45,         // amortecedor de cintilação, 0..1
   glowStep: 2,        // índice em GLOW
   scanSweep: 0,
@@ -154,6 +164,113 @@ const target = {
   uPalD: palettes[0].d.clone(),
 };
 for (const k of Object.keys(target)) shared[k].value.copy(target[k]);
+
+/**
+ * OS ALVOS DA CENA.
+ *
+ * Nada aqui é escrito direto no uniform: o laço persegue estes valores. Uma
+ * cena que troca de estalo é um salto de brilho de tela cheia, que é
+ * exatamente o que este projeto evita por causa de fotossensibilidade — e
+ * também é feio. A perseguição é o que faz a travessia parecer metamorfose,
+ * que é a regra da animação de referência: lá nada corta, tudo vira.
+ */
+const trio = () => [new Vector3(), new Vector3(), new Vector3()];
+const alvo = {
+  folha: trio(), casca: trio(), chapeu: trio(), petala: trio(), fruta: trio(), bio: trio(),
+  paredeCor: new Vector3(1, 1, 1), paredeForca: 1,
+  laminaCor: new Vector3(), laminaForca: 0,
+  ceuBaixo: new Vector3(), ceuAlto: new Vector3(),
+  estrelas: 1, nebulosa: 0.5,
+};
+
+/** Travessia de padrão de parede: de qual desenho, para qual, e onde está. */
+const padTrans = { de: 0, para: 0, k: 1 };
+
+const FAMILIAS = ['folha', 'casca', 'chapeu', 'petala', 'fruta', 'bio'];
+const UNIFORME = { folha: 'uFolha', casca: 'uCasca', chapeu: 'uChapeu',
+  petala: 'uPetala', fruta: 'uFruta', bio: 'uBio' };
+
+/**
+ * Aponta os alvos para uma cena. `imediato` salta — só serve para a primeira,
+ * quando ainda não há nada na tela para saltar.
+ */
+function aplicarCena(indice, { imediato = false } = {}) {
+  const c = cenaPor(indice);
+  state.cena = c.id;
+
+  for (const f of FAMILIAS) for (let i = 0; i < 3; i++) alvo[f][i].copy(c[f][i]);
+  alvo.paredeCor.copy(c.parede.cor);
+  alvo.paredeForca = c.parede.forca;
+  alvo.laminaCor.copy(c.lamina.cor);
+  alvo.laminaForca = c.lamina.forca;
+  alvo.ceuBaixo.copy(c.ceu.baixo);
+  alvo.ceuAlto.copy(c.ceu.alto);
+  alvo.estrelas = c.ceu.estrelas;
+  alvo.nebulosa = c.ceu.nebulosa;
+
+  // A parede não interpola desenho: ela mostra os dois ao mesmo tempo e passa
+  // o peso de um para o outro. Interpolar índice de padrão daria um desenho
+  // intermediário que não existe.
+  padTrans.de = shared.uPadB.value;
+  padTrans.para = c.parede.padrao;
+  padTrans.k = imediato ? 1 : 0;
+  shared.uPadA.value = padTrans.de;
+  shared.uPadB.value = padTrans.para;
+  shared.uPadMix.value = padTrans.k;
+
+  state.paletteIndex = c.palette;
+  const pal = palettes[c.palette];
+  target.uPalA.copy(pal.a); target.uPalB.copy(pal.b);
+  target.uPalC.copy(pal.c); target.uPalD.copy(pal.d);
+
+  if (imediato) {
+    for (const f of FAMILIAS) {
+      for (let i = 0; i < 3; i++) shared[UNIFORME[f]].value[i].copy(alvo[f][i]);
+    }
+    shared.uParedeCor.value.copy(alvo.paredeCor);
+    shared.uParedeForca.value = alvo.paredeForca;
+    shared.uLaminaCor.value.copy(alvo.laminaCor);
+    shared.uCeuBaixo.value.copy(alvo.ceuBaixo);
+    shared.uCeuAlto.value.copy(alvo.ceuAlto);
+    shared.uEstrelas.value = alvo.estrelas;
+    shared.uNebulosa.value = alvo.nebulosa;
+    for (const k of Object.keys(target)) shared[k].value.copy(target[k]);
+  }
+
+  audio.setCena(c.ambience);
+  return c;
+}
+
+/**
+ * Estamos no cenário do cosmos? É o único com planetas ao alcance da mão e
+ * buracos abertos nas paredes — vários trechos precisam saber disso, e
+ * perguntar à cena é mais honesto do que guardar um segundo estado paralelo.
+ */
+function noCosmos() { return !!cenaPor(state.cena).cosmos; }
+
+/** Persegue os alvos. Chamado a cada quadro. */
+function seguirCena(dt) {
+  const k = 1 - Math.exp(-dt * 1.1);
+  for (const f of FAMILIAS) {
+    const dest = shared[UNIFORME[f]].value;
+    for (let i = 0; i < 3; i++) dest[i].lerp(alvo[f][i], k);
+  }
+  shared.uParedeCor.value.lerp(alvo.paredeCor, k);
+  shared.uLaminaCor.value.lerp(alvo.laminaCor, k);
+  shared.uCeuBaixo.value.lerp(alvo.ceuBaixo, k);
+  shared.uCeuAlto.value.lerp(alvo.ceuAlto, k);
+  shared.uParedeForca.value += (alvo.paredeForca - shared.uParedeForca.value) * k;
+  shared.uEstrelas.value += (alvo.estrelas - shared.uEstrelas.value) * k;
+  shared.uNebulosa.value += (alvo.nebulosa - shared.uNebulosa.value) * k;
+
+  if (padTrans.k < 1) {
+    padTrans.k = Math.min(1, padTrans.k + dt * 0.45);
+    shared.uPadMix.value = padTrans.k;
+    // Chegou: o novo padrão passa a ser o único, e o slot A fica livre para
+    // a próxima travessia.
+    if (padTrans.k >= 1) shared.uPadA.value = padTrans.para;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // HUD
@@ -264,12 +381,16 @@ function commitRoom() {
   // afundamento da floresta: a sala fica onde está.
   const alturaTeto = room.ceilingY != null ? room.ceilingY - room.floorY : 2.6;
   shell.applyWalls(paredes, alturaTeto);
+  // Os dois buracos viram o par de portais dos planetas: quem entra num sai
+  // pelo outro. Sem dois, ninguém atravessa nada.
+  space.setPortais(buracos.portais());
   shell.position.copy(forest.position);
   tide.applyFootprint(forest.footprint);
   tide.position.copy(forest.position);
 
-  butterflies.fitTo(Math.sqrt(room.area / Math.PI));
-  butterflies.visible = true;
+  const raioSala = Math.sqrt(room.area / Math.PI);
+  butterflies.fitTo(raioSala);
+  cardume.fitTo(raioSala);
   auraFireflies.visible = true;
   bodyGrowth.visible = true;
   bodyGrowth.setBlooming(state.bloomOn);
@@ -279,9 +400,12 @@ function commitRoom() {
   scanEl?.classList.remove('on');
   ping(1);
   audio.chime(12, 0.28);
-  const b = byId(state.biome);
-  toast(`${b.saudacao} Abra a mão para nascer uma semente; `
-    + 'pince mirando o chão para plantar, de pé ou sentado.', b.swatch);
+
+  // A jornada começa sempre no primeiro elo, e sem transição: não há nada na
+  // tela ainda para atravessar.
+  aplicarCena(0, { imediato: true });
+  const c = montarCena(0);
+  toast(`${c.nome} — ${c.saudacao}`, c.swatch);
 }
 
 /**
@@ -353,47 +477,59 @@ function hatch(indice) {
 
   emergence.launch(mundo);
   virouLuz = false;
-  // Planetas nascem em volta de onde você está AGORA e ficam parados ali:
-  // é o que permite dar a volta neles caminhando.
+  state.subindo = true;
+  // Os planetas nascem em volta de onde você está AGORA e ficam parados ali:
+  // é o que permite dar a volta neles caminhando quando o Olho chegar.
   space.position.set(_head.x, forest.position.y, _head.z);
-  state.world = 'espaco';
   ping(1);
   audio.chime(24, 0.3);
   setTimeout(() => audio.chime(31, 0.2), 400);
-  toast('Ela nasceu — siga com o olhar', palettes[state.paletteIndex].swatch);
+  toast('Ela nasceu — siga com o olhar', cenaPor(state.cena).swatch);
 }
+
+/**
+ * Monta o cenário de índice `i` do zero.
+ *
+ * Chamado no alto da subida, quando o mundo anterior já evaporou. Semear com
+ * a tela cheia seria ver a floresta aparecer de um quadro para o outro; aqui
+ * ela nasce dentro do clarão e se condensa conforme a dissolução volta.
+ */
+function montarCena(i) {
+  const c = aplicarCena(i);
+  state.seed = (state.seed * 1103515245 + 12345) >>> 0;
+  forest.setDensidade(c.populacao);
+  forest.seed(state.seed);
+  // A saída daqui não pode depender de sorteio.
+  forest.garantirCasulo();
+  forest.visible = true;
+  state.intro = 0;
+
+  tide.setNivel(c.lamina.altura);
+  for (const p of passos) p.z = 0;   // cenário novo, chão intacto
+  _ultimoPasso.set(1e9, 0, 1e9);
+  ping(1);
+  audio.chime(12, 0.3);
+  toast(`${c.nome} — ${c.saudacao}`, c.swatch);
+  return c;
+}
+
+/** Avança um elo da cadeia. O último devolve ao primeiro. */
+function trocarCena() { return montarCena(proxima(state.cena)); }
 
 /**
  * Atravessa para o mundo de um planeta. Tudo o que muda é o bioma, a paleta e
  * o chão — a mecânica é a mesma em todos: terra nua, sementes, e um casulo que
  * devolve ao espaço.
  */
-function enterWorld(biomeId) {
-  const b = byId(biomeId);
-  state.biome = b.id;
-  state.paletteIndex = b.palette;
-  const p = palettes[b.palette];
-  target.uPalA.copy(p.a); target.uPalB.copy(p.b);
-  target.uPalC.copy(p.c); target.uPalD.copy(p.d);
-
-  state.seed = (state.seed * 1103515245 + 12345) >>> 0;
-  forest.seedBare(state.seed);
-  forest.visible = true;
-  state.world = 'floresta';
-  state.intro = 0;
-
+function enterWorld(indice) {
   space.resetScales();
-  for (const p of passos) p.z = 0;   // mundo novo, chão intacto
-  _ultimoPasso.set(1e9, 0, 1e9);
-  ping(1);
-  audio.chime(12, 0.3);
-  audio.setBiome(b.id);
-  toast(`${b.name} — ${b.saudacao}`, b.swatch);
+  state.subindo = false;
+  return montarCena(indice);
 }
 
 function backToForest() {
-  if (state.world === 'floresta') return;
-  state.world = 'floresta';
+  if (!state.subindo) return;
+  state.subindo = false;
   ping(0.8);
   audio.chime(5, 0.24);
   toast('De volta à clareira', palettes[state.paletteIndex].swatch);
@@ -552,11 +688,11 @@ const interaction = new Interaction(renderer, scene, camera, {
         return;
       }
       interaction.pulse(controller, 0.8, 60);
-    } else if (state.phase === 'growing' && state.world === 'espaco') {
+    } else if (state.phase === 'growing' && noCosmos()) {
       const planeta = space.pick(aimPoint ?? camera.position);
       if (planeta) { space.lift(planeta); space.drop(planeta); }
       else backToForest();
-    } else if (state.phase === 'growing' && state.world === 'floresta' && controller) {
+    } else if (state.phase === 'growing' && !noCosmos() && controller) {
       // Primeiro tenta agarrar de longe pelo raio. Só se não houver nada sob
       // a mira é que o gesto vira plantar ou abençoar.
       interaction.ray(controller, _origem, _direcao);
@@ -868,7 +1004,6 @@ xr.onEnd = () => {
   blessedFireflies.visible = false;
   bodyGrowth.visible = false;
   state.blessed = false;
-  state.world = 'floresta';
   state.warp = 0;
   space.setProgress(0);
   el('enter').disabled = false;
@@ -887,7 +1022,7 @@ el('preview').addEventListener('click', startPreview);
 const PAD = {
   palette: cyclePalette,
   trip: toggleTrip,
-  seed: () => { if (state.world === 'espaco') backToForest(); else reseed(); },
+  seed: () => { if (state.subindo) backToForest(); else reseed(); },
   smaller: () => { state.scale = MathUtils.clamp(state.scale * 0.85, 0.35, 2.4); },
   bigger: () => { state.scale = MathUtils.clamp(state.scale * 1.18, 0.35, 2.4); },
   recenter: () => { magic.recenter(); toast('Frente recentrada'); },
@@ -972,7 +1107,7 @@ const hands = new Hands(renderer, {
     // No espaço a pinça só serve para pegar planeta — encostado nele, ou sob
     // a mira, que é o que vale quando você está sentado e a órbita passa
     // longe do braço.
-    if (state.world === 'espaco') {
+    if (noCosmos()) {
       const planeta = space.pick(hand.pinch) ?? space.pickAlongRay(_rOrig, _rDir);
       if (planeta) {
         const d = planeta.getWorldPosition(_pMao).distanceTo(_rOrig);
@@ -1079,7 +1214,7 @@ scene.add(hands);
 const wristMenu = new WristMenu({
   onPalette: () => { cyclePalette(); },
   onTrip: () => { toggleTrip(); },
-  onReseed: () => { if (state.world === 'espaco') backToForest(); else reseed(); },
+  onReseed: () => { if (state.subindo) backToForest(); else reseed(); },
   onSky: () => { toggleSky(); },
   onBloom: () => { toggleBloom(); },
   onGlow: () => { cycleGlow(); },
@@ -1095,7 +1230,7 @@ function updateHands(dt) {
   // Duas mãos no mesmo planeta = escala. Afastar as mãos aumenta; passando do
   // limiar, o planeta se abre e você atravessa para o mundo dele.
   const seguro = [...grabbed.entries()].find(([, h]) => h.espaco);
-  if (seguro && state.world === 'espaco') {
+  if (seguro && noCosmos()) {
     const [maoQueSegura, alca] = seguro;
     const outra = hands.states.find((st) => st !== maoQueSegura && st.tracked && st.pinching);
     if (outra) {
@@ -1135,7 +1270,7 @@ function updateHands(dt) {
       // Realça o que está ao alcance; se não há nada, o que está sob a mira.
       // O realce é a única confirmação de que o raio achou alguma coisa.
       hover = forest.pick(toLocal(st.pinch));
-      if (!hover && state.world === 'floresta') {
+      if (!hover && !noCosmos()) {
         handRay(st, _rOrig, _rDir);
         raioLocal(_rOrig, _rDir);
         hover = forest.pickAlongRay(_rOrigL, _rDirL);
@@ -1146,7 +1281,7 @@ function updateHands(dt) {
 
   // Tocar no casulo com a ponta do indicador — sem precisar pinçar, porque
   // encostar é o gesto que a cena pede.
-  if (state.world === 'floresta') {
+  if (!noCosmos()) {
     for (const st of hands.states) {
       if (!st.tracked) continue;
       const i = forest.pickCocoon(toLocal(st.indexTip));
@@ -1237,7 +1372,9 @@ function frame(time, xrFrame) {
     * (1 - Math.exp(-dt * 0.9));
   // Trocar de mundo é animar este float: um só conjunto de materiais serve
   // para todos os biomas.
-  shared.uBiome.value += (state.biome - shared.uBiome.value) * (1 - Math.exp(-dt * 0.65));
+  // A cena inteira é perseguida aqui: cor de folha, de casca, de parede, de
+  // céu. Trocar de cenário virou interpolação de uniforms, e não recompilação.
+  seguirCena(dt);
 
   if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
     // Durante a captura a tela é do sistema, e ler os planos antigos aqui só
@@ -1273,7 +1410,7 @@ function frame(time, xrFrame) {
 
   // A vegetação cede por onde você passa. Só na floresta: no espaço não há
   // chão para pisar.
-  if (state.phase === 'growing' && state.world === 'floresta') {
+  if (state.phase === 'growing' && !state.subindo) {
     registrarPasso(_head);
     envelhecerPassos(dt);
   }
@@ -1289,22 +1426,37 @@ function frame(time, xrFrame) {
     shell.setAmount(state.intro);
     // A lâmina, não: uma superfície de água na altura da cintura só faz
     // sentido enquanto há chão. No espaço ela recua.
-    tide.setBiome(shared.uBiome.value, state.intro * (1 - state.warp));
+    tide.update(dt, state.intro * (1 - state.warp) * cenaPor(state.cena).lamina.forca);
   }
 
   // --- travessia entre os dois mundos -------------------------------------
   if (state.phase === 'growing') {
-    const alvoWarp = state.world === 'espaco' ? 1 : 0;
-    // Ida lenta (acompanha a subida da borboleta), volta rápida.
-    const vel = alvoWarp > state.warp ? 1 / 8.0 : 1 / 3.0;
-    state.warp += Math.sign(alvoWarp - state.warp)
-      * Math.min(Math.abs(alvoWarp - state.warp), dt * vel);
+    // A TRAVESSIA.
+    //
+    // Sobe em sete segundos, que é o tempo da borboleta levando o mundo
+    // embora, e desce em quatro, que é o tempo do próximo se condensar. A ida
+    // é mais lenta que a volta de propósito: perder um mundo tem que custar
+    // mais do que ganhar o seguinte.
+    if (state.subindo) state.warp = Math.min(1, state.warp + dt / 7.0);
+    else state.warp = Math.max(0, state.warp - dt / 4.0);
 
     const w = state.warp;
-    space.setProgress(w);
-    // As paredes do seu cômodo se rompem junto com a travessia.
-    buracos.setProgress(w);
+
+    // Planetas e buracos só existem no cenário do cosmos, e recuam junto com
+    // a travessia como todo o resto.
+    const cosmos = noCosmos() ? 1 : 0;
+    space.setProgress(cosmos * (1 - w));
+    buracos.setProgress(cosmos * (1 - w));
+
     const subida = emergence.update(dt, clock.elapsedTime);
+
+    // Chegou ao alto: o mundo anterior acabou de evaporar e o próximo entra.
+    // É aqui, e não no toque do casulo, porque montar a cena com a tela cheia
+    // faria a floresta seguinte aparecer de um quadro para o outro.
+    if (state.subindo && w >= 1) {
+      state.subindo = false;
+      trocarCena();
+    }
     // No alto da subida ela vira luz. O clarão é LENTO de propósito: uPulse
     // decai em cerca de dois segundos, muito abaixo da faixa de 3 a 30 Hz
     // que dispara crise em epilepsia fotossensível.
@@ -1324,7 +1476,7 @@ function frame(time, xrFrame) {
     shared.uVanish.value = Math.min(1, Math.max(0, (w - 0.05) / 0.70));
 
     forest.visible = w < 0.99;
-    butterflies.visible = w < 0.6;
+
     bodyGrowth.visible = w < 0.8;
 
     // QUEM RECORTA O CÉU.
@@ -1346,7 +1498,10 @@ function frame(time, xrFrame) {
     skyMaterial.uniforms.uHorizon.value = h0 - w * 0.30;
     skyMaterial.uniforms.uFull.value = f0 - w * 0.34;
     skyMaterial.uniforms.uMaxVeil.value = recortado ? 1.0 : 0.72;
-    skyMaterial.uniforms.uSpace.value = w;
+    // O céu abre no cosmos e durante a passagem; nos outros cenários ele é
+    // noite de sala, com o teto aberto e mais nada.
+    const cena = cenaPor(state.cena);
+    skyMaterial.uniforms.uSpace.value = Math.max((cena.cosmos ? 0.85 : 0) * (1 - w), w * 0.7);
     // E o oclusor sai de cena: paredes não fazem sentido no espaço.
     if (roomMesh.entries.length) {
       const querOcluir = state.occlusionOn && w < 0.5;
@@ -1357,6 +1512,10 @@ function frame(time, xrFrame) {
   if (state.phase === 'growing') {
     const t = clock.elapsedTime;
 
+    // ONDE VOCÊ ESTÁ, agora. O peito e não a cabeça: é o centro do volume
+    // que a vegetação tem de sentir, e quem se agacha continua sendo notado.
+    shared.uPresenca.value.copy(body.joints.chest ?? _head);
+
     // Corpo inferido de cabeça + punhos, e o que floresce nele.
     body.update(camera, hands);
     bodyGrowth.update(body, t, dt);
@@ -1365,7 +1524,12 @@ function frame(time, xrFrame) {
     auraFireflies.setTarget(body.joints.chest).update(t, dt);
     if (state.blessed) blessedFireflies.update(t, dt);
 
-    butterflies.update(t);
+    // Um ou outro, nunca os dois.
+    const aquatico = !!cenaPor(state.cena).aquatico;
+    butterflies.visible = !aquatico && state.warp < 0.6;
+    cardume.visible = aquatico && state.warp < 0.6;
+    if (aquatico) cardume.update(t);
+    else butterflies.update(t);
     seeds.update(dt, t, hands);
     space.update(t, dt);
   }
@@ -1457,7 +1621,8 @@ window.floresta = {
   state, shared, passos, renderer, camera, orbit,
   // ações
   cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
-  toggleCalm, cycleGlow, bless, rescan, hatch, backToForest, enterWorld, biomes, GLOW,
+  toggleCalm, cycleGlow, bless, rescan, hatch, backToForest, enterWorld, GLOW,
+  CENAS, cenaPor, montarCena, trocarCena, aplicarCena,
 };
 
 window.addEventListener('beforeunload', () => {

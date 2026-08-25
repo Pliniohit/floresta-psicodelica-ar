@@ -70,62 +70,32 @@ vec3 pick3(vec3 a, vec3 b, vec3 c, float s){
 }
 
 /**
- * Bioma corrente, interpolado: 0 clareira, 1 fogo, 2 água. Trocar de mundo é
- * animar este float — um único conjunto de materiais serve para todos, sem
- * recompilar shader nem refazer a cena.
+ * AS CORES DA CENA.
+ *
+ * Cada família de superfície recebe três variantes, escolhidas por semente, e
+ * as três vêm de UNIFORM. Antes elas eram literais no shader, três conjuntos
+ * fixos misturados por um float de bioma — o que travava a experiência em três
+ * mundos e para sempre. Trocar por uniform tira esse teto: acrescentar um
+ * cenário passou a ser acrescentar dados em cenas.js, e a travessia entre eles
+ * é uma interpolação feita no JavaScript, sem recompilar shader nenhum.
+ *
+ * Quem persegue estes valores é o laço de animação; aqui eles só chegam.
  */
-uniform float uBiome;
+uniform vec3 uFolha[3];    // folhagem
+uniform vec3 uCasca[3];    // tronco
+uniform vec3 uChapeu[3];   // chapéu de cogumelo
+uniform vec3 uPetala[3];   // pétala
+uniform vec3 uFruta[3];    // fruto
+uniform vec3 uBio[3];      // a cor da luz viva
 
-/** Mistura três variantes de cor conforme o bioma, com transição contínua. */
-vec3 biomeMix(vec3 clareira, vec3 fogo, vec3 agua){
-  float b = clamp(uBiome, 0.0, 2.0);
-  return b < 1.0 ? mix(clareira, fogo, b) : mix(fogo, agua, b - 1.0);
-}
+vec3 leafColor(float s)  { return pick3(uFolha[0],  uFolha[1],  uFolha[2],  fract(s)); }
+vec3 barkColor(float s)  { return pick3(uCasca[0],  uCasca[1],  uCasca[2],  fract(s)); }
+vec3 capColor(float s)   { return pick3(uChapeu[0], uChapeu[1], uChapeu[2], fract(s)); }
+vec3 petalColor(float s) { return pick3(uPetala[0], uPetala[1], uPetala[2], fract(s)); }
+vec3 fruitColor(float s) { return pick3(uFruta[0],  uFruta[1],  uFruta[2],  fract(s)); }
 
-/** Folhagem. Na clareira é verde; no fogo, brasa; na água, coral e alga. */
-vec3 leafColor(float s){
-  float k = fract(s);
-  vec3 mata = pick3(
-    vec3(0.075, 0.175, 0.085), vec3(0.185, 0.360, 0.140), vec3(0.360, 0.500, 0.185), k);
-  vec3 brasa = pick3(
-    vec3(0.180, 0.045, 0.020), vec3(0.520, 0.150, 0.030), vec3(0.880, 0.420, 0.080), k);
-  vec3 fundo = pick3(
-    vec3(0.050, 0.180, 0.220), vec3(0.100, 0.400, 0.420), vec3(0.420, 0.680, 0.560), k);
-  return biomeMix(mata, brasa, fundo);
-}
-
-/** Casca. Castanho na clareira, basalto rachado no fogo, nácar na água. */
-vec3 barkColor(float s){
-  float k = fract(s);
-  vec3 mata = pick3(
-    vec3(0.145, 0.105, 0.080), vec3(0.290, 0.225, 0.170), vec3(0.430, 0.360, 0.280), k);
-  vec3 basalto = pick3(
-    vec3(0.070, 0.055, 0.055), vec3(0.180, 0.130, 0.115), vec3(0.320, 0.180, 0.120), k);
-  vec3 nacar = pick3(
-    vec3(0.140, 0.200, 0.240), vec3(0.320, 0.400, 0.440), vec3(0.560, 0.620, 0.640), k);
-  return biomeMix(mata, basalto, nacar);
-}
-
-/** Chapéus: amanita e creme na clareira; enxofre no fogo; anêmona na água. */
-vec3 capColor(float s){
-  float k = fract(s);
-  vec3 mata = pick3(
-    vec3(0.520, 0.105, 0.075), vec3(0.420, 0.280, 0.155), vec3(0.720, 0.640, 0.480), k);
-  vec3 enxofre = pick3(
-    vec3(0.620, 0.320, 0.040), vec3(0.780, 0.560, 0.100), vec3(0.300, 0.120, 0.080), k);
-  vec3 anemona = pick3(
-    vec3(0.700, 0.300, 0.480), vec3(0.320, 0.560, 0.620), vec3(0.860, 0.780, 0.700), k);
-  return biomeMix(mata, enxofre, anemona);
-}
-
-/** Pétalas: lilás, rosa, amarelo-claro. */
-vec3 petalColor(float s){
-  return pick3(
-    vec3(0.520, 0.400, 0.680),
-    vec3(0.820, 0.480, 0.560),
-    vec3(0.900, 0.780, 0.420),
-    fract(s));
-}
+/** O tom mais claro do trio de chapéus — serve de ventre e de realce. */
+vec3 chapeuClaro(float s) { return mix(uChapeu[2], uChapeu[1], fract(s) * 0.5); }
 
 uniform float uMagic;
 
@@ -207,11 +177,7 @@ uniform float uGlow;
  * Cada mundo tem a sua: brasa no fogo, azul-abissal na água.
  */
 vec3 bioHue(float t){
-  float k = fract(t);
-  vec3 mata  = pick3(vec3(0.16, 0.95, 0.72), vec3(0.28, 0.62, 1.00), vec3(0.72, 0.95, 0.35), k);
-  vec3 brasa = pick3(vec3(1.00, 0.52, 0.14), vec3(1.00, 0.28, 0.08), vec3(1.00, 0.78, 0.28), k);
-  vec3 fundo = pick3(vec3(0.22, 0.86, 1.00), vec3(0.42, 0.44, 1.00), vec3(0.12, 1.00, 0.88), k);
-  return biomeMix(mata, brasa, fundo);
+  return pick3(uBio[0], uBio[1], uBio[2], fract(t));
 }
 
 vec3 bio(float mascara, float t, float forca){
@@ -281,6 +247,16 @@ uniform vec3 uSteps[PASSOS];
 uniform float uTrample;   // 0 desliga o efeito inteiro
 
 /**
+ * VOCÊ, agora.
+ *
+ * As pisadas são memória — onde você esteve. Isto é o presente: onde o seu
+ * corpo está neste quadro. A diferença importa, porque memória não reage a
+ * você parar e se abaixar, e presença sim.
+ */
+uniform vec3 uPresenca;    // o corpo, em coordenadas de mundo
+uniform float uPresencaR;  // até onde ele é sentido, em metros
+
+/**
  * Amassa e afasta a planta perto de onde o usuário pisou. Recebe a raiz da
  * instância em mundo, e devolve a posição local deslocada.
  */
@@ -289,6 +265,20 @@ vec3 trample(vec3 pos, vec3 root){
 
   float forca = 0.0;
   vec2 fuga = vec2(0.0);
+
+  // O CORPO PRESENTE abre caminho antes mesmo do pé chegar. É o que faz a
+  // vegetação parecer notar você em vez de só registrar por onde você passou.
+  {
+    vec2 d = root.xz - uPresenca.xz;
+    float dist = length(d);
+    float f = smoothstep(uPresencaR, uPresencaR * 0.20, dist);
+    // A altura conta: agachar afasta menos que passar em pé.
+    f *= smoothstep(2.1, 0.9, abs(root.y - uPresenca.y));
+    if (f > forca){
+      forca = f;
+      fuga = dist > 1e-4 ? d / dist : vec2(1.0, 0.0);
+    }
+  }
 
   for (int i = 0; i < PASSOS; i++){
     vec2 d = root.xz - uSteps[i].xy;
@@ -359,6 +349,28 @@ uniform vec3 uOrigin;   // base da floresta em coordenadas de mundo
 uniform float uPulse;   // 0..1, decai depois de cada interação
 uniform float uVanish;  // 0 mundo inteiro, 1 mundo dissolvido (ver FRAG_FADE)
 
+/**
+ * O RESTO DA CENA.
+ *
+ * Declarados aqui, no cabeçalho comum, e não em cada material que os usa: um
+ * uniform declarado nos dois lugares é erro de compilação, e caçar qual dos
+ * vinte materiais repetiu a linha é pior do que ter todos no mesmo lugar. O
+ * compilador descarta os que o material não usa.
+ */
+uniform vec3  uCeuBaixo;    // gradiente do céu junto ao horizonte
+uniform vec3  uCeuAlto;     // e no zênite
+uniform float uEstrelas;    // densidade de estrela desta cena
+uniform float uNebulosa;    // peso do véu de nebulosa
+
+uniform float uPadA;        // padrão de parede que está saindo
+uniform float uPadB;        // e o que está entrando
+uniform float uPadMix;      // 0 A .. 1 B
+uniform vec3  uParedeCor;
+uniform float uParedeForca;
+
+uniform vec3  uLaminaCor;
+uniform float uLaminaForca;
+
 // Luz "envolvente" barata: dá volume às faces low poly sem custo de PBR.
 float wrapLight(vec3 n){
   float d = dot(normalize(n), normalize(vec3(0.35, 0.85, 0.4)));
@@ -386,6 +398,22 @@ float ripple(float speed, float density){
 #define PASSOS_FS 12
 uniform vec3 uSteps[PASSOS_FS];
 uniform float uTrample;
+
+uniform vec3 uPresenca;
+uniform float uPresencaR;
+
+/**
+ * Quanto deste ponto está sob a sua presença, de 0 a 1.
+ *
+ * Serve para a luz: perto de você a bioluminescência acende, como plâncton
+ * que reage ao corpo na água. É o par imediato do rastro que as pisadas
+ * deixam — um é memória, este é o agora.
+ */
+float presenca(vec3 pos){
+  if (uPresencaR < 0.01) return 0.0;
+  float d = distance(pos, uPresenca);
+  return smoothstep(uPresencaR, uPresencaR * 0.25, d);
+}
 
 float stepGlow(vec3 pos, float raio){
   if (uTrample < 0.01 || uGlow < 0.004) return 0.0;

@@ -22,6 +22,9 @@ const _up = new Vector3(0, 1, 0);
 const _lado = new Vector3();
 const FRENTE = new Vector3(0, 0, 1);
 
+/** Quantos buracos existem, no máximo. Ver o comentário em applyWalls. */
+const MAX_BURACOS = 2;
+
 export class BlackHoles extends Group {
   constructor() {
     super();
@@ -40,14 +43,31 @@ export class BlackHoles extends Group {
     if (!wallBases?.length) return this;
 
     const r = rng(seed);
-    for (const w of wallBases) {
+
+    // DOIS, e não um por parede.
+    //
+    // Um buraco em cada parede transformava a sala numa peneira, e o que se
+    // quer é o contrário: poucos, grandes, e que dê para localizar cada um
+    // pelo canto do olho. Dois é o mínimo para o par funcionar como PORTAL —
+    // o que entra num precisa ter por onde sair.
+    //
+    // As duas paredes mais longas são as escolhidas: cabem discos maiores e
+    // costumam ser as que se enxerga de mais lugares do cômodo.
+    const candidatas = wallBases
+      .map((w) => ({ w, comp: Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) }))
+      .filter((c) => c.comp >= 1.1)
+      .sort((a, b) => b.comp - a.comp)
+      .slice(0, MAX_BURACOS);
+
+    for (const { w } of candidatas) {
       const dx = w.b.x - w.a.x, dz = w.b.y - w.a.y;
       const comprimento = Math.hypot(dx, dz);
-      if (comprimento < 1.1) continue;          // parede curta não comporta
 
       // Um buraco por parede, num ponto aleatório do trecho central.
-      const t = 0.28 + r() * 0.44;
-      const raio = 0.42 + r() * 0.34;
+      const t = 0.34 + r() * 0.32;
+      // Maiores do que antes: são só dois, e precisam ler como boca e não
+      // como mancha na parede.
+      const raio = 0.60 + r() * 0.28;
 
       _lado.set(dx / comprimento, 0, dz / comprimento);
       _n.crossVectors(_up, _lado).normalize();  // normal da parede
@@ -83,6 +103,21 @@ export class BlackHoles extends Group {
       this.holes.push(malha);
     }
     return this;
+  }
+
+  /**
+   * Os portais em coordenadas de MUNDO: onde estão, para onde olham, e que
+   * raio têm. É por aqui que os planetas descobrem que existe um buraco.
+   */
+  portais() {
+    this.updateWorldMatrix(true, false);
+    return this.holes.map((h) => {
+      const pos = new Vector3();
+      const nrm = new Vector3(0, 0, 1);
+      h.getWorldPosition(pos);
+      nrm.applyQuaternion(h.getWorldQuaternion(_q));
+      return { pos, normal: nrm.normalize(), raio: h.scale.x };
+    });
   }
 
   /** Acompanha a travessia: 0 na floresta, 1 no espaço. */
