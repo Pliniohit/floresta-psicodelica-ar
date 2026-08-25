@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.14.1 — Semente estável para objetos em movimento
+
 ## v0.14.0 — Plantio destravado, planetas parados e buracos negros
 
 **O plantio travava o jogo inteiro.** "Palma para cima" dependia do sinal de um
