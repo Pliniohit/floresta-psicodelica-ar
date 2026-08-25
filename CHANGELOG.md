@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.15.0 — O cômodo veste cada mundo, e tudo se alcança de longe
+
 ## v0.14.1 — Semente estável para objetos em movimento
 
 A piscada dos planetas não era brilho oscilando: era o objeto **trocando de
