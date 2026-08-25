@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.14.0 — Plantio destravado, planetas parados e buracos negros
+
 ## v0.13.0 — Asas à deriva e versionamento
 
 Asas de 1,7–2,5 Hz para 0,62–0,92 Hz, planando ~45% do tempo, curso de -8° a
