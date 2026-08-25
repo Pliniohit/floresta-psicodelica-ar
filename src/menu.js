@@ -26,7 +26,7 @@ const _v = new Vector3();
 const _side = new Vector3();
 
 export class WristMenu extends Group {
-  /** @param {{onPalette,onTrip,onReseed,onSky,onBloom}} actions */
+  /** @param {{onPalette,onTrip,onReseed,onSky,onBloom,onGlow}} actions */
   constructor(actions = {}) {
     super();
     this.name = 'menu-de-pulso';
@@ -40,9 +40,10 @@ export class WristMenu extends Group {
       new TetrahedronGeometry(ORB_SIZE * 1.2, 0),  // semear
       new DodecahedronGeometry(ORB_SIZE, 0),       // céu
       new TorusGeometry(ORB_SIZE * 0.75, ORB_SIZE * 0.3, 6, 10),  // florescer
+      new OctahedronGeometry(ORB_SIZE * 1.15, 1),  // bioluminescência
     ];
     const fns = [actions.onPalette, actions.onTrip, actions.onReseed,
-      actions.onSky, actions.onBloom];
+      actions.onSky, actions.onBloom, actions.onGlow];
 
     this.orbs = shapes.map((geo, i) => {
       const m = new Mesh(geo, handMaterial);

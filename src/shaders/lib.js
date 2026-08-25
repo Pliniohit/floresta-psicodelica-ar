@@ -172,6 +172,66 @@ vec3 enchant(vec3 natural, float t, float amount){
 }
 
 /**
+ * BIOLUMINESCÊNCIA.
+ *
+ * Uniforme global, 0 mata apagada e 1 tudo aceso por dentro.
+ *
+ * A regra que vale para os dois lados: bioluminescência é luz DESENHADA, não
+ * brilho geral. Uma folha inteira acesa lê como plástico retroiluminado; o que
+ * lê como vivo é a nervura acesa e o resto da folha escuro. Por isso "bio"
+ * recebe sempre uma máscara — nervura, mancha, ponta, miolo — e nunca 1.0.
+ */
+uniform float uGlow;
+
+/**
+ * Luz emitida de dentro, na região que a máscara marca.
+ *
+ * O pulso é lentíssimo, 0,09 Hz, e ainda passa por "damp": brilho que varia é
+ * gatilho em epilepsia fotossensível, e num headset a cabeça nunca para, então
+ * a amplitude conta tanto quanto a frequência.
+ */
+/**
+ * A cor da luz viva.
+ *
+ * NÃO vem da paleta da cena, e é por isso que existe. A paleta produz pastéis
+ * com os três canais altos; multiplicada pela força da luz e passada pelo
+ * "filmic", ela satura e vira branco chapado — foi o que deixou os cogumelos
+ * parecendo guarda-chuvas de plástico em vez de acesos.
+ *
+ * A bioluminescência de verdade vive numa faixa estreita, o ciano-verde de
+ * 490 nm, com desvios para o azul e, mais raro, para o verde-limão. Com o
+ * canal vermelho baixo, a cor SOBREVIVE à saturação: por mais que se aumente,
+ * ela clareia sem perder o tom. E dar uma cor comum a tudo que brilha é o que
+ * faz a mata inteira parecer um organismo só.
+ *
+ * Cada mundo tem a sua: brasa no fogo, azul-abissal na água.
+ */
+vec3 bioHue(float t){
+  float k = fract(t);
+  vec3 mata  = pick3(vec3(0.16, 0.95, 0.72), vec3(0.28, 0.62, 1.00), vec3(0.72, 0.95, 0.35), k);
+  vec3 brasa = pick3(vec3(1.00, 0.52, 0.14), vec3(1.00, 0.28, 0.08), vec3(1.00, 0.78, 0.28), k);
+  vec3 fundo = pick3(vec3(0.22, 0.86, 1.00), vec3(0.42, 0.44, 1.00), vec3(0.12, 1.00, 0.88), k);
+  return biomeMix(mata, brasa, fundo);
+}
+
+vec3 bio(float mascara, float t, float forca){
+  if (uGlow < 0.004) return vec3(0.0);
+  float pulso = damp(0.74 + 0.26 * sin(uTime * 0.55 + t * 6.28318), 0.80);
+  return bioHue(t) * max(mascara, 0.0) * pulso * forca * uGlow;
+}
+
+/**
+ * Escurece o corpo conforme a luz interna sobe.
+ *
+ * Bioluminescência precisa de escuro em volta para existir — é contraste, não
+ * intensidade. Sem isto, subir o "uGlow" só lavaria a cena de branco: o que
+ * brilha ficaria mais claro, mas o que NÃO brilha também.
+ */
+vec3 nightBody(vec3 c){
+  return c * mix(1.0, 0.44, uGlow);
+}
+
+/**
  * Roll-off exponencial nas altas. Sem isto, somar brilho de borda a uma paleta
  * que já chega perto de 1.0 satura os três canais no mesmo ponto e a superfície
  * vira branco chapado — exatamente o que a gente NÃO quer numa cena psicodélica.
@@ -309,6 +369,33 @@ float wrapLight(vec3 n){
 float ripple(float speed, float density){
   float r = length(vWorld.xz - uOrigin.xz);
   return sin(r * density - uTime * speed) * 0.5 + 0.5;
+}
+
+/**
+ * RASTRO ACESO.
+ *
+ * As mesmas pisadas que amassam a vegetação no vertex shader, lidas aqui para
+ * ACENDER o chão por onde você passou. É o efeito do plâncton na areia: o
+ * lugar reage ao corpo com luz, e a luz apaga sozinha conforme a pisada
+ * envelhece — quem faz isso é o "z" de cada passo, que já decai com o tempo.
+ *
+ * O array é declarado de novo porque a versão do vertex shader ("TRAMPLE")
+ * não é compartilhada com o fragment. São doze vec3; não há custo em manter
+ * as duas.
+ */
+#define PASSOS_FS 12
+uniform vec3 uSteps[PASSOS_FS];
+uniform float uTrample;
+
+float stepGlow(vec3 pos, float raio){
+  if (uTrample < 0.01 || uGlow < 0.004) return 0.0;
+  float k = 0.0;
+  for (int i = 0; i < PASSOS_FS; i++){
+    float d = distance(pos.xz, uSteps[i].xy);
+    // Halo largo com centro cheio: o pé não deixa um ponto, deixa uma mancha.
+    k = max(k, uSteps[i].z * smoothstep(raio, raio * 0.15, d));
+  }
+  return k * uTrample * uGlow;
 }
 `;
 

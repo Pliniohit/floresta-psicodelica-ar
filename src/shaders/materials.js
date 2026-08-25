@@ -21,6 +21,7 @@ export const shared = {
   uSteps:  { value: Array.from({ length: 12 }, () => new Vector3(0, 0, 0)) },
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
+  uGlow:   { value: 0.80 },   // bioluminescência: 0 mata apagada, 1 tudo aceso
   uVanish: { value: 0 },      // 0 mundo inteiro, 1 mundo dissolvido
   uOrigin: { value: new Vector3() },
   uPalA:   { value: new Vector3(0.5, 0.5, 0.5) },
@@ -96,10 +97,16 @@ export const barkMaterial = make('casca', {
       casca = mix(casca * 0.55, casca * 1.15, fiber);   // fibra escurece o sulco
 
       float t = h * 0.10 + twist * 0.34 + uTime * 0.035 + vSeed;
-      vec3 col = enchant(casca, t, 0.45);
+      vec3 col = enchant(nightBody(casca), t, 0.45);
       // A seiva continua vindo da paleta: é o elemento mágico do tronco.
       col += palette(t + 0.35) * damp(sap, 0.35) * (0.34 + uTrip * 0.7 + uPulse * 0.5);
       col *= 0.45 + 0.75 * wrapLight(vNormalW);
+
+      // Luz no fundo do sulco, não na crista: a fibra que sobressai fica
+      // escura e a fenda entre elas acende. É o que dá relevo ao tronco em
+      // vez de pintá-lo de neon.
+      float fenda = 1.0 - smoothstep(0.0, 0.11, abs(twist - 0.5));
+      col += bio(fenda * 0.62 + sap * 0.85, t + 0.35, 0.95);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -140,9 +147,12 @@ export const fruitMaterial = make('frutos', {
       float brilho = pow(max(dot(reflect(-V, N), normalize(vec3(0.4, 0.9, 0.3))), 0.0), 14.0);
 
       float t = vSeed * 2.0 + uTime * 0.03;
-      vec3 col = enchant(fruta, t, 0.28);
+      vec3 col = enchant(nightBody(fruta), t, 0.28);
       col *= 0.50 + 0.72 * wrapLight(N);
       col += vec3(1.0, 0.95, 0.88) * brilho * 0.55;
+      // A fruta acende MAIS no lado escuro: é o avesso da luz externa, e é o
+      // que a faz parecer iluminada por dentro em vez de polida por fora.
+      col += bio(0.45 + 0.55 * (1.0 - wrapLight(N)), t + 0.15, 1.05) * fruta * 2.2;
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -180,9 +190,18 @@ export const canopyMaterial = make('copa', {
       folha *= 0.72 + 0.5 * n;
 
       float t = n * 0.85 + vSeed * 0.4 + uTime * 0.045;
-      vec3 col = enchant(folha, t, 0.55);
+      vec3 col = enchant(nightBody(folha), t, 0.55);
       col += palette(t + 0.5) * rim * (0.22 + uTrip * 0.55 + uPulse * 0.4);
       col *= 0.5 + 0.65 * wrapLight(vNormalW);
+
+      // A NERVURA é a isolinha do mesmo ruído que já desenha as manchas: uma
+      // linha fina onde o ruído cruza o meio. Acender a nervura e deixar o
+      // resto da folha escuro é o que lê como folha viva; acender a folha
+      // inteira leria como placa retroiluminada.
+      float nervura = 1.0 - smoothstep(0.0, 0.055, abs(n - 0.52));
+      col += bio(nervura, t + 0.12, 1.05);
+      // E a borda da massa, onde a folhagem é fina e a luz atravessa.
+      col += bio(rim * 0.7, t + 0.42, 0.60);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -203,13 +222,16 @@ export const stemMaterial = make('caule', {
       ${FRAG_FADE}
       float h = vLocal.y;
       float rings = sin(h * 9.0 - uTime * 0.30 + vSeed * 6.28) * 0.5 + 0.5;
-      vec3 caule = mix(vec3(0.78, 0.74, 0.64), vec3(0.55, 0.50, 0.42), vSeed);
+      vec3 caule = nightBody(mix(vec3(0.78, 0.74, 0.64), vec3(0.55, 0.50, 0.42), vSeed));
       caule *= 0.78 + 0.28 * rings;
 
       float t = h * 0.35 + vSeed + uTime * 0.03;
       vec3 col = enchant(caule, t, 0.35);
       col *= 0.5 + 0.7 * wrapLight(vNormalW);
       col += palette(t + 0.4) * uPulse * 0.4;
+      // Anéis subindo pelo caule, estreitados pelo expoente: acesos só na
+      // crista, e não numa oscilação larga que lavaria o caule inteiro.
+      col += bio(pow(rings, 3.0), t + 0.3, 0.70);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -235,15 +257,28 @@ export const capMaterial = make('chapeu', {
       float spokes = sin(a * 6.0 + uTime * 0.12 + vSeed * 10.0) * 0.5 + 0.5;
       float spots  = smoothstep(0.60, 0.78, vnoise(vLocal * 9.0 + vSeed * 30.0));
 
-      vec3 chapeu = capColor(vSeed * 4.3);
+      vec3 chapeu = nightBody(capColor(vSeed * 4.3));
       chapeu *= 0.80 + 0.30 * (rings * 0.5 + spokes * 0.5);
-      // Manchas claras, como amanita — e é nelas que mora a luz.
-      chapeu = mix(chapeu, vec3(0.93, 0.90, 0.82), spots * 0.85);
+      // As manchas são o ÓRGÃO da luz, não uma tinta clara.
+      //
+      // Antes elas eram clareadas até quase o branco e só depois acesas por
+      // cima. O resultado era um chapéu branco chapado: a mancha já estava
+      // saturada antes de a luz chegar, e a luz não tinha cor nenhuma para
+      // carregar. Agora a mancha fica ESCURA no corpo, e quem a acende é o
+      // "bio" lá embaixo — que é como funciona no bicho.
+      chapeu = mix(chapeu, chapeu * 0.45 + vec3(0.10, 0.15, 0.12), spots * 0.70);
 
       float t = r * 1.3 + rings * 0.25 + uTime * 0.05 + vSeed;
       vec3 col = enchant(chapeu, t, 0.40);
       col += palette(t + 0.5) * spots * (0.26 + uTrip * 0.7 + uPulse * 0.6);
       col *= 0.55 + 0.65 * wrapLight(vNormalW);
+
+      // O cogumelo é o mais aceso da mata — é o que a mata bioluminescente
+      // promete. As manchas queimam, e a aba acende por baixo como se a luz
+      // saísse das lamelas.
+      float aba = smoothstep(0.28, 0.42, r);
+      col += bio(spots * 1.15, t + 0.5, 1.9);
+      col += bio(aba * 0.5, t + 0.18, 1.1);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -270,11 +305,14 @@ export const flowerMaterial = make('flores', {
       float r = length(vLocal.xz);
       petala = mix(vec3(0.95, 0.90, 0.66), petala, smoothstep(0.012, 0.03, r));
 
-      vec3 base = mix(haste, petala, smoothstep(0.82, 0.95, h));
+      vec3 base = nightBody(mix(haste, petala, smoothstep(0.82, 0.95, h)));
       float t = vSeed + uTime * 0.04;
       vec3 col = enchant(base, t, 0.45);
       col *= 0.55 + 0.6 * wrapLight(vNormalW);
       col += palette(t + 0.5) * uPulse * 0.4 * h;
+      // Miolo aceso e pétala apagada: a flor vira uma lamparina pequena.
+      float miolo = (1.0 - smoothstep(0.008, 0.030, r)) * smoothstep(0.78, 0.95, h);
+      col += bio(miolo, t + 0.25, 2.4);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -413,14 +451,31 @@ export const groundMaterial = make('micelio', {
 
       float n = fbm2(vec3(d * 0.55, uTime * 0.04));
       float veins = 1.0 - smoothstep(0.0, 0.085, abs(n - 0.5));  // isolinha do ruído
+
+      // Segunda trama, quatro vezes mais fina e correndo em outro sentido.
+      // Uma rede só lê como um desenho; duas em escalas diferentes leem como
+      // micélio, que é uma malha dentro de outra.
+      float f = fbm2(vec3(d * 2.3 + 17.0, -uTime * 0.055));
+      float fina = 1.0 - smoothstep(0.0, 0.045, abs(f - 0.5));
+
       float wave  = ripple(0.45, 1.3);
       float shock = smoothstep(0.10, 0.0, abs(r - uPulse * 6.0)) * uPulse;
 
-      float a = (veins * (0.30 + 0.45 * wave) + shock * 0.8) * vFade;
+      // O CHÃO REAGE AO CORPO. Onde você pisou, a rede acende e vai apagando
+      // sozinha conforme a pisada envelhece — é plâncton na areia. A mesma
+      // pisada que amassa o capim no vertex shader acende o micélio aqui.
+      float passo = stepGlow(vWorld, 0.62);
+
+      float trama = veins * (0.30 + 0.45 * wave) + fina * 0.22 * uGlow;
+      float a = (trama + shock * 0.8 + passo * (0.55 + fina * 0.9)) * vFade;
       if (a <= 0.004) discard;
 
       vec3 col = palette(r * 0.15 + n * 0.5 + uTime * 0.05);
       col += palette(r * 0.15 + 0.5) * shock;
+      // A trama fina acende com cor deslocada: duas cores na mesma rede dão
+      // a leitura de profundidade que uma só não dá.
+      col += bio(fina, n * 0.4 + uTime * 0.03 + 0.35, 1.5);
+      col += bio(passo, r * 0.1 + 0.62, 2.6);
       gl_FragColor = vec4(trippy(col) * (1.0 + uTrip), a);
     }
   `,
@@ -444,12 +499,16 @@ export const grassMaterial = make('capim', {
       // Amplitude baixa de propósito: são mais de mil lâminas finas na tela,
       // e contraste alto nelas vira cintilação com qualquer movimento.
       float scan = damp(sin(h * 4.0 - uTime * 0.45 + vSeed * 6.28) * 0.5 + 0.5, 0.5);
-      vec3 verde = leafColor(vSeed * 5.7);
+      vec3 verde = nightBody(leafColor(vSeed * 5.7));
       verde = mix(verde * 0.45, verde * 1.25, h);   // base na sombra, ponta ao sol
 
       float t = h * 0.5 + vSeed + uTime * 0.06;
       vec3 col = enchant(verde, t, 0.5);
       col += palette(t + 0.5) * scan * h * (0.08 + uTrip * 0.22 + uPulse * 0.3);
+      // SÓ A PONTA, e com expoente alto. São mais de mil lâminas finas na
+      // tela: acender a lâmina inteira viraria um tapete cintilante a cada
+      // mexida de cabeça, que é exatamente o que não se pode fazer.
+      col += bio(pow(h, 3.0) * 0.9, t + 0.45, 0.85);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -495,7 +554,7 @@ export const sporeMaterial = make('esporos', {
       if (d > 0.25) discard;
       float soft = pow(1.0 - d * 4.0, 2.0);
       vec3 col = palette(vSeed + uTime * 0.09);
-      gl_FragColor = vec4(trippy(col) * soft * vFade * (0.8 + uPulse), 1.0);
+      gl_FragColor = vec4(trippy(col) * soft * vFade * (0.8 + uPulse + uGlow * 0.7), 1.0);
     }
   `,
 });

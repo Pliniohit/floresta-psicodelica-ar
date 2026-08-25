@@ -30,6 +30,21 @@ import { palettes } from './palettes.js';
 const TRIP_CALM = 0.24;
 const TRIP_FULL = 0.70;
 
+/**
+ * Passos de bioluminescência.
+ *
+ * Não é um interruptor porque o efeito muda a leitura da mata inteira: quanto
+ * mais luz sai de dentro, mais escuro fica o corpo que a emite, e há quem
+ * queira a mata só levemente acesa. Começa em "acesa" — é o estado que a
+ * floresta pede.
+ */
+const GLOW = [
+  { v: 0.00, nome: 'Mata apagada' },
+  { v: 0.45, nome: 'Brilho discreto' },
+  { v: 0.80, nome: 'Mata acesa' },
+  { v: 1.00, nome: 'Bioluminescência profusa' },
+];
+
 // ---------------------------------------------------------------------------
 // Renderizador
 // ---------------------------------------------------------------------------
@@ -127,6 +142,7 @@ const state = {
   warp: 0,            // 0 floresta .. 1 espaço
   biome: 0,           // índice em biomes.js
   calm: 0.45,         // amortecedor de cintilação, 0..1
+  glowStep: 2,        // índice em GLOW
   scanSweep: 0,
   scanReveal: 0,
 };
@@ -381,6 +397,21 @@ function backToForest() {
   ping(0.8);
   audio.chime(5, 0.24);
   toast('De volta à clareira', palettes[state.paletteIndex].swatch);
+}
+
+/**
+ * Sobe um degrau de bioluminescência.
+ *
+ * O uniform não pula: ele é perseguido no laço, porque uma mata que acende de
+ * estalo é justamente o tipo de mudança brusca de brilho que a gente evita.
+ */
+function cycleGlow() {
+  state.glowStep = (state.glowStep + 1) % GLOW.length;
+  const g = GLOW[state.glowStep];
+  ping(0.5);
+  audio.chime([0, 5, 9, 12][state.glowStep], 0.2);
+  toast(g.nome, palettes[state.paletteIndex].swatch);
+  return g.v;
 }
 
 /**
@@ -660,6 +691,7 @@ function bindPreview() {
     if (k === 'r') reseed();
     if (k === 'm') toast(audio.toggleMute() ? 'Som mudo' : 'Som ligado');
     if (k === 'c') toggleCalm();
+    if (k === 'b') cycleGlow();
   });
 }
 
@@ -682,7 +714,7 @@ function startPreview() {
   applyOrbit();
   overlay.classList.add('on', 'preview');
   syncTouchUI();
-  toast('Prévia: arraste para orbitar · clique planta · P paleta · T viagem · R semear', palettes[0].swatch);
+  toast('Prévia: arraste para orbitar · clique planta · P paleta · T viagem · R semear · B brilho', palettes[0].swatch);
 }
 
 // ---------------------------------------------------------------------------
@@ -1050,6 +1082,7 @@ const wristMenu = new WristMenu({
   onReseed: () => { if (state.world === 'espaco') backToForest(); else reseed(); },
   onSky: () => { toggleSky(); },
   onBloom: () => { toggleBloom(); },
+  onGlow: () => { cycleGlow(); },
 });
 scene.add(wristMenu);
 
@@ -1199,6 +1232,9 @@ function frame(time, xrFrame) {
   shared.uPalC.value.lerp(target.uPalC, k);
   shared.uPalD.value.lerp(target.uPalD, k);
   shared.uTrip.value += (state.tripTarget - shared.uTrip.value) * k;
+  // A mata acende e apaga devagar, nunca de estalo.
+  shared.uGlow.value += (GLOW[state.glowStep].v - shared.uGlow.value)
+    * (1 - Math.exp(-dt * 0.9));
   // Trocar de mundo é animar este float: um só conjunto de materiais serve
   // para todos os biomas.
   shared.uBiome.value += (state.biome - shared.uBiome.value) * (1 - Math.exp(-dt * 0.65));
@@ -1421,7 +1457,7 @@ window.floresta = {
   state, shared, passos, renderer, camera, orbit,
   // ações
   cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
-  toggleCalm, bless, rescan, hatch, backToForest, enterWorld, biomes,
+  toggleCalm, cycleGlow, bless, rescan, hatch, backToForest, enterWorld, biomes, GLOW,
 };
 
 window.addEventListener('beforeunload', () => {
