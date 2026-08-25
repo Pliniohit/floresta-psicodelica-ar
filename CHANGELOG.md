@@ -17,6 +17,44 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.20.0 — Vaga-lumes em pontos; fora os poliedros flutuantes
 
+Dois poliedros sólidos flutuavam sem explicação na cena, e eram coisas
+diferentes com a mesma cara.
+
+Os **orbes** eram icosaedros de vinte faces pairando acima da cabeça. Um
+poliedro flutuando não lê como bicho, lê como geometria esquecida no ar.
+
+As **estrelas da constelação** eram icosaedros de raio 1 numa cúpula de escala
+9 — pedras no céu. E ainda desenhavam o cogumelo de espera, o que as tornava
+duplamente sem sentido. Viraram pontos.
+
+### O campo
+
+No lugar dos orbes entrou um campo de **setecentos vaga-lumes**, e ele custa
+menos que os quarenta poliedros que substituiu: é **uma** chamada de desenho.
+
+Toda a vida de cada um acontece no shader, a partir da semente — a deriva de
+três senóides sem razão simples entre as frequências, o tamanho, a fase do
+pisca. O JavaScript escreve as posições de origem uma vez, quando o cômodo é
+lido, e nunca mais toca.
+
+Cada um é um núcleo duro dentro de um halo macio. Só o halo dá borrão de
+algodão; só o núcleo dá pixel duro. É a soma que lê como luz pequena.
+
+E acendem quando você chega perto, como o resto da mata desde a v0.18.0.
+
+**Segurança:** o pisca mais rápido do campo dá 0,21 Hz — muito abaixo da faixa
+de 3 a 30 Hz que dispara crise em epilepsia fotossensível — e ainda passa pelo
+amortecedor global.
+
+### Um erro que valeu registrar
+
+A altura dos vaga-lumes tem viés para baixo, que é onde o mato está. Eu tinha
+escrito o comentário certo e a conta errada: `Math.sqrt` empurra o sorteio para
+**cima**, não para baixo. A mediana saiu em 1,72 m de um alcance de 2,25 —
+um chuvisco parado perto do teto, sem relação nenhuma com a mata embaixo.
+Expoente maior que 1 é que puxa para baixo.
+
+
 ## v0.19.0 — Aquarela como interruptor, e o céu começa no teto
 
 ### Sair do low poly não é acrescentar triângulo
