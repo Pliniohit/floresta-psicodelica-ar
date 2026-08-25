@@ -17,6 +17,69 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.16.0 — Teto aberto, árvore de galhos com frutos, e lugar para a trilha
 
+### O teto vira abertura
+
+O teto era a única superfície do cômodo que não podia escrever profundidade.
+Escrevendo, a copa que passa dos 2,6 m ficava escondida atrás dele — olhar
+para cima mostrava gesso, nem céu nem árvore.
+
+Agora ele não oclui. Parede e chão continuam ocluindo, porque ali a sala é
+sala; só o teto sai da frente.
+
+E com o teto virado abertura, o céu pôde voltar a ser **testado em
+profundidade**. O teste estava desligado justamente porque o teto o apagava
+por completo — desligado, porém, o céu era pintado por cima de tudo, e a copa
+da árvore levava uma demão de céu proporcional à altura do olhar. Ligando de
+volta, as duas coisas se resolvem na mesma linha: o céu passa pelo buraco do
+teto, e a copa fica na frente dele.
+
+Para cima o céu agora fecha **por inteiro** — o teto é a parte que pode ser
+realidade virtual. Para os lados ele cede, e ali continuam sendo as suas
+paredes. As medusas do céu ganharam o mesmo teste, e passam por trás das
+copas em vez de por cima.
+
+### A árvore deixou de ser um pinheiro
+
+A espécie que o casulo escolhe era "pagode": quatro cones empilhados, silhueta
+em degraus — um pinheiro. Virou árvore de verdade:
+
+- tronco de 2,35 m que se abre em **quatro braços**, cada um com altura,
+  azimute e inclinação próprios (quatro galhos iguais girados em torno do eixo
+  leem como antena, não como árvore)
+- massa de folha na ponta de cada braço, e uma coroa fechando a forquilha
+- **frutos** — octaedros de seis centímetros pendurados sob as folhas
+
+Os frutos vêm em malha separada da copa, porque a cor é outra: fruta com a cor
+da folha não é fruta. Três variedades sorteadas pela árvore (rubi, âmbar,
+ameixa), com um ponto de luz especular que as faz parecer lisas e molhadas. No
+mundo de fogo elas assam; no de água ficam nacaradas. As outras duas espécies
+também ganharam os seus.
+
+O casulo subiu de 1,4 m para o raio em que os galhos passam — agora pende de
+um deles em vez de flutuar ao lado do tronco. Continua ao alcance de um braço
+levantado, e sempre ao alcance da mira.
+
+Custo: a árvore de galhos tem 296 triângulos contra 88 do pagode. A cena
+inteira foi de 12.929 para 13.217.
+
+### Um lugar para a trilha
+
+Se existir `assets/trilha.mp3`, ele passa a ser **a** trilha: carregado,
+posto em loop, entrando em oito segundos — uma trilha que começa de estalo
+denuncia o carregamento; entrando devagar ela parece ter estado ali o tempo
+todo.
+
+O drone gerado não some: recua para um leito quase inaudível, porque é ele que
+sustenta a cena quando a trilha respira. Os sinos das interações continuam por
+cima, já que são resposta ao gesto e não música.
+
+A trilha passa por um passa-baixa que acompanha o bioma — limpa na terra,
+áspera no fogo, submersa na água. Uma trilha só, sem precisar exportar três.
+
+**Sem o arquivo nada muda.** A ausência apenas significa que o drone gerado em
+tempo real continua sendo a trilha, como foi até aqui. Veja `assets/README.md`.
+
+
 ## v0.15.0 — O cômodo veste cada mundo, e tudo se alcança de longe
 
 ### Sentado, deitado, de pé
