@@ -23,9 +23,48 @@ export function weld(geos) {
   const out = new BufferGeometry();
   out.setAttribute('position', new BufferAttribute(pos, 3));
   out.computeVertexNormals();
+  out.setAttribute('aSmoothN', new BufferAttribute(smoothNormals(out), 3));
 
   for (const g of geos) g.dispose();
   for (const g of parts) if (!geos.includes(g)) g.dispose();
+  return out;
+}
+
+/**
+ * A NORMAL LISA, guardada ao lado da facetada.
+ *
+ * Sem índice, cada vértice carrega a normal da sua face — é isso que produz o
+ * sombreamento facetado, e é de propósito. Mas para poder SAIR do low poly sem
+ * refazer malha nenhuma em tempo de execução, a normal suave viaja junto, num
+ * segundo atributo, e o shader mistura as duas conforme o pincel entra.
+ *
+ * Suavizar é somar as normais de todas as faces que tocam o mesmo ponto. Como
+ * a malha é não indexada, "o mesmo ponto" precisa ser descoberto pela posição
+ * — daí o arredondamento a um décimo de milímetro, que junta o que é o mesmo
+ * vértice sem juntar o que só está perto.
+ */
+function smoothNormals(geo) {
+  const pos = geo.attributes.position.array;
+  const nrm = geo.attributes.normal.array;
+  const n = pos.length / 3;
+
+  const soma = new Map();
+  const chave = (i) => `${Math.round(pos[i * 3] * 1e4)},`
+    + `${Math.round(pos[i * 3 + 1] * 1e4)},${Math.round(pos[i * 3 + 2] * 1e4)}`;
+
+  for (let i = 0; i < n; i++) {
+    const k = chave(i);
+    const acc = soma.get(k) ?? [0, 0, 0];
+    acc[0] += nrm[i * 3]; acc[1] += nrm[i * 3 + 1]; acc[2] += nrm[i * 3 + 2];
+    soma.set(k, acc);
+  }
+
+  const out = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const [x, y, z] = soma.get(chave(i));
+    const m = Math.hypot(x, y, z) || 1;
+    out[i * 3] = x / m; out[i * 3 + 1] = y / m; out[i * 3 + 2] = z / m;
+  }
   return out;
 }
 

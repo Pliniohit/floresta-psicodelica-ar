@@ -153,6 +153,7 @@ const state = {
   subindo: false,     // a borboleta está levando este mundo embora
   calm: 0.45,         // amortecedor de cintilação, 0..1
   glowStep: 2,        // índice em GLOW
+  paint: 0,           // 0 facetado .. 1 aquarela
   scanSweep: 0,
   scanReveal: 0,
 };
@@ -536,6 +537,22 @@ function backToForest() {
 }
 
 /**
+ * Troca entre a mata facetada e a pintada.
+ *
+ * O uniform é perseguido no laço, não trocado de estalo: a passagem entre os
+ * dois é a melhor forma de ver o que cada um faz, e um corte seco esconde
+ * justamente isso.
+ */
+function togglePaint() {
+  state.paint = state.paint > 0.5 ? 0 : 1;
+  ping(0.5);
+  audio.chime(state.paint ? 7 : -5, 0.2);
+  toast(state.paint ? 'Aquarela sobre papel' : 'Low poly facetado',
+    cenaPor(state.cena).swatch);
+  return state.paint;
+}
+
+/**
  * Sobe um degrau de bioluminescência.
  *
  * O uniform não pula: ele é perseguido no laço, porque uma mata que acende de
@@ -828,6 +845,7 @@ function bindPreview() {
     if (k === 'm') toast(audio.toggleMute() ? 'Som mudo' : 'Som ligado');
     if (k === 'c') toggleCalm();
     if (k === 'b') cycleGlow();
+    if (k === 'a') togglePaint();
   });
 }
 
@@ -850,7 +868,7 @@ function startPreview() {
   applyOrbit();
   overlay.classList.add('on', 'preview');
   syncTouchUI();
-  toast('Prévia: arraste para orbitar · clique planta · P paleta · T viagem · R semear · B brilho', palettes[0].swatch);
+  toast('Prévia: arraste para orbitar · clique planta · P paleta · T viagem · R semear · B brilho · A aquarela', palettes[0].swatch);
 }
 
 // ---------------------------------------------------------------------------
@@ -1370,6 +1388,7 @@ function frame(time, xrFrame) {
   // A mata acende e apaga devagar, nunca de estalo.
   shared.uGlow.value += (GLOW[state.glowStep].v - shared.uGlow.value)
     * (1 - Math.exp(-dt * 0.9));
+  shared.uPaint.value += (state.paint - shared.uPaint.value) * (1 - Math.exp(-dt * 1.4));
   // Trocar de mundo é animar este float: um só conjunto de materiais serve
   // para todos os biomas.
   // A cena inteira é perseguida aqui: cor de folha, de casca, de parede, de
@@ -1493,8 +1512,18 @@ function frame(time, xrFrame) {
     // paredes.
     const recortado = roomMesh.entries.length > 0
       && roomMesh.occlusionEnabled && state.occlusionOn;
-    const h0 = recortado ? -0.15 : 0.10;
-    const f0 = recortado ? 0.12 : 0.62;
+    // O CÉU COMEÇA NO TETO, e não num ângulo.
+    //
+    // Com o oclusor ativo, quem recorta é a sala: parede e chão escrevem
+    // profundidade e escondem o céu; o teto não escreve e o deixa passar.
+    // Então o céu não precisa de desvanecimento angular nenhum — ele é opaco
+    // em toda direção, e o buraco do teto é o único lugar por onde aparece.
+    // Do teto para cima é 100% virtual; do teto para baixo é a sua sala.
+    //
+    // Sem oclusor não há o que recorte, e um céu opaco cobriria o cômodo
+    // inteiro. Só nesse caso ele volta a abrir por ângulo.
+    const h0 = recortado ? -2.0 : 0.10;
+    const f0 = recortado ? -1.9 : 0.62;
     skyMaterial.uniforms.uHorizon.value = h0 - w * 0.30;
     skyMaterial.uniforms.uFull.value = f0 - w * 0.34;
     skyMaterial.uniforms.uMaxVeil.value = recortado ? 1.0 : 0.72;
@@ -1621,7 +1650,7 @@ window.floresta = {
   state, shared, passos, renderer, camera, orbit,
   // ações
   cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
-  toggleCalm, cycleGlow, bless, rescan, hatch, backToForest, enterWorld, GLOW,
+  toggleCalm, cycleGlow, togglePaint, bless, rescan, hatch, backToForest, enterWorld, GLOW,
   CENAS, cenaPor, montarCena, trocarCena, aplicarCena,
 };
 

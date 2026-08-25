@@ -187,6 +187,17 @@ vec3 bio(float mascara, float t, float forca){
 }
 
 /**
+ * AQUARELA — o quanto de pincel entra. 0 é a mata facetada, 1 é pigmento.
+ *
+ * O uniform mora aqui, no bloco comum aos dois estágios, porque o VERTEX
+ * precisa dele para derreter a normal. As FUNÇÕES de pigmento moram no
+ * cabeçalho do fragmento, e não aqui: elas usam "vWorld" e "wrapLight", que
+ * são de lá — e postas aqui quebravam a compilação dos dois estágios de uma
+ * vez, deixando a cena inteira preta.
+ */
+uniform float uPaint;
+
+/**
  * Escurece o corpo conforme a luz interna sobe.
  *
  * Bioluminescência precisa de escuro em volta para existir — é contraste, não
@@ -234,8 +245,8 @@ vec3 sway(vec3 pos, vec3 root, float rigidity){
 /**
  * PISADAS.
  *
- * Guarda os últimos passos do usuário em coordenadas de mundo. `xy` é a
- * posição no chão e `z` é a força, que decai com o tempo — pisada velha some
+ * Guarda os últimos passos do usuário em coordenadas de mundo. "xy" é a
+ * posição no chão e "z" é a força, que decai com o tempo — pisada velha some
  * e a vegetação levanta de novo.
  *
  * Um buffer curto de posições, e não uma textura de trilha, porque assim não
@@ -304,7 +315,7 @@ vec3 trample(vec3 pos, vec3 root){
 
 /**
  * Cabeçalho comum do vertex shader. Resolve instancing na mão porque
- * usamos ShaderMaterial cru — o three.js declara `instanceMatrix` e o
+ * usamos ShaderMaterial cru — o three.js declara "instanceMatrix" e o
  * define USE_INSTANCING sozinho quando o objeto é um InstancedMesh.
  */
 export const VERT_HEAD = /* glsl */ `
@@ -375,6 +386,109 @@ uniform float uLaminaForca;
 float wrapLight(vec3 n){
   float d = dot(normalize(n), normalize(vec3(0.35, 0.85, 0.4)));
   return d * 0.5 + 0.5;
+}
+
+/**
+ * AQUARELA.
+ *
+ * 0 é a mata facetada; 1 é pigmento sobre papel.
+ *
+ * Sair do low poly não é acrescentar triângulo. O que faz a cena ler como low
+ * poly é a normal FACETADA — e o que faz a referência ler como pintura é o
+ * comportamento do pigmento, que nenhuma quantidade de geometria produz.
+ * Aquarela tem três marcas, e são elas que estão aqui:
+ *
+ * LAVADA — o valor não é contínuo. Ele se agrupa em poucos patamares, porque
+ * cada demão é uma passagem de pincel, e a fronteira entre eles é irregular
+ * porque quem decide onde ela cai é o grão do papel.
+ *
+ * BORDA MOLHADA — o pigmento migra para a beirada da poça enquanto seca, e a
+ * borda fica MAIS escura que o meio. É o contrário do que a computação
+ * gráfica faz sozinha, onde a borda acende. É a assinatura da técnica.
+ *
+ * GRANULAÇÃO — o pigmento assenta nos vales do papel e deixa os cumes claros.
+ */
+
+/**
+ * O grão do papel, ancorado em OBJETO.
+ *
+ * Isto não é preciosismo, é conforto: quase todo shader de aquarela ancora o
+ * grão na TELA, e em estéreo cada olho recebe um grão diferente sobre a mesma
+ * superfície. O cérebro não funde as duas imagens e o resultado é rivalidade
+ * binocular — desconforto real, do tipo que faz tirar o aparelho da cabeça.
+ * Ancorado no objeto, os dois olhos veem o mesmo grão no mesmo lugar.
+ */
+float papel(vec3 p){
+  return fbm2(p * 26.0) * 0.62 + vnoise(p * 74.0) * 0.38;
+}
+
+/**
+ * Aplica pigmento sobre uma cor já resolvida.
+ *
+ * @param base  a cor da superfície
+ * @param N     normal, já suavizada pelo material se ele souber suavizar
+ * @param P     posição em espaço de OBJETO, para o grão não nadar
+ */
+vec3 aquarela(vec3 base, vec3 N, vec3 P){
+  if (uPaint < 0.004) return base;
+  vec3 V = normalize(cameraPosition - vWorld);
+
+  // Grão em MUNDO e em duas escalas VISÍVEIS: manchas de poucos centímetros
+  // e a fibra fina do papel. Na primeira tentativa ele estava tão fino que
+  // se dissolvia num clareamento uniforme — grão que não se vê não é grão.
+  float manchas = fbm2(vWorld * 3.4);
+  float fibra = vnoise(vWorld * 44.0);
+  float grao = manchas * 0.72 + fibra * 0.28;
+
+  // AQUARELA É SUBTRATIVA. O papel é o branco e o pigmento só escurece.
+  // Deixar a lavada levantar valor foi o erro que fez a cena inteira
+  // convergir para o mesmo bege, porque o "filmic" logo adiante comprime o
+  // que passa de um. Aqui o multiplicador nunca ultrapassa 1.
+  //
+  // E o patamar sai da LUMINÂNCIA da cor que chegou, não de uma nova conta
+  // de luz: o material já iluminou antes de chamar, e refazer a conta aqui
+  // aplicava a luz duas vezes e achatava o relevo.
+  float lum = dot(base, vec3(0.299, 0.587, 0.114));
+  float patamar = smoothstep(0.14, 0.22, lum + (grao - 0.5) * 0.24) * 0.45
+                + smoothstep(0.38, 0.52, lum + (grao - 0.5) * 0.16) * 0.55;
+  vec3 col = base * mix(0.34, 1.0, patamar);
+
+  // BORDA MOLHADA: o pigmento migra para a beirada da poça enquanto seca.
+  float beira = pow(1.0 - abs(dot(normalize(N), V)), 2.0);
+  col *= 1.0 - beira * 0.50;
+
+  // GRANULAÇÃO: assenta nos vales, e também só escurece.
+  col *= 1.0 - (1.0 - grao) * 0.24;
+
+  return mix(base, col, uPaint);
+}
+
+/**
+ * Linha de contorno, como a que a referência desenha a bico de pena.
+ *
+ * Não é detecção de borda em espaço de tela — é o mesmo termo de raspão, só
+ * que apertado com expoente alto. Sai de graça e, ao contrário do contorno
+ * em pós-processamento, funciona em estéreo sem custo dobrado.
+ */
+vec3 tinta(vec3 col, vec3 N, vec3 corDaTinta, float forca){
+  if (uPaint < 0.004) return col;
+  vec3 V = normalize(cameraPosition - vWorld);
+  // Expoente alto e ganho alto: linha fina e escura, não penumbra larga.
+  float linha = pow(1.0 - abs(dot(normalize(N), V)), 7.0);
+  return mix(col, corDaTinta, clamp(linha * forca * uPaint, 0.0, 1.0));
+}
+
+/**
+ * Derrete as facetas sem trocar a geometria.
+ *
+ * A copa é feita de bolhas e o tronco de cilindros: em ambos, a normal LISA é
+ * uma função simples da posição local — a direção do centro da bolha até o
+ * ponto, ou o raio do cilindro. Misturar a normal facetada com essa direção
+ * custa três linhas e dá o mesmo resultado que reconstruir toda a malha com
+ * vértices soldados.
+ */
+vec3 alisar(vec3 N, vec3 direcaoLisa, float quanto){
+  return normalize(mix(normalize(N), normalize(direcaoLisa), uPaint * quanto));
 }
 
 // Onda circular que sai do ponto onde a floresta foi plantada.

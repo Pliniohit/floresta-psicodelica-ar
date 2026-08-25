@@ -48,6 +48,7 @@ export const shared = {
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
   uGlow:   { value: 0.80 },   // bioluminescência: 0 mata apagada, 1 tudo aceso
+  uPaint:  { value: 0.0 },    // 0 facetado, 1 aquarela sobre papel
   uVanish: { value: 0 },      // 0 mundo inteiro, 1 mundo dissolvido
   uOrigin: { value: new Vector3() },
   uPalA:   { value: new Vector3(0.5, 0.5, 0.5) },
@@ -102,9 +103,12 @@ const ROOT_AND_ATTR_SEED = /* glsl */ `
 // ---------------------------------------------------------------------------
 export const barkMaterial = make('casca', {
   vert: /* glsl */ `
+    attribute vec3 aSmoothN;   // a normal lisa, guardada ao lado da facetada
     void main(){
       ${ROOT_AND_SEED}
-      emit(sway(position, root, 1.0), normal);
+      // A normal derrete conforme o pincel entra: mesma malha, outro
+      // sombreamento. É o que separa facetado de pintado, e não o triângulo.
+      emit(sway(position, root, 1.0), mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `
@@ -127,6 +131,8 @@ export const barkMaterial = make('casca', {
       // A seiva continua vindo da paleta: é o elemento mágico do tronco.
       col += palette(t + 0.35) * damp(sap, 0.35) * (0.34 + uTrip * 0.7 + uPulse * 0.5);
       col *= 0.45 + 0.75 * wrapLight(vNormalW);
+      col = aquarela(col, vNormalW, vLocal);
+      col = tinta(col, vNormalW, uCasca[0] * 0.10, 1.7);
 
       // Luz no fundo do sulco, não na crista: a fibra que sobressai fica
       // escura e a fenda entre elas acende. É o que dá relevo ao tronco em
@@ -144,13 +150,14 @@ export const barkMaterial = make('casca', {
 // ---------------------------------------------------------------------------
 export const fruitMaterial = make('frutos', {
   vert: /* glsl */ `
+    attribute vec3 aSmoothN;   // a normal lisa, guardada ao lado da facetada
     void main(){
       ${ROOT_AND_SEED}
       // Balança com a copa, e um pouco além: pendurada, ela atrasa em relação
       // ao galho que a segura.
       vec3 p = sway(position, root, 1.0);
       p.x += sin(uTime * 0.62 + root.z * 3.1 + position.y * 2.0) * 0.008 * uSway * 90.0;
-      emit(p, normal);
+      emit(p, mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `
@@ -170,6 +177,7 @@ export const fruitMaterial = make('frutos', {
       vec3 col = enchant(nightBody(fruta), t, 0.28);
       col *= 0.50 + 0.72 * wrapLight(N);
       col += vec3(1.0, 0.95, 0.88) * brilho * 0.55;
+      col = aquarela(col, N, vLocal);
       // A fruta acende MAIS no lado escuro: é o avesso da luz externa, e é o
       // que a faz parecer iluminada por dentro em vez de polida por fora.
       col += bio(0.45 + 0.55 * (1.0 - wrapLight(N)), t + 0.15, 1.05) * fruta * 2.2;
@@ -183,11 +191,12 @@ export const fruitMaterial = make('frutos', {
 // ---------------------------------------------------------------------------
 export const canopyMaterial = make('copa', {
   vert: /* glsl */ `
+    attribute vec3 aSmoothN;   // a normal lisa, guardada ao lado da facetada
     void main(){
       ${ROOT_AND_SEED}
       // a copa respira além de balançar
       float breathe = 1.0 + sin(uTime * 0.35 + root.x + root.z) * 0.030 * (0.4 + uTrip);
-      emit(sway(position * breathe, root, 1.0), normal);
+      emit(sway(position * breathe, root, 1.0), mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `
@@ -213,6 +222,8 @@ export const canopyMaterial = make('copa', {
       vec3 col = enchant(nightBody(folha), t, 0.55);
       col += palette(t + 0.5) * rim * (0.22 + uTrip * 0.55 + uPulse * 0.4);
       col *= 0.5 + 0.65 * wrapLight(vNormalW);
+      col = aquarela(col, vNormalW, vLocal);
+      col = tinta(col, vNormalW, uCasca[0] * 0.08, 1.8);
 
       // A NERVURA é a isolinha do mesmo ruído que já desenha as manchas: uma
       // linha fina onde o ruído cruza o meio. Acender a nervura e deixar o
@@ -250,6 +261,7 @@ export const stemMaterial = make('caule', {
       vec3 col = enchant(caule, t, 0.35);
       col *= 0.5 + 0.7 * wrapLight(vNormalW);
       col += palette(t + 0.4) * uPulse * 0.4;
+      col = aquarela(col, vNormalW, vLocal);
       // Anéis subindo pelo caule, estreitados pelo expoente: acesos só na
       // crista, e não numa oscilação larga que lavaria o caule inteiro.
       col += bio(pow(rings, 3.0), t + 0.3, 0.70);
@@ -263,9 +275,10 @@ export const stemMaterial = make('caule', {
 // ---------------------------------------------------------------------------
 export const capMaterial = make('chapeu', {
   vert: /* glsl */ `
+    attribute vec3 aSmoothN;   // a normal lisa, guardada ao lado da facetada
     void main(){
       ${ROOT_AND_SEED}
-      emit(sway(position, root, 1.6), normal);
+      emit(sway(position, root, 1.6), mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `
@@ -293,6 +306,8 @@ export const capMaterial = make('chapeu', {
       vec3 col = enchant(chapeu, t, 0.40);
       col += palette(t + 0.5) * spots * (0.26 + uTrip * 0.7 + uPulse * 0.6);
       col *= 0.55 + 0.65 * wrapLight(vNormalW);
+      col = aquarela(col, vNormalW, vLocal);
+      col = tinta(col, vNormalW, uChapeu[0] * 0.10, 1.6);
 
       // O cogumelo é o mais aceso da mata — é o que a mata bioluminescente
       // promete. As manchas queimam, e a aba acende por baixo como se a luz
