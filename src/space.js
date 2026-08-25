@@ -2,7 +2,9 @@ import {
   Group, Mesh, InstancedMesh, Points, BufferGeometry, BufferAttribute,
   SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, Euler,
 } from '../vendor/three/three.module.min.js';
-import { planetMaterial, trailMaterial, cloneMaterial } from './shaders/materials.js';
+import {
+  planetMaterial, atmosferaMaterial, solMaterial, trailMaterial, cloneMaterial,
+} from './shaders/materials.js';
 import { rng } from './forest.js';
 import { CENAS } from './cenas.js';
 
@@ -31,14 +33,100 @@ const _s2 = new Vector3();
 const _acc = new Vector3();
 const _d = new Vector3();
 const _p2 = new Vector3();
+/** Direção do planeta para o sol. Guardado à parte porque `_d` é reciclado
+ * dentro do laço de pares, e amortecer na direção errada derrubava todo
+ * mundo dentro da estrela. */
+const _rad = new Vector3();
 
-/** Altura em torno da qual o enxame se equilibra: peito de quem está de pé. */
+/** Espessura da atmosfera: 26% do raio do corpo. */
+const ATM = 1.26;
+
+/**
+ * A DISTÂNCIA MÍNIMA entre dois planetas, em raios somados.
+ *
+ * Não basta as superfícies não se tocarem. O que se vê não é a esfera, é a
+ * ATMOSFERA — e duas cascas de gás se atravessando lêem exatamente como dois
+ * planetas encostados, por mais que a rocha ainda tenha folga. Então a folga
+ * é medida entre as cascas, com um resto de céu preto entre elas.
+ */
+const FOLGA = ATM * 1.06;
+/**
+ * Uma esfera unitária para todas as cascas. Cada planeta a escala; o shader
+ * lê o raio de mundo da própria matriz, então não há nada por planeta na
+ * geometria — sete cascas, uma malha.
+ */
+const SFERA_AR = new SphereGeometry(1, 20, 14);
+
+/** Altura do centro do sistema: peito de quem está de pé. */
 const CENTRO_Y = 1.25;
-const MOLA = 0.55;        // mola fraca que segura o enxame perto de você
+
+/**
+ * O SOL, E O QUE ELE MUDA.
+ *
+ * Antes o que segurava o enxame era uma mola linear para o centro — força
+ * proporcional à distância, como um elástico. Funcionava, mas produzia
+ * movimento harmônico: todo mundo com o mesmo período, indo e voltando pelo
+ * meio da sala. Não era um sistema solar, era um punhado de pêndulos.
+ *
+ * Com uma estrela no centro a lei passa a ser a de verdade, GM/r², e o
+ * sistema ganha o que só ela dá: quem está perto corre, quem está longe
+ * arrasta-se, as órbitas fecham em elipse, e as passagens rasantes acontecem
+ * porque duas elipses se cruzam — não porque dois elásticos coincidiram.
+ *
+ * `GM` está calibrado para o raio médio do enxame: a 1,5 m a volta completa
+ * leva meio minuto, devagar o bastante para acompanhar com os olhos.
+ */
+const R_SOL = 0.18;       // raio da estrela
+const COROA = 2.8;        // a coroa vai até quase três raios solares
+const GM = 0.145;         // parâmetro gravitacional: v² = GM/r na órbita circular
+const R_MIN = 0.62;       // ninguém chega mais perto que isto do sol
+const R_MAX = 2.15;       // nem se afasta além do alcance do braço
+const CERCA = 2.2;        // dureza das duas barreiras acima
 const G = 0.10;           // gravidade entre planetas
 const CONTATO = 11.0;     // dureza do contato; sempre vence a gravidade
-const AMORTECE = 0.30;    // atrito, para o sistema não ganhar energia
+/**
+ * ATRITO RADIAL — e SÓ radial.
+ *
+ * O atrito antigo era isotrópico: frenava tudo por igual. Contra uma mola
+ * linear isso apenas acomodava o enxame, mas contra a gravidade de uma
+ * estrela é fatal — frear é perder momento angular, e perder momento angular
+ * é cair. Em noventa segundos de teste os sete planetas espiralavam para
+ * dentro do sol.
+ *
+ * Amortecer apenas a componente RADIAL preserva o momento angular por
+ * construção: a órbita não decai, ela só arredonda. O que este atrito come é
+ * a energia que os encontrões entre planetas injetam — que é exatamente a
+ * que precisa ser comida para o sistema não se desmontar sozinho.
+ */
+const AMORTECE = 0.14;
 const V_MAX = 1.3;        // m/s
+
+/**
+ * A MÃO NÃO TELEPORTA O PLANETA.
+ *
+ * Antes `carry` escrevia a posição direto, e por isso pegar um planeta não
+ * era pegar coisa nenhuma: ele grudava no ponto da pinça, não tinha peso, não
+ * empurrava ninguém e ao ser solto caía do repouso. Agora a mão puxa por uma
+ * MOLA e quem move o planeta continua sendo a física.
+ *
+ * O ganho é tudo o que vem de graça junto: ele chega um instante depois da
+ * mão (é a inércia que se sente na palma), o pequeno chega mais rápido que o
+ * grande, ele afasta os outros enquanto passa, e a velocidade com que a mão
+ * o largou já está na mão dele — soltar em movimento é arremessar.
+ *
+ * `OMEGA` é a frequência da mola. Amortecimento crítico (2·ω) para ela chegar
+ * e parar, sem oscilar em volta da mão — mola subamortecida num objeto preso
+ * à palma vira tremor, e tremor a trinta centímetros do olho embrulha.
+ *
+ * O amortecimento é medido contra a velocidade DA MÃO, não contra zero. Sem
+ * isso a mola cobra um pedágio constante enquanto a mão se move — quinze
+ * centímetros de atraso permanente na medição, que a mão sente como elástico,
+ * não como peso. Descontando a velocidade da mão, o atraso passa a aparecer
+ * só quando ela ACELERA, que é exatamente onde inércia se sente de verdade.
+ */
+const OMEGA = 22.0;       // rad/s na massa mais leve
+const V_ARREMESSO = 1.7;  // m/s: teto do arremesso, para não cruzar a sala
+const _v2 = new Vector3();
 const _up = new Vector3(0, 1, 0);
 const _e2 = new Euler();
 
@@ -56,7 +144,10 @@ export class Space extends Group {
     // Um único InstancedMesh não serve aqui: cada planeta precisa de matriz
     // própria mexida pela mão, e são só sete — sete draw calls é barato.
     for (let i = 0; i < PLANETS; i++) {
-      const raio = 0.20 + r() * 0.40;   // tamanho de bola de praia: dá vontade de pegar
+      // Menores que bola de praia: sete planetas de meio metro num quarto
+      // ficam ombro a ombro, e enxame apertado lê como aglomerado sólido por
+      // mais que a física garanta que ninguém se toca.
+      const raio = 0.13 + r() * 0.25;
       // Material por planeta: cada um carrega a cor do bioma que guarda. O
       // programa de shader continua sendo um só, então o custo é de uniforms.
       // cloneMaterial e não clone(): o clone cru duplica também os uniforms
@@ -76,6 +167,34 @@ export class Space extends Group {
       const grupo = new Group();
       grupo.add(corpo);
 
+      // A ATMOSFERA. Uma casca 26% maior que o corpo, dentro da qual o shader
+      // integra o gás ao longo do raio de visão. A malha é só o volume onde
+      // isso acontece — ela não é a coisa que se vê.
+      //
+      // A cor vem do elemento, e é o que mais distingue um planeta do outro
+      // de longe: o mundo de água tem céu azul e o de fogo, um ar sulfuroso.
+      const arCor = [
+        new Vector3(0.42, 0.66, 1.00),   // terra — o azul do espalhamento
+        new Vector3(1.00, 0.52, 0.22),   // fogo — poeira alta e enxofre
+        new Vector3(0.36, 0.86, 0.88),   // água — turquesa úmido
+      ][i % 3];
+      const matAr = cloneMaterial(atmosferaMaterial, {
+        uTint: arCor,
+        uElement: i % 3,
+        uRazao: 1 / ATM,
+        // Gasoso denso, rochoso rarefeito: sem essa variação as sete cascas
+        // ficam iguais e a atmosfera vira um verniz aplicado em série.
+        uDens: 0.7 + r() * 0.8,
+      });
+      matAr.uniforms.uSeed.value = mat.uniforms.uSeed.value;
+      const ar = new Mesh(SFERA_AR, matAr);
+      ar.scale.setScalar(raio * ATM);
+      ar.frustumCulled = false;
+      // Depois do corpo: ela é aditiva e não escreve profundidade, então
+      // precisa encontrar o planeta já desenhado para pousar por cima.
+      ar.renderOrder = 20;
+      grupo.add(ar);
+
       // Anéis em alguns, inclinados.
       if (r() < 0.4) {
         // Anel com o mesmo material do corpo: aditivo fazia o anel brilhar
@@ -94,29 +213,75 @@ export class Space extends Group {
       // Nasce num lugar que não colide com ninguém. Sortear às cegas fazia
       // dois planetas começarem um dentro do outro, e a física nasce então
       // tendo que consertar em vez de manter.
-      let ang = 0;
-      for (let tentativa = 0; tentativa < 120; tentativa++) {
-        const dist = 1.0 + r() * 1.5;
+      let ang = 0, dist = 1.2;
+      for (let tentativa = 0; tentativa < 200; tentativa++) {
+        dist = 0.75 + r() * 1.25;
         ang = r() * Math.PI * 2;
-        grupo.position.set(Math.cos(ang) * dist, 0.75 + r() * 1.25, Math.sin(ang) * dist);
+        // Nasce quase no plano da eclíptica, com uma inclinação pequena: um
+        // sistema real é chato, e é a chatura que deixa ver que é um sistema.
+        const incl = (r() - 0.5) * 0.5;
+        grupo.position.set(
+          Math.cos(ang) * dist,
+          CENTRO_Y + Math.sin(incl) * dist * 0.5,
+          Math.sin(ang) * dist,
+        );
         const livre = this.planets.every((o) => grupo.position.distanceTo(o.position)
-          > raio + o.userData.raio + 0.12);
+          > (raio + o.userData.raio) * FOLGA + 0.10);
         if (livre) break;
       }
 
-      // Velocidade tangente: é ela que faz orbitar em vez de cair no centro.
-      const vel = new Vector3(-Math.sin(ang), 0, Math.cos(ang))
-        .multiplyScalar((0.28 + r() * 0.22) * (r() < 0.5 ? -1 : 1));
-      vel.y = (r() - 0.5) * 0.12;
+      // A VELOCIDADE CIRCULAR daquele raio: sqrt(GM/r). Sorteá-la, como
+      // antes, dava órbitas que ora escapavam ora despencavam, e a física
+      // passava o tempo todo consertando. Nascendo na velocidade certa, a
+      // órbita já é estável no primeiro quadro, e o que a perturba dali em
+      // diante são só os outros planetas — que é a graça.
+      const rad = Math.hypot(grupo.position.x, grupo.position.z) || dist;
+      const vc = Math.sqrt(GM / Math.max(rad, R_MIN));
+      // Todos no mesmo sentido, como num sistema que nasceu de um só disco.
+      const vel = new Vector3(-Math.sin(ang), 0, Math.cos(ang)).multiplyScalar(vc);
+      vel.y = (r() - 0.5) * 0.05;
 
       grupo.userData = {
-        corpo, raio, mat, vel, preso: false, bioma: cena.id,
+        corpo, ar, raio, mat, mats: [mat, matAr], vel, preso: false,
+        alvo: null, bioma: cena.id,
         massa: raio * raio * raio,     // massa vai com o volume, como convém
         giro: 0.06 + r() * 0.16,
       };
       this.planets.push(grupo);
       this.add(grupo);
     }
+
+    // --- A ESTRELA ---------------------------------------------------------
+    // Ela é o centro de tudo: da gravidade, da luz e da composição. Sem um
+    // corpo visível ali, os planetas orbitavam um ponto vazio — e o olho lia
+    // isso como sete coisas girando à toa.
+    this.sol = new Group();
+    this.sol.position.set(0, CENTRO_Y, 0);
+    const corpoSol = new Mesh(new SphereGeometry(R_SOL, 24, 16), solMaterial);
+    corpoSol.frustumCulled = false;
+    this.sol.add(corpoSol);
+
+    // A coroa é a mesma atmosfera dos planetas, com o gás muito mais alto e
+    // quente. Reaproveitar aqui não é economia: é o mesmo fenômeno: gás fino
+    // integrado ao longo do raio de visão, que acende no limbo.
+    this.matCoroa = cloneMaterial(atmosferaMaterial, {
+      uWarp: 0,
+      uTint: new Vector3(1.00, 0.74, 0.38),
+      uSeed: 0.31,
+      uRazao: 1 / COROA,
+      // Densa e MUITO alta: é a coroa que faz a estrela ler como fonte de
+      // luz. Sem ela o corpo sozinho vira uma bolinha amarela no meio da
+      // sala, por mais branco que se pinte o disco.
+      uDens: 1.6,
+      uSolPonto: 0,
+      uAuto: 1,
+    });
+    const coroa = new Mesh(SFERA_AR, this.matCoroa);
+    coroa.scale.setScalar(R_SOL * COROA);
+    coroa.frustumCulled = false;
+    coroa.renderOrder = 20;
+    this.sol.add(coroa);
+    this.add(this.sol);
 
     // Sem campo de estrelas em Points aqui: pontos de um pixel numa casca
     // distante serrilham a cada movimento de cabeça, e era isso que fazia o
@@ -128,7 +293,11 @@ export class Space extends Group {
   setProgress(v) {
     this.progress = v;
     this.visible = v > 0.01;
-    for (const g of this.planets) g.userData.mat.uniforms.uWarp.value = v;
+    for (const g of this.planets) {
+      for (const m of g.userData.mats) m.uniforms.uWarp.value = v;
+    }
+    solMaterial.uniforms.uWarp.value = v;
+    this.matCoroa.uniforms.uWarp.value = v;
     return v;
   }
 
@@ -140,8 +309,8 @@ export class Space extends Group {
     const s = Math.min(ENTER_SCALE + 0.4, Math.max(MIN_SCALE, fator));
     planeta.scale.setScalar(s);
     // Acende conforme se aproxima do limiar.
-    planeta.userData.mat.uniforms.uGrow.value =
-      Math.max(0, (s - 1.6) / (ENTER_SCALE - 1.6));
+    const brilho = Math.max(0, (s - 1.6) / (ENTER_SCALE - 1.6));
+    for (const m of planeta.userData.mats) m.uniforms.uGrow.value = brilho;
     return s >= ENTER_SCALE;
   }
 
@@ -149,7 +318,7 @@ export class Space extends Group {
   resetScales() {
     for (const g of this.planets) {
       g.scale.setScalar(1);
-      g.userData.mat.uniforms.uGrow.value = 0;
+      for (const m of g.userData.mats) m.uniforms.uGrow.value = 0;
     }
   }
 
@@ -181,6 +350,17 @@ export class Space extends Group {
   update(t, dt) {
     if (!this.visible) return;
 
+    // Onde a estrela está EM MUNDO. Os shaders iluminam a partir daqui, e o
+    // grupo inteiro nasce onde o usuário estava — então isto muda de sessão
+    // para sessão e precisa ser publicado, não fixado.
+    this.sol.getWorldPosition(_p2);
+    for (const g of this.planets) {
+      for (const m of g.userData.mats) {
+        m.uniforms.uSol.value.copy(_p2);
+        m.uniforms.uSolPonto.value = 1;
+      }
+    }
+
     // Um passo grande faz o contato explodir: a repulsão é dura, e integrar
     // com dt de um quadro perdido lançaria o planeta para fora da sala.
     const passo = Math.min(dt, 1 / 45);
@@ -188,13 +368,55 @@ export class Space extends Group {
     for (let i = 0; i < this.planets.length; i++) {
       const a = this.planets[i];
       a.userData.corpo.rotation.y = t * a.userData.giro;
-      if (a.userData.preso) { a.userData.vel.set(0, 0, 0); continue; }
-
       const pa = a.position;
       const ra = a.userData.raio * a.scale.x;
-      _acc.set(0, CENTRO_Y - pa.y, 0).multiplyScalar(MOLA * 0.6);
-      _acc.x += -pa.x * MOLA;
-      _acc.z += -pa.z * MOLA;
+
+      // NA MÃO: a mola substitui as forças do enxame, mas a integração é a
+      // mesma — ele continua sendo um corpo com velocidade, e é por isso que
+      // ainda empurra os outros e sai arremessado quando solto.
+      if (a.userData.preso) {
+        const alvo = a.userData.alvo;
+        if (alvo) {
+          // Velocidade da mão, do quadro anterior para este.
+          const ant = a.userData.alvoAnt;
+          _v2.copy(alvo).sub(ant).divideScalar(passo);
+          if (_v2.lengthSq() > 36) _v2.setLength(6);   // salto de rastreamento
+          ant.copy(alvo);
+
+          // Mais pesado, mola mais mole: o planeta grande chega atrasado e
+          // ultrapassa menos. É toda a diferença de peso que se sente.
+          const w = OMEGA / (1 + a.userData.massa * 4.0);
+          const v = a.userData.vel;
+          _d.copy(alvo).sub(pa);
+          v.addScaledVector(_d, w * w * passo);
+          v.addScaledVector(_v2.sub(v), Math.min(1, 2.0 * w * passo));
+          if (v.lengthSq() > 36) v.setLength(6);   // teto de sanidade
+          pa.addScaledVector(v, passo);
+
+          // A mão pode levar o planeta para dentro da estrela, e a força
+          // solar não a impede — ela só age sobre quem está livre. Aqui a
+          // superfície do sol é uma parede: chega-se até ela e para.
+          _v2.set(pa.x, pa.y - CENTRO_Y, pa.z);
+          const rs = _v2.length();
+          const minimo = R_SOL + a.userData.raio * a.scale.x + 0.05;
+          if (rs > 1e-4 && rs < minimo) {
+            _v2.multiplyScalar(minimo / rs);
+            pa.set(_v2.x, CENTRO_Y + _v2.y, _v2.z);
+          }
+        }
+        continue;
+      }
+      // A ESTRELA. Amaciada em R_MIN para a aceleração não disparar se
+      // alguém for jogado direto contra ela pela mão.
+      _d.set(-pa.x, CENTRO_Y - pa.y, -pa.z);
+      const rSol = Math.max(_d.length(), 1e-3);
+      _rad.copy(_d).divideScalar(rSol);
+      _acc.copy(_d).multiplyScalar(GM / (rSol * Math.max(rSol * rSol, R_MIN * R_MIN)));
+
+      // As duas cercas: não cair no sol, não sumir sala afora. Só agem fora
+      // da faixa, então dentro dela a órbita é kepleriana pura.
+      if (rSol < R_MIN) _acc.addScaledVector(_d, -(R_MIN - rSol) * CERCA / rSol);
+      if (rSol > R_MAX) _acc.addScaledVector(_d, (rSol - R_MAX) * CERCA / rSol);
 
       for (let j = 0; j < this.planets.length; j++) {
         if (i === j) continue;
@@ -207,13 +429,15 @@ export class Space extends Group {
 
         // A folga é medida entre as SUPERFÍCIES, não entre os centros, e com
         // 6% de margem: eles chegam perto e param antes de encostar.
-        const soma = (ra + b.userData.raio * b.scale.x) * 1.06;
+        const soma = (ra + b.userData.raio * b.scale.x) * FOLGA;
         if (dist < soma) _acc.addScaledVector(_d, (dist - soma) * CONTATO);
       }
 
+      this.#sucao(pa, a.userData.raio);
+
       const v = a.userData.vel;
       v.addScaledVector(_acc, passo);
-      v.multiplyScalar(1 - Math.min(1, AMORTECE * passo));
+      v.addScaledVector(_rad, _rad.dot(v) * -Math.min(1, AMORTECE * passo));
       if (v.lengthSq() > V_MAX * V_MAX) v.setLength(V_MAX);
       pa.addScaledVector(v, passo);
 
@@ -250,16 +474,20 @@ export class Space extends Group {
           let dist = _d.length();
           // Concêntricos: qualquer direção serve para desempatar.
           if (dist < 1e-4) { _d.set(1, 0, 0); dist = 1e-4; }
-          const soma = (a.userData.raio * a.scale.x + b.userData.raio * b.scale.x) * 1.02;
+          const soma = (a.userData.raio * a.scale.x + b.userData.raio * b.scale.x)
+            * (FOLGA - 0.06);
           if (dist >= soma) continue;
 
           _d.divideScalar(dist);
           const sobra = soma - dist;
           // Quem está na mão não cede: a mão é que manda na posição dele.
+          // Quem está na mão quase não cede — mas CEDE. Zerado, ele virava
+          // uma parede: dois planetas presos um em cada mão travavam de vez,
+          // e um livre prensado entre a mão e outro não tinha para onde ir.
+          // Com uma fresta, o empurrão sempre encontra saída.
           const pa = a.userData.preso, pb = b.userData.preso;
-          if (pa && pb) continue;
-          const fa = pa ? 0 : (pb ? 1 : 0.5);
-          const fb = pb ? 0 : (pa ? 1 : 0.5);
+          const fa = pa ? (pb ? 0.5 : 0.12) : (pb ? 0.88 : 0.5);
+          const fb = pb ? (pa ? 0.5 : 0.12) : (pa ? 0.88 : 0.5);
           a.position.addScaledVector(_d, -sobra * fa);
           b.position.addScaledVector(_d, sobra * fb);
 
@@ -274,6 +502,41 @@ export class Space extends Group {
         }
       }
       if (!mexeu) break;
+    }
+  }
+
+  /**
+   * A SUCÇÃO DO BURACO NEGRO.
+   *
+   * Antes o planeta só era teleportado quando por acaso passava rente ao
+   * disco — e como nada o puxava para lá, a travessia era um acidente raro
+   * que ninguém via acontecer. Agora o buraco PUXA: dentro do alcance de
+   * captura ele vence a mola do centro, e o planeta é visivelmente arrastado,
+   * acelerando conforme se aproxima, até sumir.
+   *
+   * A atração cresce com 1/d — não com 1/d², que na boca do buraco dispara
+   * para o infinito e faz o planeta atravessar a parede antes de o teste de
+   * travessia rodar. Aqui ela cresce forte o bastante para ser inescapável e
+   * mansa o bastante para o passo de integração dar conta.
+   *
+   * O alcance é curto de propósito: fora dele o enxame continua orbitando
+   * você, que é o que a cena pede. O buraco é um destino, não um sumidouro
+   * que engole tudo em dez segundos.
+   */
+  #sucao(pa, raio) {
+    const portais = this.portais;
+    if (!portais || portais.length < 2) return;
+
+    for (const b of portais) {
+      _d.copy(b.pos).sub(pa);
+      const dist = _d.length();
+      const alcance = b.raio + 0.85 + raio;
+      if (dist > alcance || dist < 1e-3) continue;
+      _d.divideScalar(dist);
+      // Cresce de zero na borda do alcance até a boca: assim o planeta não
+      // ganha um tranco ao cruzar uma fronteira invisível.
+      const perto = 1 - dist / alcance;
+      _acc.addScaledVector(_d, (0.9 + 5.5 * perto * perto) * (1 / Math.max(dist, 0.25)));
     }
   }
 
@@ -301,10 +564,15 @@ export class Space extends Group {
       // reentraria no mesmo quadro e ficaria preso indo e voltando.
       planeta.position.copy(saida.pos).addScaledVector(saida.normal, raio + 0.28);
 
-      // A velocidade também vira: o que ia contra a parede passa a vir dela.
+      // E é CUSPIDO. Não basta virar a velocidade: quem entrou sugado tem de
+      // sair com força, senão ele reaparece boiando na frente do outro
+      // buraco e é imediatamente sugado de volta — um vaivém sem fim entre
+      // os dois. A saída leva a energia da queda, com um piso generoso.
       const v = planeta.userData.vel;
-      const vn = v.dot(saida.normal);
-      v.addScaledVector(saida.normal, Math.abs(vn) - vn + 0.22);
+      v.copy(saida.normal).multiplyScalar(Math.max(v.length(), 0.6) * 1.5);
+      // Um pouco de desvio lateral, para ele não sair sempre na mesma reta.
+      v.x += (entrada.normal.z - entrada.normal.x) * 0.15;
+      v.y += 0.20;
       this.onTravessia?.(planeta, entrada, saida);
       return;
     }
@@ -344,12 +612,22 @@ export class Space extends Group {
 
   lift(planeta) {
     planeta.userData.preso = true;
+    planeta.userData.alvo = (planeta.userData.alvo ?? new Vector3())
+      .copy(planeta.position);
+    planeta.userData.alvoAnt = (planeta.userData.alvoAnt ?? new Vector3())
+      .copy(planeta.position);
     return planeta;
   }
 
+  /**
+   * A mão diz ONDE ela está; o planeta decide como chegar lá.
+   *
+   * Escrever a posição direto seria mais simples e é o que havia antes — e
+   * era exatamente o que fazia o planeta não ter peso nenhum na mão.
+   */
   carry(planeta, world) {
     this.worldToLocal(_p.copy(world));
-    planeta.position.copy(_p);
+    (planeta.userData.alvo ??= new Vector3()).copy(_p);
   }
 
   /** Solta o planeta: ele volta à órbita a partir de onde foi deixado. */
@@ -360,14 +638,73 @@ export class Space extends Group {
    */
   drop(planeta) {
     planeta.userData.preso = false;
-    planeta.userData.vel.set(0, 0, 0);
+    planeta.userData.alvo = null;
+    // A velocidade da mola JÁ É a velocidade da mão no instante em que ela
+    // abriu — soltar parado devolve à órbita, soltar em movimento arremessa.
+    // O teto existe porque a mola pode estar corrigindo um salto de
+    // rastreamento, e um planeta a cinco metros por segundo cruza a sala
+    // antes de a mola do centro conseguir segurá-lo.
+    const v = planeta.userData.vel;
+    if (v.lengthSq() > V_ARREMESSO * V_ARREMESSO) v.setLength(V_ARREMESSO);
   }
+
+  /**
+   * A MÃO COMO CORPO. Um planeta que não está sendo segurado ainda é
+   * atingido por ela: dá para varrer o enxame com a palma, desviar um que
+   * vem chegando, empurrar um de leve para o outro.
+   *
+   * A mão nunca cede — ela é o mundo, não um objeto da simulação. O que se
+   * transfere é a velocidade dela, medida entre um quadro e o seguinte, e o
+   * que não se transfere é a componente que já estava afastando os dois:
+   * sem isso a mão parada continuaria bombeando energia no planeta que sai.
+   *
+   * @param {string} id    identifica a mão entre quadros
+   * @returns {boolean}    houve toque (para o retorno háptico)
+   */
+  empurrar(id, world, raioMao, dt) {
+    if (!this.visible || dt <= 0) return false;
+    this.worldToLocal(_p.copy(world));
+
+    const antes = (this.maos ??= new Map()).get(id);
+    if (!antes) { this.maos.set(id, { pos: _p.clone(), vel: new Vector3() }); return false; }
+    // Velocidade filtrada: a pose da mão treme, e derivar tremor cru daria
+    // empurrões aleatórios num planeta parado ao lado da palma.
+    _v2.copy(_p).sub(antes.pos).divideScalar(dt);
+    antes.vel.lerp(_v2, 0.35);
+    antes.pos.copy(_p);
+
+    let tocou = false;
+    for (const g of this.planets) {
+      if (g.userData.preso) continue;
+      _d.copy(g.position).sub(_p);
+      let dist = _d.length();
+      if (dist < 1e-4) { _d.set(0, 1, 0); dist = 1e-4; }
+      const soma = g.userData.raio * g.scale.x + raioMao;
+      if (dist >= soma) continue;
+
+      _d.divideScalar(dist);
+      g.position.addScaledVector(_d, soma - dist);
+
+      const v = g.userData.vel;
+      const rel = _d.dot(_p2.copy(v).sub(antes.vel));
+      if (rel < 0) v.addScaledVector(_d, -rel * 1.5);   // devolve com um pouco de sobra
+      if (v.lengthSq() > V_ARREMESSO * V_ARREMESSO) v.setLength(V_ARREMESSO);
+      tocou = true;
+    }
+    return tocou;
+  }
+
+  /** A mão sumiu do rastreamento: esquecer a posição dela. */
+  soltarMao(id) { this.maos?.delete(id); }
 
   dispose() {
     for (const g of this.planets) {
       g.traverse((o) => o.isMesh && o.geometry.dispose());
-      g.userData.mat.dispose();
+      for (const m of g.userData.mats) m.dispose();
     }
+    this.sol.traverse((o) => o.isMesh && o.geometry.dispose());
+    this.matCoroa.dispose();
+    SFERA_AR.dispose();
     this.clear();
   }
 }

@@ -2,7 +2,9 @@ import {
   Group, Mesh, InstancedMesh, InstancedBufferAttribute, SphereGeometry,
   PlaneGeometry, TorusGeometry, Vector3,
 } from '../vendor/three/three.module.min.js';
-import { skyMaterial, meteorMaterial, planetMaterial, cloneMaterial } from './shaders/materials.js';
+import {
+  skyMaterial, meteorMaterial, planetMaterial, atmosferaMaterial, cloneMaterial,
+} from './shaders/materials.js';
 import { rng } from './forest.js';
 
 /**
@@ -35,6 +37,15 @@ const R_GIGANTE = RADIUS * 0.92;
 const R_METEORO = RADIUS * 0.95;
 
 const METEOROS = 14;
+
+/** Espessura da atmosfera, igual à dos planetas de mão. */
+const ATM = 1.26;
+/** A cor do ar por elemento: terra, fogo, água. */
+const AR = [
+  new Vector3(0.42, 0.66, 1.00),
+  new Vector3(1.00, 0.52, 0.22),
+  new Vector3(0.36, 0.86, 0.88),
+];
 
 /**
  * Os gigantes. Direções fixas, escolhidas para não caírem todas no mesmo
@@ -82,6 +93,24 @@ export class Sky extends Group {
       corpo.frustumCulled = false;
       grupo.add(corpo);
 
+      // Atmosfera também nos gigantes — e aqui ela é o que mais importa.
+      // A quarenta metros o relevo do disco quase não se lê; o que dá a um
+      // gigante a aparência de mundo é a borda macia, o limbo aceso do lado
+      // do sol e as faixas de nuvem derivando. Sem isso ele é uma bola
+      // pintada colada no céu.
+      const matAr = cloneMaterial(atmosferaMaterial, {
+        uWarp: 1,
+        uSeed: mat.uniforms.uSeed.value,
+        uElement: g.elemento,
+        uRazao: 1 / ATM,
+        uDens: 0.55 + r() * 0.5,
+        uTint: AR[g.elemento].clone(),
+      });
+      const ar = new Mesh(new SphereGeometry(g.raio * ATM, 24, 16), matAr);
+      ar.frustumCulled = false;
+      ar.renderOrder = -1980;   // depois da cúpula e das cadentes, ainda no fundo
+      grupo.add(ar);
+
       if (g.anel) {
         const anel = new Mesh(
           new TorusGeometry(g.raio * 1.85, g.raio * 0.05, 5, 40), mat);
@@ -96,7 +125,7 @@ export class Sky extends Group {
         Math.sin(g.el) * R_GIGANTE,
         Math.cos(g.az) * Math.cos(g.el) * R_GIGANTE,
       );
-      grupo.userData = { corpo, giro: g.giro, mat };
+      grupo.userData = { corpo, ar, giro: g.giro, mat, matAr };
       this.gigantes.push(grupo);
       this.add(grupo);
     }
@@ -139,6 +168,7 @@ export class Sky extends Group {
     for (const g of this.gigantes) {
       g.traverse((o) => o.isMesh && o.geometry.dispose());
       g.userData.mat.dispose();
+      g.userData.matAr.dispose();
     }
     this.clear();
   }

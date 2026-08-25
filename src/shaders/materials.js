@@ -782,6 +782,8 @@ export const planetMaterial = make('planetas', {
     uGrow: { value: 0 },                      // 0..1 conforme cresce na sua mão
     uSeed: { value: 0 },                      // identidade fixa deste planeta
     uElement: { value: 0 },                   // 0 terra, 1 fogo, 2 água
+    uSol: { value: new Vector3(0, 1.25, 0) }, // onde está a estrela, em mundo
+    uSolPonto: { value: 0 },                  // 1 estrela real, 0 luz distante
   },
   vert: /* glsl */ `
     uniform float uSeed;
@@ -800,6 +802,25 @@ export const planetMaterial = make('planetas', {
     uniform vec3 uTint;
     uniform float uGrow;
     uniform float uElement;
+    uniform vec3 uSol;
+    uniform float uSolPonto;
+
+    /**
+     * DE ONDE VEM A LUZ.
+     *
+     * No enxame de mão existe uma estrela de verdade no centro, e é dela que
+     * a luz sai: o lado iluminado de cada planeta aponta para o meio do
+     * sistema, e a sombra cai para fora. É o que faz o conjunto ler como
+     * sistema solar em vez de sete bolas acesas pelo mesmo holofote.
+     *
+     * Os gigantes do firmamento não têm estrela nenhuma perto — para eles a
+     * luz continua chegando de infinitamente longe, numa direção fixa.
+     */
+    vec3 dirLuz(vec3 ponto){
+      vec3 distante = normalize(vec3(0.45, 0.7, 0.35));
+      vec3 estrela = normalize(uSol - ponto);
+      return normalize(mix(distante, estrela, uSolPonto));
+    }
 
     void main(){
       vec3 N = normalize(vNormalW);
@@ -834,7 +855,7 @@ export const planetMaterial = make('planetas', {
       base = mix(base, base * 0.55 + uTint * 0.70, 0.34);
 
       // Terminador: luz vinda de cima e do lado, com penumbra larga.
-      float luz = dot(N, normalize(vec3(0.45, 0.7, 0.35)));
+      float luz = dot(N, dirLuz(vWorld));
       float dia = smoothstep(-0.35, 0.55, luz);
 
       // Ambiente generoso de propósito: um planeta realista fica invisível no
@@ -853,6 +874,236 @@ export const planetMaterial = make('planetas', {
       col += uTint * uGrow * uGrow * 0.6;
 
       gl_FragColor = vec4(filmic(col) * uWarp, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// O SOL — a estrela no centro do sistema.
+//
+// Ela não tem lado iluminado: é a fonte. Toda a leitura vem da SUPERFÍCIE em
+// movimento — grânulos de convecção subindo e afundando — e do escurecimento
+// de limbo, que é a borda mais fria que qualquer estrela mostra e é o que a
+// faz parecer uma bola de gás e não um disco recortado.
+//
+// O brilho não pisca. A granulação anda, mas a luminosidade média de cada
+// ponto fica onde está: numa cena que se olha de perto e por muito tempo, um
+// sol que cintila é desconforto garantido.
+// ---------------------------------------------------------------------------
+export const solMaterial = make('sol', {
+  uniforms: { uWarp: { value: 0 } },
+  vert: /* glsl */ `
+    void main(){ vSeed = 0.5; emit(position, normal); }
+  `,
+  frag: /* glsl */ `
+    uniform float uWarp;
+    void main(){
+      vec3 P = normalize(vLocal);
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+
+      // Convecção: duas escalas de ruído derivando em sentidos diferentes,
+      // devagar. É a diferença entre elas que faz a superfície ferver.
+      float g = fbm3(P * 7.0 + vec3(uTime * 0.035, uTime * -0.02, 0.0));
+      float f = fbm2(P * 15.0 + vec3(0.0, uTime * 0.05, uTime * 0.03));
+      float grao = g * 0.65 + f * 0.35;
+
+      // Do fundo laranja ao branco do topo do grânulo. O branco domina: uma
+      // estrela vista de perto é branca com raias quentes, não uma laranja.
+      vec3 col = mix(vec3(1.00, 0.42, 0.08), vec3(1.00, 0.84, 0.42),
+                     smoothstep(0.26, 0.56, grao));
+      col = mix(col, vec3(1.0, 0.99, 0.95), smoothstep(0.48, 0.72, grao));
+
+      // Escurecimento de limbo: no centro do disco a linha de visão entra
+      // fundo, onde é mais quente; de raspão ela só arranha as camadas altas.
+      float mu = max(dot(N, V), 0.0);
+      col *= 0.62 + 0.38 * pow(mu, 0.45);
+
+      // A saída satura de propósito. Filmic comprime tudo para baixo de 1, e
+      // uma estrela que não estoura no branco não lê como fonte de luz: lê
+      // como bola amarela. Aqui o objetivo é o estouro.
+      gl_FragColor = vec4(mix(filmic(col * 2.6), vec3(1.0), 0.35) * uWarp, 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// ATMOSFERA — a casca de gás em volta do planeta.
+//
+// É VOLUMÉTRICA de verdade, não um halo desenhado na borda. Cada fragmento
+// atravessa a casca integrando densidade ao longo do próprio raio de visão:
+// perto do centro do disco o raio corta pouco gás e o céu é fino; rente à
+// silhueta ele viaja de raspão por toda a espessura e acumula muito mais.
+// Esse é o limbo — a faixa clara que contorna qualquer planeta com ar — e ele
+// aparece aqui como CONSEQUÊNCIA do caminho, não como um `pow(1-dot(N,V))`
+// pintado à mão. Por isso ele também se comporta certo quando a mão gira o
+// planeta e quando a cabeça anda em volta.
+//
+// A integração é feita em espaço de MUNDO. Isso é o que garante estéreo
+// honesto: cada olho tem sua origem de raio, então as nuvens ganham
+// paralaxe entre um olho e outro e o gás lê como coisa com profundidade em
+// vez de decalque colado na esfera.
+//
+// O raio para no planeta quando o encontra, então o hemisfério de trás não
+// vaza por dentro da rocha; o que sobra à frente é a atmosfera que fica
+// ENTRE você e a superfície, que é justamente a que embaça o disco.
+// ---------------------------------------------------------------------------
+const PASSOS_ATM = 10;
+
+export const atmosferaMaterial = make('atmosfera', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,          // continua válida se a cabeça entrar na casca
+  blending: AdditiveBlending,
+  uniforms: {
+    uWarp: { value: 0 },
+    uTint: { value: new Vector3(0.5, 0.7, 1.0) },
+    uGrow: { value: 0 },
+    uSeed: { value: 0 },
+    uElement: { value: 0 },
+    // Fração do raio externo ocupada pelo corpo sólido. A espessura da
+    // atmosfera é o que sobra.
+    uRazao: { value: 1 / 1.26 },
+    uDens: { value: 1.0 },
+    uSol: { value: new Vector3(0, 1.25, 0) },
+    uSolPonto: { value: 0 },
+    // 1 = o gás é a própria fonte. É o caso da coroa de uma estrela, que não
+    // tem lado iluminado nem sombra: ela brilha inteira.
+    uAuto: { value: 0 },
+  },
+  vert: /* glsl */ `
+    uniform float uSeed;
+    varying vec3 vCentroA;
+    varying float vRaioA;
+    void main(){
+      mat4 im = instMatrix();
+      // O centro e o raio EM MUNDO, colhidos da própria matriz: assim a
+      // marcha do fragmento não precisa saber nada da hierarquia, e escalar
+      // o planeta na mão escala a atmosfera junto sem uniform nenhum.
+      vCentroA = (modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      vRaioA = length(mat3(modelMatrix) * mat3(im) * vec3(1.0, 0.0, 0.0));
+      vSeed = uSeed;
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uWarp;
+    uniform vec3 uTint;
+    uniform float uGrow;
+    uniform float uElement;
+    uniform float uRazao;
+    uniform float uDens;
+    uniform float uAuto;
+    varying vec3 vCentroA;
+    varying float vRaioA;
+    uniform vec3 uSol;
+    uniform float uSolPonto;
+
+    /**
+     * DE ONDE VEM A LUZ.
+     *
+     * No enxame de mão existe uma estrela de verdade no centro, e é dela que
+     * a luz sai: o lado iluminado de cada planeta aponta para o meio do
+     * sistema, e a sombra cai para fora. É o que faz o conjunto ler como
+     * sistema solar em vez de sete bolas acesas pelo mesmo holofote.
+     *
+     * Os gigantes do firmamento não têm estrela nenhuma perto — para eles a
+     * luz continua chegando de infinitamente longe, numa direção fixa.
+     */
+    vec3 dirLuz(vec3 ponto){
+      vec3 distante = normalize(vec3(0.45, 0.7, 0.35));
+      vec3 estrela = normalize(uSol - ponto);
+      return normalize(mix(distante, estrela, uSolPonto));
+    }
+
+    void main(){
+      vec3 ro = cameraPosition;
+      vec3 rd = normalize(vWorld - ro);
+      vec3 oc = ro - vCentroA;
+
+      // Interseção com a casca externa. O termo linear e o discriminante
+      // saem da equação da esfera; sem raiz real o raio passa ao largo.
+      float b = dot(oc, rd);
+      float h = b * b - (dot(oc, oc) - vRaioA * vRaioA);
+      if (h <= 0.0) discard;
+      h = sqrt(h);
+      float t0 = max(-b - h, 0.0);
+      float t1 = -b + h;
+
+      // E com o corpo sólido: se o raio o encontra, a marcha termina ali.
+      float rp = vRaioA * uRazao;
+      float hp = b * b - (dot(oc, oc) - rp * rp);
+      if (hp > 0.0) {
+        float tp = -b - sqrt(hp);
+        if (tp > t0) t1 = min(t1, tp);
+      }
+      if (t1 <= t0) discard;
+
+      // Altura de escala: a densidade cai por exponencial como cai o ar de
+      // verdade, em vez de terminar num degrau na borda da malha.
+      float esc = max((vRaioA - rp) * 0.42, 1e-4);
+      float dt = (t1 - t0) / float(${PASSOS_ATM});
+
+      // As faixas giram devagar. Bem abaixo de 1 Hz, e a deriva é um
+      // deslocamento do ruído — não uma variação de brilho.
+      float giro = uTime * 0.035 + vSeed * 6.0;
+      float cg = cos(giro), sg = sin(giro);
+
+      vec3 L = dirLuz(vCentroA);
+      float alfa = 0.0;
+      vec3 col = vec3(0.0);
+
+      for (int i = 0; i < ${PASSOS_ATM}; i++) {
+        if (alfa > 0.97) break;
+        vec3 p = ro + rd * (t0 + (float(i) + 0.5) * dt);
+        vec3 rel = p - vCentroA;
+        float r = length(rel);
+
+        // Coordenada normalizada pelo raio: o desenho das nuvens não muda de
+        // tamanho quando o planeta cresce na mão.
+        vec3 q = rel / max(rp, 1e-4);
+        q.xz = vec2(q.x * cg - q.z * sg, q.x * sg + q.z * cg);
+
+        // Faixas na latitude, quebradas por ruído — é o que faz gigante
+        // gasoso em vez de neblina uniforme.
+        float faixa = 0.55 + 0.45 * sin(q.y * 7.0 + fbm2(q * 1.7) * 4.0);
+        float nuvem = fbm3(q * 2.6 + vSeed * 12.0);
+        // A faixa clara precisa ser MUITO mais densa que o vão entre elas.
+        // Com o mínimo alto o gás preenche tudo por igual e a casca vira uma
+        // bolha leitosa em volta do planeta — que foi o primeiro resultado.
+        float grumo = mix(0.06, 1.0, smoothstep(0.36, 0.74, nuvem * faixa));
+        // Coroa não tem nuvem: tem serpentina. O corte duro que faz faixas de
+        // gigante gasoso, aplicado a uma estrela, vira pipoca em volta do
+        // disco. Aqui o ruído só modula de leve uma queda lisa.
+        grumo = mix(grumo, 0.55 + 0.45 * nuvem, uAuto);
+
+        float d = exp(-(r - rp) / esc) * grumo * uDens;
+        float passo = clamp(d * dt * 13.0, 0.0, 1.0);
+
+        // Iluminação: o lado voltado para a luz espalha; o outro guarda só um
+        // resto de céu, para o planeta não sumir contra o espaço preto.
+        float lum = dot(normalize(rel), L);
+        float dia = smoothstep(-0.45, 0.55, lum);
+        // Iluminado de fora, ou aceso por dentro.
+        vec3 gas = mix(uTint * (0.10 + dia * 1.30), uTint * 1.9, uAuto);
+        // Dispersão para a frente: olhar quase contra a luz acende o gás,
+        // que é o contorno brilhante de planeta contraluz. Fica de propósito
+        // fraca e larga — apertada, ela virava um brilho oval grudado no
+        // disco, que o olho lê como reflexo de lente e não como ar.
+        gas += uTint * pow(max(dot(rd, L), 0.0), 2.5) * dia * 0.40 * (1.0 - uAuto);
+
+        col += gas * passo * (1.0 - alfa);
+        alfa += passo * (1.0 - alfa);
+      }
+
+      // Perto de abrir, a atmosfera é a primeira coisa a acender.
+      col += uTint * alfa * uGrow * 1.6;
+
+      // Aditivo no three multiplica por srcAlpha, então a cor vai CRUA:
+      // pré-multiplicar aqui aplicaria a opacidade duas vezes e a atmosfera
+      // sumiria justamente onde é fina.
+      float a = clamp(alfa, 0.0, 1.0) * uWarp;
+      gl_FragColor = vec4(filmic(col), a);
     }
   `,
 });

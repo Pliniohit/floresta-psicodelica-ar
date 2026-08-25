@@ -15,6 +15,111 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.22.0 — Um sistema solar de verdade
+
+Quatro pedidos numa versão só, e eles se encaixam: atmosfera, peso na mão,
+folga entre os planetas e uma estrela no centro.
+
+### Atmosfera volumétrica
+
+Cada planeta ganhou uma casca de gás, e ela é **volumétrica de verdade** — não
+um halo desenhado na borda. Cada fragmento atravessa a casca integrando
+densidade ao longo do próprio raio de visão: no meio do disco o raio corta
+pouco gás e o céu é fino; rente à silhueta ele viaja de raspão por toda a
+espessura e acumula muito mais. Essa faixa clara que contorna o planeta — o
+limbo — aparece como **consequência do caminho**, não como um `pow(1-dot(N,V))`
+pintado à mão. Por isso ela se comporta certo quando a mão gira o planeta e
+quando a cabeça anda em volta.
+
+A integração é feita em espaço de mundo, então cada olho tem sua própria origem
+de raio: as nuvens ganham paralaxe entre um olho e outro e o gás lê como coisa
+com profundidade, não como decalque colado na esfera.
+
+A cor vem do elemento — azul de espalhamento na terra, enxofre no fogo,
+turquesa na água — e é o que mais distingue um planeta do outro de longe. Os
+gigantes do firmamento também ganharam a sua: a quarenta metros o relevo do
+disco quase não se lê, e é a borda macia que faz um gigante parecer mundo.
+
+### Pegar virou físico
+
+`carry` escrevia a posição direto na mão. Por isso pegar um planeta não era
+pegar coisa nenhuma: ele grudava no ponto da pinça, não tinha peso, não
+empurrava ninguém e, ao ser solto, caía do repouso.
+
+Agora a mão puxa por uma **mola**, e quem move o planeta continua sendo a
+física. Tudo o mais vem junto de graça: ele chega um instante depois da mão, o
+pequeno chega mais rápido que o grande, afasta os outros enquanto passa, e a
+velocidade com que a mão o largou já é a dele — **soltar em movimento é
+arremessar**.
+
+O amortecimento é medido contra a velocidade *da mão*, não contra zero. Sem
+isso a mola cobrava um pedágio constante enquanto a mão se movia: quinze
+centímetros de atraso permanente, que a mão sente como elástico e não como
+peso. Descontando a velocidade da mão, o atraso só aparece quando ela
+**acelera**, que é onde inércia se sente de verdade — caiu para nove
+milímetros.
+
+E a mão vazia também é um corpo: dá para varrer o enxame com a palma e abrir
+caminho, sem gesto nenhum.
+
+### Eles não se encostam
+
+Não bastava as superfícies não se tocarem. O que se vê agora não é a esfera, é
+a **atmosfera** — e duas cascas de gás se atravessando lêem exatamente como
+dois planetas encostados, por mais folga que a rocha ainda tenha. A distância
+mínima passou a ser medida entre as cascas, com um resto de céu preto entre
+elas: a folga mínima em dois minutos de simulação subiu de **1,2 cm para
+11 cm**. Os planetas também ficaram menores — sete corpos de meio metro num
+quarto ficam ombro a ombro, e enxame apertado lê como aglomerado sólido.
+
+### O sol, e o que ele muda
+
+O que segurava o enxame era uma mola linear para o centro. Funcionava, mas
+produzia movimento harmônico: todo mundo com o mesmo período, indo e voltando
+pelo meio da sala. Não era um sistema solar, era um punhado de pêndulos.
+
+Com uma estrela no centro a lei passa a ser a de verdade, **GM/r²**, e o
+sistema ganha o que só ela dá: quem está perto corre, quem está longe
+arrasta-se, as órbitas fecham em elipse, e as passagens rasantes acontecem
+porque duas elipses se cruzam. Cada planeta nasce na velocidade circular do seu
+raio — sorteá-la, como antes, dava órbitas que ora escapavam ora despencavam.
+
+A luz passou a sair da estrela: o lado iluminado de cada planeta aponta para o
+meio do sistema e a sombra cai para fora.
+
+**O atrito teve de mudar junto.** O antigo frenava tudo por igual; contra uma
+mola isso só acomodava o enxame, mas contra gravidade é fatal — frear é perder
+momento angular, e perder momento angular é cair. Em noventa segundos de teste
+os sete planetas espiralavam para dentro do sol. Amortecendo **só a componente
+radial**, o momento angular se conserva por construção: a órbita não decai, ela
+só arredonda, e o que o atrito come é a energia que os encontrões injetam.
+
+### O buraco negro suga
+
+A travessia só acontecia se o planeta passasse rente ao disco por acaso — e
+como nada o puxava para lá, era um acidente raro que ninguém via. Agora o
+buraco **puxa**: dentro do alcance de captura ele vence a gravidade da estrela,
+e o planeta é visivelmente arrastado, acelerando, até sumir. E é **cuspido**
+pelo outro: sem isso ele reaparecia boiando na boca do segundo buraco e era
+sugado de volta, num vaivém sem fim.
+
+A atração cresce com 1/d, não com 1/d² — que na boca do buraco dispara para o
+infinito e faz o planeta atravessar a parede antes de o teste de travessia
+rodar.
+
+### Testes
+
+`test-planetas.mjs` foi de 9 para 24 asserções. As novas cobrem a mola (chega,
+chega atrasado, arremessa), o planeta na mão varrendo o enxame sem afundar
+ninguém, a mão vazia como corpo, a sucção do buraco negro, e o sistema solar:
+ninguém cai na estrela, todo mundo dá a volta, todos no mesmo sentido, e quem
+está perto corre mais que quem está longe — a terceira lei de Kepler como
+asserção.
+
+Foi ela que pegou o bug que teria passado despercebido: o vetor radial do
+amortecimento vinha de `_d`, que é reciclado dentro do laço de pares. Amortecer
+na direção errada derrubava os planetas dentro do sol.
+
 ## v0.21.2 — Borboletas do tamanho de borboletas
 
 Elas estavam com **um metro de envergadura**, e a causa é a troca de malha por

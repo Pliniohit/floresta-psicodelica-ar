@@ -1285,8 +1285,18 @@ function updateHands(dt) {
   let spin = 0;
   let hover = null;
   for (const st of hands.states) {
-    if (!st.tracked) continue;
+    if (!st.tracked) { space.soltarMao(st.index); continue; }
     const handle = grabbed.get(st);
+
+    // A mão que não está segurando nada ainda é um CORPO no espaço: ela
+    // esbarra nos planetas e os afasta. É o que faz o enxame reagir à
+    // presença mesmo sem gesto nenhum — passar a mão no meio dele abre
+    // caminho, e isso vale sentado, deitado, com uma mão só.
+    if (noCosmos() && !handle) {
+      if (space.empurrar(st.index, st.pinch, 0.075, dt)) ping(0.03);
+    } else {
+      space.soltarMao(st.index);
+    }
     if (handle?.raio) {
       // Preso ao raio: mexer o pulso arrasta o objeto lá longe. A distância
       // fica congelada, então ele orbita você em vez de vir vindo.
