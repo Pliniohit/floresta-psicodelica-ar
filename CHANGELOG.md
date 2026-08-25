@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.20.0 — Vaga-lumes em pontos; fora os poliedros flutuantes
+
 ## v0.19.0 — Aquarela como interruptor, e o céu começa no teto
 
 ### Sair do low poly não é acrescentar triângulo
