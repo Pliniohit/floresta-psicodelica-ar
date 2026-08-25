@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.21.2 — Borboletas do tamanho de borboletas
+
 ## v0.21.1 — A borboleta parou de rodopiar
 
 Dois erros no mesmo lugar, e o segundo é o que importa.
