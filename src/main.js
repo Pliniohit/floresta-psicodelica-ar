@@ -11,13 +11,19 @@ import { WristMenu } from './menu.js';
 import { MagicWindow } from './magicwindow.js';
 import { RoomMesh } from './occlusion.js';
 import { Sky } from './sky.js';
-import { skyMaterial, scanMaterial } from './shaders/materials.js';
+import { skyMaterial, scanMaterial, capMaterial } from './shaders/materials.js';
+import { Butterflies, Fireflies } from './creatures.js';
+import { Body, BodyGrowth } from './body.js';
+import { Constellation } from './constellation.js';
+import { Seeds } from './seeds.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
 
-const TRIP_CALM = 0.30;
-const TRIP_FULL = 1.00;
+// "Encanto" no lugar do antigo psicodélico: a saturação extra agora é um
+// tempero, não o prato. O modo intenso vai a 0,7 em vez de 1,0.
+const TRIP_CALM = 0.24;
+const TRIP_FULL = 0.70;
 
 // ---------------------------------------------------------------------------
 // Renderizador
@@ -51,6 +57,31 @@ const sky = new Sky();
 sky.visible = false;
 scene.add(sky);
 
+const constelacao = new Constellation();
+constelacao.visible = false;
+sky.add(constelacao);
+
+const butterflies = new Butterflies(22);
+butterflies.visible = false;
+scene.add(butterflies);
+
+// Um enxame preso a você, outro para deixar em cima de alguém.
+const auraFireflies = new Fireflies(24, 11);
+auraFireflies.visible = false;
+scene.add(auraFireflies);
+
+const blessedFireflies = new Fireflies(30, 23);
+blessedFireflies.visible = false;
+scene.add(blessedFireflies);
+
+const body = new Body();
+const bodyGrowth = new BodyGrowth(forest.geo.cap, capMaterial, 27);
+bodyGrowth.visible = false;
+scene.add(bodyGrowth);
+
+const seeds = new Seeds('right');
+scene.add(seeds);
+
 const xr = new XRStage(renderer);
 const audio = new Ambience();
 
@@ -68,6 +99,8 @@ const state = {
   seed: 1,
   skyOn: true,
   occlusionOn: true,
+  bloomOn: true,      // floração no próprio corpo
+  blessed: false,     // há alguém abençoado com vaga-lumes?
   scanSweep: 0,
   scanReveal: 0,
 };
@@ -166,7 +199,14 @@ function commitRoom() {
   roomMesh.setMode('occlude');
 
   sky.visible = state.skyOn;
+  constelacao.visible = state.skyOn;
   skyMaterial.uniforms.uSky.value = state.skyOn ? 1 : 0;
+
+  butterflies.fitTo(Math.sqrt(room.area / Math.PI));
+  butterflies.visible = true;
+  auraFireflies.visible = true;
+  bodyGrowth.visible = true;
+  bodyGrowth.setBlooming(state.bloomOn);
   state.phase = 'growing';
   state.intro = 0;
   interaction.enabled = true;
@@ -220,6 +260,31 @@ async function freshScan({ automatico = false } = {}) {
 /** Reescaneio manual, pelo grip. */
 function rescan() { freshScan(); }
 
+/**
+ * Deixa um enxame de vaga-lumes num ponto — a ideia é apontar para alguém.
+ *
+ * Reconhecer a pessoa automaticamente não é possível: o WebXR não expõe os
+ * pixels do passthrough e não existe detecção de pessoas. Então quem aponta
+ * é você, e o enxame fica onde foi deixado.
+ */
+function bless(worldPoint) {
+  const alvo = worldPoint.clone();
+  alvo.y = forest.position.y + 1.0;   // altura do peito de quem está ali
+  blessedFireflies.snapTo(alvo);
+  blessedFireflies.visible = true;
+  state.blessed = true;
+  ping(0.6);
+  audio.chime(16, 0.18);
+  toast('Vaga-lumes deixados ali', palettes[state.paletteIndex].swatch);
+}
+
+function toggleBloom() {
+  state.bloomOn = !state.bloomOn;
+  bodyGrowth.setBlooming(state.bloomOn);
+  toast(state.bloomOn ? 'Floresça' : 'Floração encerrada',
+    palettes[state.paletteIndex].swatch);
+}
+
 function toggleSky() {
   state.skyOn = !state.skyOn;
   sky.visible = state.skyOn;
@@ -247,10 +312,10 @@ function cyclePalette() {
 function toggleTrip() {
   const full = state.tripTarget < 0.6;
   state.tripTarget = full ? TRIP_FULL : TRIP_CALM;
-  shared.uSway.value = full ? 0.019 : 0.010;
+  shared.uSway.value = full ? 0.016 : 0.009;
   audio.setTrip(state.tripTarget);
   ping(0.9);
-  toast(full ? 'Viagem completa' : 'Modo calmo', palettes[state.paletteIndex].swatch);
+  toast(full ? 'Encanto intenso' : 'Encanto suave', palettes[state.paletteIndex].swatch);
 }
 
 function reseed() {
@@ -316,7 +381,14 @@ const interaction = new Interaction(renderer, scene, camera, {
       }
       interaction.pulse(controller, 0.8, 60);
     } else if (state.phase === 'growing' && aimPoint) {
-      if (plantAt(aimPoint) === 'ok') interaction.pulse(controller, 0.6, 40);
+      const local = forest.worldToLocal(aimPoint.clone());
+      if (forest.accepts(local)) {
+        if (plantAt(aimPoint) === 'ok') interaction.pulse(controller, 0.6, 40);
+      } else {
+        // Fora da clareira: o gesto vira uma bênção em vez de erro.
+        bless(aimPoint);
+        interaction.pulse(controller, 0.8, 60);
+      }
     }
   },
   onPalette: () => { if (state.phase === 'mapping') rescan(); else cyclePalette(); },
@@ -595,6 +667,12 @@ xr.onEnd = () => {
   room.view.visible = false;
   roomMesh.setMode('off');
   sky.visible = false;
+  constelacao.visible = false;
+  butterflies.visible = false;
+  auraFireflies.visible = false;
+  blessedFireflies.visible = false;
+  bodyGrowth.visible = false;
+  state.blessed = false;
   el('enter').disabled = false;
   el('enter').textContent = 'Entrar em AR';
 };
@@ -616,6 +694,7 @@ const PAD = {
   bigger: () => { state.scale = MathUtils.clamp(state.scale * 1.18, 0.35, 2.4); },
   recenter: () => { magic.recenter(); toast('Frente recentrada'); },
   sky: toggleSky,
+  bloom: toggleBloom,
 };
 el('pad').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
@@ -640,6 +719,13 @@ const hands = new Hands(renderer, {
     }
     if (state.phase !== 'growing') return;
 
+    // A semente na palma tem prioridade: se ela está madura, a pinça a pega.
+    if (hand.handedness === seeds.hand && seeds.take()) {
+      audio.chime(24, 0.12);
+      toast('Semente na mão — solte perto do chão para plantar');
+      return;
+    }
+
     const local = toLocal(hand.pinch);
     const target = forest.pick(local);
     if (target) {
@@ -655,6 +741,16 @@ const hands = new Hands(renderer, {
   },
 
   onPinchEnd: (hand) => {
+    // Semente solta: planta onde caiu, se couber.
+    if (hand.handedness === seeds.hand) {
+      const onde = seeds.release();
+      if (onde) {
+        const chao = new Vector3(onde.x, forest.position.y, onde.z);
+        if (plantAt(chao) === 'ok') { ping(0.7); audio.chime(12, 0.2); }
+        return;
+      }
+    }
+
     const handle = grabbed.get(hand);
     if (!handle) return;
     grabbed.delete(hand);
@@ -671,6 +767,7 @@ const wristMenu = new WristMenu({
   onTrip: () => { toggleTrip(); },
   onReseed: () => { reseed(); },
   onSky: () => { toggleSky(); },
+  onBloom: () => { toggleBloom(); },
 });
 scene.add(wristMenu);
 
@@ -714,7 +811,16 @@ const _head = new Vector3();
 let scanTick = 0;
 let scanning = false;
 
-renderer.setAnimationLoop((time, frame) => {
+/**
+ * O WebGLAnimation do three.js reagenda o próximo frame DEPOIS de chamar o
+ * callback. Uma única exceção aqui dentro, portanto, não pula um frame: mata
+ * o laço para sempre, e a cena congela sem nenhum erro visível. Numa
+ * experiência imersiva isso é o pior desfecho possível — o usuário fica preso
+ * olhando um quadro parado. Então o frame é blindado, e o erro é reportado
+ * uma vez em vez de derrubar tudo.
+ */
+let frameErro = null;
+function frame(time, xrFrame) {
   const dt = Math.min(0.05, clock.getDelta());
 
   shared.uTime.value = clock.elapsedTime;
@@ -730,8 +836,8 @@ renderer.setAnimationLoop((time, frame) => {
   if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
     // Durante a captura a tela é do sistema, e ler os planos antigos aqui só
     // repovoaria o cômodo com a leitura que acabamos de descartar.
-    room.update(frame, xr.refSpace);
-    roomMesh.update(frame, xr.refSpace);
+    room.update(xrFrame, xr.refSpace);
+    roomMesh.update(xrFrame, xr.refSpace);
 
     // Plano de varredura subindo em ciclo, e revelação entrando de vez.
     state.scanSweep = (state.scanSweep + dt * 1.15) % 3.6;
@@ -753,6 +859,22 @@ renderer.setAnimationLoop((time, frame) => {
   if (sky.visible) {
     camera.getWorldPosition(_head);
     sky.update(clock.elapsedTime, _head);
+    constelacao.update(_head);
+  }
+
+  if (state.phase === 'growing') {
+    const t = clock.elapsedTime;
+
+    // Corpo inferido de cabeça + punhos, e o que floresce nele.
+    body.update(camera, hands);
+    bodyGrowth.update(body, t, dt);
+
+    // Vaga-lumes acompanhando o peito, com atraso.
+    auraFireflies.setTarget(body.joints.chest).update(t, dt);
+    if (state.blessed) blessedFireflies.update(t, dt);
+
+    butterflies.update(t);
+    seeds.update(dt, t, hands);
   }
 
   if (state.phase === 'growing') {
@@ -767,6 +889,18 @@ renderer.setAnimationLoop((time, frame) => {
   }
 
   renderer.render(scene, camera);
+}
+
+renderer.setAnimationLoop((time, xrFrame) => {
+  try {
+    frame(time, xrFrame);
+  } catch (err) {
+    if (!frameErro) {
+      frameErro = err;
+      console.error('erro no frame (o laço continua):', err);
+      toast('Algo falhou no frame — veja o console');
+    }
+  }
 });
 
 window.addEventListener('resize', () => {
@@ -815,11 +949,17 @@ detect().then((res) => {
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, roomMesh, sky, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = { forest, room, roomMesh, sky, constelacao, butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
 
 window.addEventListener('beforeunload', () => {
   roomMesh.dispose();
   sky.dispose();
+  constelacao.dispose();
+  butterflies.dispose();
+  auraFireflies.dispose();
+  blessedFireflies.dispose();
+  bodyGrowth.dispose();
+  seeds.dispose();
   hands.dispose();
   wristMenu.dispose();
   forest.dispose();

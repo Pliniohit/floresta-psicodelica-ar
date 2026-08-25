@@ -65,13 +65,13 @@ export const barkMaterial = make('casca', {
       fiber = smoothstep(-0.25, 0.85, fiber);
 
       // seiva luminosa viajando da raiz para a copa
-      float up = fract(h * 0.26 - uTime * 0.20 + vSeed);
+      float up = fract(h * 0.26 - uTime * 0.13 + vSeed);
       float sap = pow(1.0 - abs(up * 2.0 - 1.0), 6.0);
 
       float t = h * 0.10 + twist * 0.34 + uTime * 0.035 + vSeed;
       vec3 col = palette(t);
       col = mix(col * 0.38, col, fiber);
-      col += palette(t + 0.35) * sap * (1.1 + uTrip * 2.0 + uPulse * 1.5);
+      col += palette(t + 0.35) * sap * (0.55 + uTrip * 1.1 + uPulse * 0.9);
       col *= 0.5 + 0.7 * wrapLight(vNormalW);
       gl_FragColor = vec4(filmic(trippy(col)), 1.0);
     }
@@ -104,7 +104,7 @@ export const canopyMaterial = make('copa', {
       float t = n * 0.85 + vSeed * 0.4 + uTime * 0.045;
       vec3 col = palette(t);
       col = mix(col * 0.30, col * 1.18, cells);
-      col += palette(t + 0.5) * rim * (0.55 + uTrip * 1.1 + uPulse * 0.8);
+      col += palette(t + 0.5) * rim * (0.34 + uTrip * 0.7 + uPulse * 0.5);
       col *= 0.55 + 0.6 * wrapLight(vNormalW);
       gl_FragColor = vec4(filmic(trippy(col)), 1.0);
     }
@@ -151,14 +151,14 @@ export const capMaterial = make('chapeu', {
       float r = length(vLocal.xz);
       float a = atan(vLocal.z, vLocal.x);
 
-      float rings  = sin(r * 24.0 - uTime * 2.0 + vSeed * 6.28) * 0.5 + 0.5;
-      float spokes = sin(a * 9.0 + uTime * 0.6 + vSeed * 10.0) * 0.5 + 0.5;
+      float rings  = sin(r * 24.0 - uTime * 1.25 + vSeed * 6.28) * 0.5 + 0.5;
+      float spokes = sin(a * 9.0 + uTime * 0.38 + vSeed * 10.0) * 0.5 + 0.5;
       float spots  = smoothstep(0.60, 0.78, vnoise(vLocal * 9.0 + vSeed * 30.0));
 
       float t = r * 1.3 + rings * 0.25 + uTime * 0.05 + vSeed;
       vec3 col = palette(t);
       col = mix(col * 0.45, col, rings * 0.6 + spokes * 0.4);
-      col += palette(t + 0.5) * spots * (1.4 + uTrip * 2.4 + uPulse * 2.0);
+      col += palette(t + 0.5) * spots * (0.75 + uTrip * 1.3 + uPulse * 1.2);
       col *= 0.6 + 0.6 * wrapLight(vNormalW);
       gl_FragColor = vec4(filmic(trippy(col)), 1.0);
     }
@@ -246,11 +246,11 @@ export const grassMaterial = make('capim', {
     void main(){
       ${FRAG_FADE}
       float h = clamp(vLocal.y / 0.42, 0.0, 1.0);
-      float scan = sin(h * 9.0 - uTime * 2.6 + vSeed * 6.28) * 0.5 + 0.5;
+      float scan = sin(h * 9.0 - uTime * 1.6 + vSeed * 6.28) * 0.5 + 0.5;
       float t = h * 0.5 + vSeed + uTime * 0.06;
       vec3 col = palette(t);
       col *= 0.30 + 0.95 * h;                       // base escura, ponta acesa
-      col += palette(t + 0.5) * scan * h * (0.35 + uTrip * 0.9 + uPulse);
+      col += palette(t + 0.5) * scan * h * (0.22 + uTrip * 0.55 + uPulse * 0.7);
       gl_FragColor = vec4(filmic(trippy(col)), 1.0);
     }
   `,
@@ -384,7 +384,7 @@ export const skyMaterial = make('ceu', {
 
       float t = neb * 0.9 + up * 0.35 + uTime * 0.03;
       vec3 col = palette(t) * (0.16 + neb * 0.5);
-      col += palette(t + 0.42) * faixa * (0.9 + uTrip * 1.8);
+      col += palette(t + 0.42) * faixa * (0.55 + uTrip * 1.0);
       col += vec3(estrela) * (0.7 + uTrip * 0.8);
       col += palette(t + 0.5) * uPulse * 0.35 * neb;
 
@@ -466,6 +466,89 @@ export const scanMaterial = make('varredura', {
 
       vec3 col = palette(vWorld.y * 0.2 + uTime * 0.12);
       gl_FragColor = vec4(trippy(col) * (0.8 + band * 2.2), a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// BORBOLETAS — as asas batem no vertex shader, girando em torno do eixo do
+// corpo. `aSpan` (0 na dobradiça, 1 na ponta) faz a asa flexionar em vez de
+// girar rígida, que é o que separa borboleta de placa articulada.
+// ---------------------------------------------------------------------------
+export const butterflyMaterial = make('borboletas', {
+  transparent: true,
+  side: DoubleSide,
+  depthWrite: false,
+  vert: /* glsl */ `
+    attribute float aWing;   // -1 esquerda, +1 direita, 0 corpo
+    attribute float aSpan;   // 0 dobradiça .. 1 ponta
+    varying float vSpan;
+    varying float vWing;
+
+    void main(){
+      ${ROOT_AND_SEED}
+      vSpan = aSpan;
+      vWing = aWing;
+
+      float bater = sin(uTime * (9.0 + vSeed * 5.0) + vSeed * 20.0);
+      float ang = bater * 1.05 * aSpan * abs(aWing);
+      float c = cos(ang), sn = sin(ang);
+
+      vec3 p = position;
+      // gira em torno de Z: a asa sobe e desce, o corpo fica parado
+      float x = p.x, y = p.y;
+      p.x = x * c - y * sn * sign(aWing);
+      p.y = x * sn * sign(aWing) + y * c;
+
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    varying float vSpan;
+    varying float vWing;
+    void main(){
+      float t = vSeed + vSpan * 0.35 + uTime * 0.05;
+      vec3 col = palette(t);
+
+      // Nervuras e borda mais clara: leem como asa mesmo com 4 triângulos.
+      float nervura = smoothstep(0.42, 0.5, abs(fract(vSpan * 3.0) - 0.5));
+      col = mix(col * 0.55, col * 1.25, nervura);
+      col += palette(t + 0.4) * pow(vSpan, 3.0) * 0.7;
+
+      float alpha = 0.55 + 0.45 * vSpan;
+      gl_FragColor = vec4(filmic(trippy(col)), alpha * vFade);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// VAGA-LUMES — pontinhos que acendem e apagam fora de fase.
+// ---------------------------------------------------------------------------
+export const fireflyMaterial = make('vagalumes', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float core = pow(max(dot(N, V), 0.0), 1.1);
+
+      // Piscar irregular: duas senóides incomensuráveis, então o padrão
+      // demora muito a se repetir e a luz não parece metrônomo.
+      float pisca = 0.45
+        + 0.35 * sin(uTime * 2.3 + vSeed * 31.0)
+        + 0.20 * sin(uTime * 3.7 + vSeed * 17.0);
+      pisca = max(pisca, 0.08);
+
+      vec3 col = palette(0.12 + vSeed * 0.1 + uTime * 0.02);
+      gl_FragColor = vec4(trippy(col) * core * pisca * 2.2 * vFade, 1.0);
     }
   `,
 });

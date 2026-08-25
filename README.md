@@ -50,6 +50,45 @@ sobem pelo rodapé das paredes. O que o app reconhece como `table`, `couch`,
 **Caminhabilidade.** O polígono do piso continua definindo onde dá para andar,
 como antes.
 
+## Criaturas e corpo
+
+**Borboletas** vagam pela clareira. O voo é a soma de senóides de frequências
+não múltiplas, então o padrão leva minutos para se repetir — não fica com cara
+de órbita. As asas batem no vertex shader, flexionando da dobradiça para a
+ponta.
+
+**Vaga-lumes** circulam você. O alvo é o peito do corpo inferido, seguido com
+atraso: o bando se estica quando você anda e se junta quando você para.
+
+**Floresça no próprio corpo.** Brotos nascem nos ombros, braços e tronco, e
+acompanham o movimento porque a posição de cada um é recalculada por frame a
+partir do segmento a que pertence.
+
+### Sobre "rastrear o corpo"
+
+Não é rastreamento corporal — isso não existe no WebXR. O que existe são três
+pontos: cabeça e as duas mãos. Ombros, cotovelos, peito e quadril são
+**inferidos** com IK de dois ossos, a mesma técnica de avatares de meio corpo.
+
+Funciona bem o bastante para florescer em cima de você, com dois limites
+assumidos: **não há pernas**, e um alvo fora do alcance do braço faz o ombro
+avançar até 13 cm (como a cintura escapular real) e, além disso, o antebraço
+estica em vez de a mão se soltar.
+
+### Sobre reconhecer outra pessoa
+
+Também não é possível. O Quest não entrega os pixels do passthrough para a
+página, por privacidade, e não há API de detecção de pessoas.
+
+O que existe é **apontar e abençoar**: mire em alguém, aperte o gatilho fora da
+clareira, e um enxame de vaga-lumes fica ali. Você é o reconhecedor.
+
+## Sementes
+
+Vire a **palma direita para cima** e uma semente brota nela. Pince para pegá-la
+e solte perto do chão para plantar uma árvore. A palma esquerda é do menu, para
+os dois gestos não disputarem a mesma mão.
+
 ## O céu
 
 Olhe para cima e o teto se dissolve. Nebulosa com domain warping, faixas de
@@ -63,6 +102,10 @@ Detalhe de implementação que decide se funciona: a cúpula é desenhada **ante
 do oclusor e sem teste de profundidade. Se fosse testada, o teto real (que
 agora escreve profundidade) apagaria o céu por completo. Pintando antes, o teto
 deixa de ser superfície e vira abertura.
+
+Uma **constelação** fica fixa num pedaço do firmamento — você a procura virando
+a cabeça, como uma de verdade. A forma é dada em pontos 2D e arestas em
+`src/constellation.js`; hoje é um cogumelo, à espera da logo.
 
 Liga e desliga no 🌌 da barra, ou no quarto orbe do menu de pulso.
 
@@ -78,6 +121,24 @@ Liga e desliga no 🌌 da barra, ou no quarto orbe do menu de pulso.
 Não é preciso rodar o Space Setup antes: o app escaneia sozinho ao abrir.
 
 Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão insegura.
+
+## Encantado, não psicodélico
+
+O tom foi rebaixado de propósito, e os dois parâmetros que fazem isso valem
+anotar porque erram de formas opostas.
+
+Numa paleta de cosseno `cor(t) = a + b·cos(2π(c·t + d))`, o `c` controla quantos
+ciclos a cor percorre ao longo de `t` — baixo, superfícies vizinhas ficam
+parentes em vez de brigando, e o arco-íris some.
+
+O `d` é a fase de cada canal, e é onde a primeira tentativa errou: usei ~0,07 de
+espaçamento entre canais, eles entraram em fase e a cena inteira virou cinza.
+Arco-íris usa 0,33; o meio-termo, ~0,15, dá matiz definido sem varrer o
+espectro. Seis paletas encantadas, e as duas psicodélicas originais no fim da
+lista para quem quiser o extremo.
+
+O botão de intensidade agora vai a 0,70 em vez de 1,0, e os brilhos aditivos
+foram reduzidos pela metade — eles é que empurravam tudo para o estouro.
 
 ## Mãos livres (Quest 3)
 
@@ -184,6 +245,10 @@ src/
   hands.js              juntas rastreadas, pinça, normal da palma
   menu.js               três orbes no pulso, acionados com o indicador
   magicwindow.js        câmera + giroscópio para aparelhos sem WebXR
+  creatures.js          borboletas e vaga-lumes
+  body.js               corpo inferido por IK e floração sobre ele
+  seeds.js              semente que brota na palma
+  constellation.js      constelação no céu (trocar a forma aqui)
   forest.js             semeadura no polígono, instancing, animação de brotar
   geometry.js           construtores das malhas low poly
   audio.js              drone ambiente gerado por WebAudio
@@ -247,6 +312,10 @@ A cena fica entre **8 e 16 mil triângulos** (depende do tamanho do cômodo) e
   rate; uma assinatura barata de `lastChangedTime` evita isso.
 - **Como oclusor ela não custa cor nenhuma.** `colorWrite: false` escreve só
   profundidade, que é o passe mais barato que existe.
+- **O frame é blindado contra exceções.** O `WebGLAnimation` do three.js
+  reagenda o próximo frame *depois* de chamar o callback, então uma única
+  exceção não pula um frame: mata o laço para sempre e congela a cena sem erro
+  visível. Numa experiência imersiva isso é o pior desfecho possível.
 
 Uma consequência assumida: em teto baixo, as árvores mais altas atravessam o
 forro. Preferi manter a escala de floresta a espremer as copas na altura da sua
