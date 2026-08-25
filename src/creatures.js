@@ -1,6 +1,6 @@
 import {
-  Group, InstancedMesh, BufferGeometry, BufferAttribute, IcosahedronGeometry,
-  Matrix4, Vector3, Quaternion,
+  Group, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
+  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
 import { butterflyMaterial, fireflyMaterial } from './shaders/materials.js';
 import { rng } from './forest.js';
@@ -100,6 +100,19 @@ function butterflyGeometry() {
 }
 
 /**
+ * Semente fixa por instância.
+ *
+ * Objeto que se move não pode tirar a semente da própria posição: ela mudaria
+ * a cada frame, e com ela a espécie, a cor e a fase. O resultado é cintilação.
+ */
+function seedAttribute(count, seed) {
+  const r = rng(seed);
+  const arr = new Float32Array(count);
+  for (let i = 0; i < count; i++) arr[i] = r();
+  return new InstancedBufferAttribute(arr, 1);
+}
+
+/**
  * Enxame de borboletas vagando pela clareira.
  *
  * O caminho de cada uma é a soma de duas senóides de frequências que não são
@@ -112,7 +125,9 @@ export class Butterflies extends Group {
     this.name = 'borboletas';
     this.frustumCulled = false;
 
-    this.mesh = new InstancedMesh(butterflyGeometry(), butterflyMaterial, count);
+    const geo = butterflyGeometry();
+    geo.setAttribute('aSeed', seedAttribute(count, 8123));
+    this.mesh = new InstancedMesh(geo, butterflyMaterial, count);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 6;
     this.mesh.count = 0;
@@ -198,7 +213,9 @@ export class Fireflies extends Group {
     this.name = 'vagalumes';
     this.frustumCulled = false;
 
-    this.mesh = new InstancedMesh(new IcosahedronGeometry(0.016, 0), fireflyMaterial, count);
+    const geo = new IcosahedronGeometry(0.016, 0);
+    geo.setAttribute('aSeed', seedAttribute(count, seed * 31 + 7));
+    this.mesh = new InstancedMesh(geo, fireflyMaterial, count);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 7;
     this.mesh.count = count;

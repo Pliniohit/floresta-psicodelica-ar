@@ -1,6 +1,6 @@
 import {
-  Group, Mesh, InstancedMesh, SphereGeometry, IcosahedronGeometry,
-  Matrix4, Vector3, Quaternion,
+  Group, Mesh, InstancedMesh, InstancedBufferAttribute, SphereGeometry,
+  IcosahedronGeometry, Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
 import { skyMaterial, skyLifeMaterial } from './shaders/materials.js';
 import { rng } from './forest.js';
@@ -42,8 +42,15 @@ export class Sky extends Group {
 
     // Medusas à deriva: dão movimento e escala ao céu. Sem elas o céu é bonito
     // mas estático, e olhar para cima cansa rápido.
-    this.medusas = new InstancedMesh(
-      new IcosahedronGeometry(1, 1), skyLifeMaterial, MEDUSAS);
+    // Semente por instância: as medusas derivam, e semente tirada da posição
+    // faria a cor de cada uma trocar a cada frame.
+    const geoMedusa = new IcosahedronGeometry(1, 1);
+    const sementes = new Float32Array(MEDUSAS);
+    const rs = rng(3311);
+    for (let i = 0; i < MEDUSAS; i++) sementes[i] = rs();
+    geoMedusa.setAttribute('aSeed', new InstancedBufferAttribute(sementes, 1));
+
+    this.medusas = new InstancedMesh(geoMedusa, skyLifeMaterial, MEDUSAS);
     this.medusas.frustumCulled = false;
     this.medusas.renderOrder = -1999;   // logo após a cúpula, ainda antes do oclusor
     this.add(this.medusas);

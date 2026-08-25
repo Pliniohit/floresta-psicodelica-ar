@@ -49,6 +49,9 @@ export class Space extends Group {
       const mat = planetMaterial.clone();
       const bioma = biomes[i % biomes.length];
       mat.uniforms.uTint.value = bioma.planetColor.clone();
+      // Identidade fixa: é ela que decide se o planeta é gasoso, rochoso ou
+      // gelado, e ela não pode mudar enquanto ele orbita.
+      mat.uniforms.uSeed.value = r();
 
       const corpo = new Mesh(new SphereGeometry(raio, 20, 14), mat);
       corpo.frustumCulled = false;

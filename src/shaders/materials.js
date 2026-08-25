@@ -46,11 +46,27 @@ function make(name, { vert, frag, uniforms = {}, ...opts }) {
   return m;
 }
 
-/** Raiz da instância em mundo + semente estável derivada dela. */
+/**
+ * Raiz da instância em mundo, e semente derivada dela.
+ *
+ * SÓ SERVE PARA OBJETO PARADO. A semente sai da posição, então uma instância
+ * que se move re-sorteia a semente a cada frame — e tudo que depende dela
+ * (espécie, cor, fase) troca noventa vezes por segundo. É cintilação, e foi
+ * exatamente o que aconteceu com planetas, borboletas, vaga-lumes e medusas.
+ *
+ * Para o que se move, use ROOT_AND_ATTR_SEED.
+ */
 const ROOT_AND_SEED = /* glsl */ `
   mat4 im = instMatrix();
   vec3 root = (modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   vSeed = fract(sin(root.x * 12.9898 + root.z * 78.233) * 43758.5453);
+`;
+
+/** Semente vinda de atributo por instância: estável mesmo em movimento. */
+const ROOT_AND_ATTR_SEED = /* glsl */ `
+  mat4 im = instMatrix();
+  vec3 root = (modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vSeed = aSeed;
 `;
 
 // ---------------------------------------------------------------------------
@@ -552,8 +568,15 @@ export const skyLifeMaterial = make('medusas', {
   depthTest: false,
   blending: AdditiveBlending,
   vert: /* glsl */ `
+    #ifdef USE_INSTANCING
+      attribute float aSeed;
+    #endif
     void main(){
-      ${ROOT_AND_SEED}
+      #ifdef USE_INSTANCING
+        ${ROOT_AND_ATTR_SEED}
+      #else
+        ${ROOT_AND_SEED}
+      #endif
       emit(position, normal);
     }
   `,
@@ -587,10 +610,17 @@ export const planetMaterial = make('planetas', {
     uWarp: { value: 0 },
     uTint: { value: new Vector3(1, 1, 1) },   // cor do bioma que este planeta abriga
     uGrow: { value: 0 },                      // 0..1 conforme cresce na sua mão
+    uSeed: { value: 0 },                      // identidade fixa deste planeta
   },
   vert: /* glsl */ `
+    uniform float uSeed;
     void main(){
-      ${ROOT_AND_SEED}
+      // Semente de uniform, não da posição: o planeta orbita, e derivar da
+      // posição fazia ele re-sortear se era gasoso, rochoso ou gelado a cada
+      // frame — que era a piscada.
+      mat4 im = instMatrix();
+      vec3 root = (modelMatrix * im * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      vSeed = uSeed;
       emit(position, normal);
     }
   `,
@@ -629,8 +659,9 @@ export const planetMaterial = make('planetas', {
       float dia = smoothstep(-0.35, 0.55, luz);
 
       // Ambiente generoso de propósito: um planeta realista fica invisível no
-      // lado escuro, e aqui ele precisa ser encontrado e pego.
-      vec3 col = base * (0.30 + dia * 0.95);
+      // lado escuro, e aqui ele precisa ser encontrado, lido como sólido e
+      // pego. No espaço não há mais nada iluminando.
+      vec3 col = base * (0.46 + dia * 0.90);
       // Atmosfera na borda do lado iluminado.
       vec3 V = normalize(cameraPosition - vWorld);
       float aro = pow(1.0 - abs(dot(N, V)), 3.0);
@@ -784,11 +815,12 @@ export const butterflyMaterial = make('borboletas', {
   vert: /* glsl */ `
     attribute float aWing;   // -1 esquerda, +1 direita, 0 corpo
     attribute float aSpan;   // 0 dobradiça .. 1 ponta
+    attribute float aSeed;   // por instância: a espécie não pode mudar em voo
     varying float vSpan;
     varying float vWing;
 
     void main(){
-      ${ROOT_AND_SEED}
+      ${ROOT_AND_ATTR_SEED}
       vSpan = aSpan;
       vWing = aWing;
 
@@ -875,8 +907,9 @@ export const fireflyMaterial = make('vagalumes', {
   depthWrite: false,
   blending: AdditiveBlending,
   vert: /* glsl */ `
+    attribute float aSeed;
     void main(){
-      ${ROOT_AND_SEED}
+      ${ROOT_AND_ATTR_SEED}
       emit(position, normal);
     }
   `,

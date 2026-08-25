@@ -1,6 +1,6 @@
 import {
-  Group, Mesh, InstancedMesh, BufferGeometry, BufferAttribute,
-  IcosahedronGeometry, Matrix4, Vector3, Quaternion,
+  Group, Mesh, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
+  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
 import { skyLifeMaterial } from './shaders/materials.js';
 
@@ -69,8 +69,14 @@ export class Constellation extends Group {
       .addScaledVector(up, y * scale));
 
     // Estrelas
-    this.stars = new InstancedMesh(
-      new IcosahedronGeometry(1, 0), skyLifeMaterial, this.stars3D.length);
+    // As estrelas não se movem, mas o material espera aSeed quando
+    // instanciado — sem o atributo, todas sairiam com a mesma cor.
+    const geoEstrela = new IcosahedronGeometry(1, 0);
+    const sementes = new Float32Array(this.stars3D.length);
+    for (let i = 0; i < sementes.length; i++) sementes[i] = (i * 0.6180339887) % 1;
+    geoEstrela.setAttribute('aSeed', new InstancedBufferAttribute(sementes, 1));
+
+    this.stars = new InstancedMesh(geoEstrela, skyLifeMaterial, this.stars3D.length);
     this.stars.frustumCulled = false;
     this.stars.renderOrder = -1998;   // com o resto do céu, antes do oclusor
     this.add(this.stars);

@@ -264,6 +264,27 @@ Ao atravessar, **as paredes do seu cômodo se rompem**: buracos negros se abrem
 nelas, com disco de acreção girando mais rápido perto do centro e o anel de luz
 curvada na borda. Eles existem só no espaço — na floresta, parede é parede.
 
+### A piscada dos planetas
+
+Cada objeto tirava sua semente da própria posição em mundo:
+
+```glsl
+vSeed = fract(sin(root.x * 12.9898 + root.z * 78.233) * 43758.5453);
+```
+
+Funciona para árvore, que não sai do lugar. Mas planeta **orbita** — então a
+semente mudava a cada frame, e com ela `tipo = fract(vSeed * 3.7)`, que decide
+se o planeta é gasoso, rochoso ou gelado. Medido em oito quadros seguidos, a
+semente saltou 0,092 → 0,87 → 0,231 → 0,384 → 0,955, percorrendo os três tipos.
+A 90 fps, o planeta trocava de identidade noventa vezes por segundo.
+
+Não era brilho oscilando: era o objeto sendo outro a cada quadro. O mesmo valia
+para borboletas, vaga-lumes e medusas, que também se movem.
+
+A correção é dar semente fixa: atributo por instância nos enxames, uniform nos
+planetas. `ROOT_AND_SEED` continua no código, com um aviso de que só serve para
+objeto parado.
+
 Os planetas ficam **parados no mundo**. A cúpula do céu acompanha a cabeça,
 porque céu não se aproxima; planeta ao alcance da mão é o oposto — se ele te
 seguisse, você nunca daria a volta nele e a cena pareceria colada ao rosto.
