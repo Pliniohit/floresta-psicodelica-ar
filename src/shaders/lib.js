@@ -69,31 +69,53 @@ vec3 pick3(vec3 a, vec3 b, vec3 c, float s){
   return s < 0.5 ? mix(a, b, s * 2.0) : mix(b, c, (s - 0.5) * 2.0);
 }
 
-/** Folhagem: do verde-escuro de sombra ao verde-claro de brotação. */
+/**
+ * Bioma corrente, interpolado: 0 clareira, 1 fogo, 2 água. Trocar de mundo é
+ * animar este float — um único conjunto de materiais serve para todos, sem
+ * recompilar shader nem refazer a cena.
+ */
+uniform float uBiome;
+
+/** Mistura três variantes de cor conforme o bioma, com transição contínua. */
+vec3 biomeMix(vec3 clareira, vec3 fogo, vec3 agua){
+  float b = clamp(uBiome, 0.0, 2.0);
+  return b < 1.0 ? mix(clareira, fogo, b) : mix(fogo, agua, b - 1.0);
+}
+
+/** Folhagem. Na clareira é verde; no fogo, brasa; na água, coral e alga. */
 vec3 leafColor(float s){
-  return pick3(
-    vec3(0.075, 0.175, 0.085),
-    vec3(0.185, 0.360, 0.140),
-    vec3(0.360, 0.500, 0.185),
-    fract(s));
+  float k = fract(s);
+  vec3 mata = pick3(
+    vec3(0.075, 0.175, 0.085), vec3(0.185, 0.360, 0.140), vec3(0.360, 0.500, 0.185), k);
+  vec3 brasa = pick3(
+    vec3(0.180, 0.045, 0.020), vec3(0.520, 0.150, 0.030), vec3(0.880, 0.420, 0.080), k);
+  vec3 fundo = pick3(
+    vec3(0.050, 0.180, 0.220), vec3(0.100, 0.400, 0.420), vec3(0.420, 0.680, 0.560), k);
+  return biomeMix(mata, brasa, fundo);
 }
 
-/** Casca: castanho-escuro, castanho-acinzentado, bege-claro. */
+/** Casca. Castanho na clareira, basalto rachado no fogo, nácar na água. */
 vec3 barkColor(float s){
-  return pick3(
-    vec3(0.145, 0.105, 0.080),
-    vec3(0.290, 0.225, 0.170),
-    vec3(0.430, 0.360, 0.280),
-    fract(s));
+  float k = fract(s);
+  vec3 mata = pick3(
+    vec3(0.145, 0.105, 0.080), vec3(0.290, 0.225, 0.170), vec3(0.430, 0.360, 0.280), k);
+  vec3 basalto = pick3(
+    vec3(0.070, 0.055, 0.055), vec3(0.180, 0.130, 0.115), vec3(0.320, 0.180, 0.120), k);
+  vec3 nacar = pick3(
+    vec3(0.140, 0.200, 0.240), vec3(0.320, 0.400, 0.440), vec3(0.560, 0.620, 0.640), k);
+  return biomeMix(mata, basalto, nacar);
 }
 
-/** Chapéus: vermelho de amanita, castanho, creme. */
+/** Chapéus: amanita e creme na clareira; enxofre no fogo; anêmona na água. */
 vec3 capColor(float s){
-  return pick3(
-    vec3(0.520, 0.105, 0.075),
-    vec3(0.420, 0.280, 0.155),
-    vec3(0.720, 0.640, 0.480),
-    fract(s));
+  float k = fract(s);
+  vec3 mata = pick3(
+    vec3(0.520, 0.105, 0.075), vec3(0.420, 0.280, 0.155), vec3(0.720, 0.640, 0.480), k);
+  vec3 enxofre = pick3(
+    vec3(0.620, 0.320, 0.040), vec3(0.780, 0.560, 0.100), vec3(0.300, 0.120, 0.080), k);
+  vec3 anemona = pick3(
+    vec3(0.700, 0.300, 0.480), vec3(0.320, 0.560, 0.620), vec3(0.860, 0.780, 0.700), k);
+  return biomeMix(mata, enxofre, anemona);
 }
 
 /** Pétalas: lilás, rosa, amarelo-claro. */
@@ -106,6 +128,38 @@ vec3 petalColor(float s){
 }
 
 uniform float uMagic;
+
+/**
+ * Amortecedor global de cintilação, de 1 (normal) a 0 (sem oscilação nenhuma).
+ *
+ * Existe por segurança: brilho que varia é gatilho de crise em epilepsia
+ * fotossensível. As frequências daqui já ficam abaixo de 1 Hz, longe da faixa
+ * perigosa de 3 a 30 Hz, mas AMPLITUDE também conta — e num headset a cabeça
+ * nunca para, então qualquer variação vira cintilação percebida.
+ *
+ * Toda modulação periódica de brilho passa por "damp".
+ */
+uniform float uCalm;
+
+/** Em uCalm 0 devolve o valor médio: a oscilação some, o brilho fica. */
+float damp(float osc, float media){
+  return mix(media, osc, uCalm);
+}
+
+/**
+ * Estrela com borda suave. A versão com "step" decidia por célula de direção,
+ * e como a célula muda a cada movimento de cabeça a estrela piscava em vez de
+ * brilhar. Aqui ela nasce no centro da célula e some suavemente na borda.
+ */
+float softStar(vec3 dir, float densidade, float limiar){
+  vec3 cel = dir * densidade;
+  vec3 id = floor(cel);
+  float h = hash13(id);
+  if (h < limiar) return 0.0;
+  vec3 f = fract(cel) - 0.5;
+  float forca = (h - limiar) / max(1.0 - limiar, 1e-4);
+  return smoothstep(0.45, 0.06, length(f)) * forca;
+}
 
 /**
  * Encanta uma cor natural. Em "uMagic" 0 devolve a cor como está; subindo,

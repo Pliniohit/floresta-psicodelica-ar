@@ -61,6 +61,9 @@ const CAPACITY = {
 };
 const SPORES = 900;
 
+/** Quanto uma árvore leva para crescer depois de plantada. */
+export const GROW_SECONDS = 10;
+
 class InstanceSet {
   constructor(meshes, capacity) {
     this.meshes = meshes;
@@ -307,6 +310,38 @@ export class Forest extends Group {
   static trunkGap(edgeDistance) {
     const t = Math.min(1, edgeDistance / WALK.openFrom);
     return WALK.trunkGapWall + (WALK.trunkGapOpen - WALK.trunkGapWall) * t;
+  }
+
+  /**
+   * Cenário descampado: só o chão e um capim ralo. É o estado inicial de
+   * todo mundo — a floresta é obra de quem planta, não da geração.
+   */
+  seedBare(seedValue = 1) {
+    if (!this.footprint) return this;
+    const r = rng(seedValue);
+    this.seedValue = seedValue;
+    this.growing.length = 0;
+    for (const sp of this.species) sp.set.clear();
+    for (const set of [this.mushrooms, this.crystals, this.grass, this.orbs,
+      this.ferns, this.reeds, this.shrubs, this.flowers, this.cocoons]) set.clear();
+    this.cocoonSpots.length = 0;
+
+    // Capim ralo, para o chão não ficar liso demais.
+    const b = polygonBounds(this.footprint);
+    const quantos = Math.min(420, Math.round(polygonArea(this.footprint) * 22));
+    for (let i = 0, guard = 0; i < quantos && guard < quantos * 12; guard++) {
+      const x = b.minX + r() * (b.maxX - b.minX);
+      const z = b.minZ + r() * (b.maxZ - b.minZ);
+      if (!pointInPolygon(x, z, this.footprint)) continue;
+      const sc = 0.35 + r() * 0.5;
+      _p.set(x, 0, z);
+      _q.setFromAxisAngle(_up, r() * Math.PI * 2);
+      _s.set(1, sc, 1);
+      this.grass.add(_p, _q, _s);
+      i++;
+    }
+    this.grass.flush();
+    return this;
   }
 
   seed(seedValue) {
@@ -572,26 +607,61 @@ export class Forest extends Group {
    * tronco existente — senão o usuário fecha o próprio caminho sem perceber.
    * Devolve 'ok' | 'fora' | 'apertado' | 'cheio'.
    */
-  plant(local, r = Math.random) {
+  /**
+   * Planta uma semente. A árvore leva GROW_SECONDS para crescer — a espera é
+   * parte da experiência, e é o que dá peso ao gesto de plantar.
+   *
+   * @param {'normal'|'cocoon'} kind  a semente de casulo cria a árvore de
+   *        galhos que leva ao espaço.
+   */
+  plant(local, r = Math.random, kind = 'normal') {
     if (!this.accepts(local)) return 'fora';
 
     const edge = distanceToEdges(local.x, local.z, this.footprint);
     if (this.#nearestTrunk(local.x, local.z) < Forest.trunkGap(edge) * 0.8) return 'apertado';
 
-    const order = [0, 1, 2].sort(() => r() - 0.5);
+    // A semente de casulo sempre vira a espécie de galhos abertos (pagode).
+    const order = kind === 'cocoon'
+      ? [2, 0, 1]
+      : [0, 1, 2].sort(() => r() - 0.5);
     const idxSpecies = order.find((i) => this.species[i].set.count < CAPACITY.tree);
     if (idxSpecies === undefined) return 'cheio';
     const sp = this.species[idxSpecies];
 
-    const s = 0.88 + r() * 0.42;
+    const largura = 0.85 + r() * 0.35;
+    const altura = kind === 'cocoon' ? 1.25 + r() * 0.4 : 1.0 + r() * 0.7;
     const pos = new Vector3(local.x, 0, local.z);
     const quat = new Quaternion().setFromAxisAngle(_up, r() * Math.PI * 2);
-    const scale = new Vector3(s, s * (0.92 + r() * 0.3), s);
-    const idx = sp.set.add(pos, quat, scale);
+    const scale = new Vector3(largura, altura, largura);
+    const broto = new Vector3(0.004, 0.004, 0.004);
+    // Insere já minúsculo: inserir no tamanho final deixaria a árvore piscar
+    // inteira por um frame, antes do primeiro update do tween.
+    const idx = sp.set.add(pos, quat, broto);
     if (idx < 0) return 'cheio';
+    sp.set.flush();
 
-    this.#tween(sp.set, idx,
-      { pos, quat, scale: new Vector3(0.001, 0.001, 0.001) }, { pos, quat, scale });
+    this.#tween(sp.set, idx, { pos, quat, scale: broto }, { pos, quat, scale },
+      GROW_SECONDS, false);
+
+    if (kind === 'cocoon' && this.cocoons.count < CAPACITY.cocoon) {
+      const a = r() * Math.PI * 2;
+      const raio = (0.4 + r() * 0.35) * largura;
+      const cp = new Vector3(
+        local.x + Math.cos(a) * raio,
+        (2.6 + r() * 0.5) * altura,
+        local.z + Math.sin(a) * raio);
+      const cs = 0.9 + r() * 0.5;
+      const ci = this.cocoons.add(cp, _q.identity(), _s.setScalar(0.004));
+      this.cocoons.flush();
+      if (ci >= 0) {
+        // O casulo aparece junto com a árvore, no mesmo compasso.
+        this.#tween(this.cocoons, ci,
+          { pos: cp, quat: new Quaternion(), scale: new Vector3(0.004, 0.004, 0.004) },
+          { pos: cp, quat: new Quaternion(), scale: new Vector3(cs, cs, cs) },
+          GROW_SECONDS, false);
+        this.cocoonSpots.push({ pos: cp.clone(), escala: cs, aberto: false });
+      }
+    }
 
     for (let i = 0; i < 3 && this.mushrooms.count < CAPACITY.mushroom; i++) {
       const a = r() * Math.PI * 2, d = 0.3 + r() * 0.5;
@@ -604,7 +674,7 @@ export class Forest extends Group {
       if (mi >= 0) {
         this.#tween(this.mushrooms, mi,
           { pos: mp, quat: mq, scale: new Vector3(0.001, 0.001, 0.001) },
-          { pos: mp, quat: mq, scale: msc });
+          { pos: mp, quat: mq, scale: msc }, GROW_SECONDS * 0.55, false);
       }
     }
     return 'ok';

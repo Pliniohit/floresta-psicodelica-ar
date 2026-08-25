@@ -38,6 +38,13 @@ export class Seeds extends Group {
     this.offered = false;  // existe semente pronta na palma?
     this.held = false;     // está sendo carregada pela pinça?
     this.position0 = new Vector3();
+
+    // A cada tantas sementes comuns nasce uma de casulo — a árvore de galhos
+    // que leva ao espaço. Contada, não sorteada: sorteio deixaria o jogador
+    // sem saída se a sorte não viesse.
+    this.plantadas = 0;
+    this.cadaCasulo = 4;
+    this.kind = 'normal';
   }
 
   /** Semente madura o bastante para ser pega. */
@@ -60,7 +67,11 @@ export class Seeds extends Group {
     }
 
     // Brota com a palma virada para cima, murcha quando ela vira.
+    const antes = this.offered;
     this.offered = !!h && h.palmUp > PALM_UP;
+    if (this.offered && !antes) {
+      this.kind = this.plantadas % this.cadaCasulo === this.cadaCasulo - 1 ? 'cocoon' : 'normal';
+    }
     const alvo = this.offered ? 1 : 0;
     this.growth += (alvo - this.growth) * (1 - Math.exp(-dt * GROW));
 
@@ -75,7 +86,8 @@ export class Seeds extends Group {
     }
     this.mesh.position.copy(this.position0);
     this.mesh.rotation.y = t * 1.1;
-    this.mesh.scale.setScalar(this.growth);
+    // A de casulo é maior: dá para ver na mão qual delas veio.
+    this.mesh.scale.setScalar(this.growth * (this.kind === 'cocoon' ? 1.7 : 1));
     this.mesh.visible = true;
   }
 
@@ -92,6 +104,7 @@ export class Seeds extends Group {
     this.held = false;
     this.offered = false;
     this.growth = 0;
+    this.plantadas++;
     this.mesh.visible = false;
     return this.mesh.position.clone();
   }

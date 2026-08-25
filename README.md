@@ -122,6 +122,47 @@ Não é preciso rodar o Space Setup antes: o app escaneia sozinho ao abrir.
 
 Precisa estar em `https://`. WebXR não inicia sessão imersiva em conexão insegura.
 
+## Acessibilidade: cintilação
+
+Brilho que varia é gatilho de crise em epilepsia fotossensível, e isso guiou
+várias decisões aqui.
+
+Toda oscilação temporal da cena fica **abaixo de 1 Hz** — longe da faixa
+perigosa de 3 a 30 Hz. Mas frequência não é tudo: amplitude também conta, e num
+headset a cabeça nunca para, então qualquer variação vira cintilação percebida.
+
+A fonte pior não era nenhuma animação. Eram as **estrelas de borda dura**: um
+`step()` decidia se havia estrela por célula de direção, e como a célula muda a
+cada movimento de cabeça, elas apareciam e sumiam de golpe. Agora nascem no
+centro da célula e somem suavemente na borda. Os vaga-lumes iam de 0,08 a 1,0 —
+doze vezes de brilho — e hoje respiram entre 0,78 e 1,0.
+
+O botão **🌙 Sem brilho** (ou a tecla `C`) zera toda modulação: o brilho fica
+constante. Quem pede *menos movimento* nas preferências do sistema já entra
+assim, sem precisar achar o botão.
+
+## O ciclo dos mundos
+
+Todo mundo começa **descampado**: chão nu e capim ralo. A floresta é obra de
+quem planta.
+
+Vire a palma para cima, pegue a semente, solte no chão. A árvore leva **dez
+segundos** para crescer — a espera é o que dá peso ao gesto. A cada quatro
+sementes, uma é de **casulo**: maior na mão, e dela nasce a árvore de galhos
+abertos com um casulo pendurado.
+
+Toque no casulo e a borboleta te leva ao espaço. Lá, **pegue um planeta com uma
+mão e pince com a outra**: afastar as mãos aumenta a escala. Passando do
+limiar, o planeta se abre e você atravessa para o mundo dele — vermelho é fogo,
+azul é água, verde é clareira. E lá tem chão nu, sementes e um casulo de volta.
+
+A semente de casulo é **contada, não sorteada** (uma a cada quatro). Sorteio
+deixaria alguém preso num mundo se a sorte não viesse.
+
+Trocar de mundo é animar um único float (`uBiome`): o mesmo conjunto de
+materiais serve para os três, interpolando entre faixas de cor. Não há
+recompilação de shader nem recriação de cena.
+
 ## A travessia para o espaço
 
 Alguns galhos têm **casulos** pendurados, pulsando. Toque num deles com a ponta
@@ -295,6 +336,7 @@ src/
   seeds.js              semente que brota na palma
   constellation.js      constelação no céu (trocar a forma aqui)
   space.js              cena do espaço, planetas pegáveis e a eclosão
+  biomes.js             os três mundos e suas faixas de cor
   forest.js             semeadura no polígono, instancing, animação de brotar
   geometry.js           construtores das malhas low poly
   audio.js              drone ambiente gerado por WebAudio
@@ -306,6 +348,7 @@ vendor/three/           Three.js r180 embutido (sem CDN)
 test-geometry.mjs       geometrias válidas, sem NaN
 test-layout.mjs         a floresta cabe no cômodo E sobra passagem
 test-grab.mjs           pegar, carregar e soltar se comportam
+test-shaders.mjs        GLSL íntegro e uniforms globais em todo material
 ```
 
 Rode os três com `npm test`.

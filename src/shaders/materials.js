@@ -13,6 +13,8 @@ export const shared = {
   uTime:   { value: 0 },
   uTrip:   { value: 0.35 },
   uMagic:  { value: 0.35 },   // 0 = mata realista, 1 = encantada
+  uBiome:  { value: 0 },      // 0 clareira, 1 fogo, 2 água
+  uCalm:   { value: 0.45 },   // amortecedor de cintilação; 0 = sem oscilação
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
   uOrigin: { value: new Vector3() },
@@ -75,7 +77,7 @@ export const barkMaterial = make('casca', {
       float t = h * 0.10 + twist * 0.34 + uTime * 0.035 + vSeed;
       vec3 col = enchant(casca, t, 0.45);
       // A seiva continua vindo da paleta: é o elemento mágico do tronco.
-      col += palette(t + 0.35) * sap * (0.40 + uTrip * 0.9 + uPulse * 0.8);
+      col += palette(t + 0.35) * damp(sap, 0.35) * (0.34 + uTrip * 0.7 + uPulse * 0.5);
       col *= 0.45 + 0.75 * wrapLight(vNormalW);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
@@ -176,7 +178,7 @@ export const capMaterial = make('chapeu', {
 
       float t = r * 1.3 + rings * 0.25 + uTime * 0.05 + vSeed;
       vec3 col = enchant(chapeu, t, 0.40);
-      col += palette(t + 0.5) * spots * (0.30 + uTrip * 0.9 + uPulse * 1.0);
+      col += palette(t + 0.5) * spots * (0.26 + uTrip * 0.7 + uPulse * 0.6);
       col *= 0.55 + 0.65 * wrapLight(vNormalW);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
@@ -240,8 +242,9 @@ export const cocoonMaterial = make('casulo', {
       vec3 seda = mix(vec3(0.62, 0.55, 0.38), vec3(0.80, 0.74, 0.56), aneis);
 
       // Batimento interno: duas senóides, acelerando conforme uReady sobe.
-      float vida = 0.5 + 0.5 * sin(uTime * (2.2 + uReady * 5.0) + vSeed * 12.0);
-      vida *= 0.5 + 0.5 * sin(uTime * 1.3 + vSeed * 5.0);
+      float bat = 0.62 + 0.26 * sin(uTime * (1.5 + uReady * 2.2) + vSeed * 12.0);
+      bat *= 0.75 + 0.25 * sin(uTime * 0.9 + vSeed * 5.0);
+      float vida = damp(bat, 0.55);
 
       float t = vSeed + uTime * 0.03;
       vec3 col = enchant(seda, t, 0.3);
@@ -333,13 +336,15 @@ export const grassMaterial = make('capim', {
     void main(){
       ${FRAG_FADE}
       float h = clamp(vLocal.y / 0.42, 0.0, 1.0);
-      float scan = sin(h * 9.0 - uTime * 1.6 + vSeed * 6.28) * 0.5 + 0.5;
+      // Amplitude baixa de propósito: são mais de mil lâminas finas na tela,
+      // e contraste alto nelas vira cintilação com qualquer movimento.
+      float scan = damp(sin(h * 9.0 - uTime * 1.6 + vSeed * 6.28) * 0.5 + 0.5, 0.5);
       vec3 verde = leafColor(vSeed * 5.7);
       verde = mix(verde * 0.45, verde * 1.25, h);   // base na sombra, ponta ao sol
 
       float t = h * 0.5 + vSeed + uTime * 0.06;
       vec3 col = enchant(verde, t, 0.5);
-      col += palette(t + 0.5) * scan * h * (0.14 + uTrip * 0.45 + uPulse * 0.6);
+      col += palette(t + 0.5) * scan * h * (0.08 + uTrip * 0.22 + uPulse * 0.3);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -468,9 +473,9 @@ export const skyMaterial = make('ceu', {
                   * sin(dir.z * 2.3 - neb * 4.0 - uTime * 0.17);
       faixa = pow(max(faixa, 0.0), 2.2);
 
-      // Estrelas: pontos duros num reticulado de direção.
-      vec3 cel = floor(dir * 190.0);
-      float estrela = step(0.9992, hash13(cel));
+      // Estrelas com borda suave: as de borda dura piscavam a cada movimento
+      // de cabeça, porque a célula de direção mudava de golpe.
+      float estrela = softStar(dir, 170.0, 0.9988);
       estrela *= smoothstep(0.25, 0.7, up);
 
       float t = neb * 0.9 + up * 0.35 + uTime * 0.03;
@@ -484,8 +489,8 @@ export const skyMaterial = make('ceu', {
       col += palette(t + 0.5) * uPulse * 0.35 * neb;
 
       // Em espaço profundo as estrelas aparecem em todas as direções.
-      float estrelaBaixa = step(0.9994, hash13(floor(dir * 210.0))) * uSpace;
-      col += vec3(estrelaBaixa) * 1.6;
+      float estrelaBaixa = softStar(dir, 195.0, 0.9990) * uSpace;
+      col += vec3(estrelaBaixa) * 1.4;
 
       gl_FragColor = vec4(trippy(col) * (1.0 + uTrip * 0.6), veu);
     }
@@ -533,7 +538,11 @@ export const skyLifeMaterial = make('medusas', {
 // um terminador para o corpo ler como esfera iluminada em vez de bola pintada.
 // ---------------------------------------------------------------------------
 export const planetMaterial = make('planetas', {
-  uniforms: { uWarp: { value: 0 } },
+  uniforms: {
+    uWarp: { value: 0 },
+    uTint: { value: new Vector3(1, 1, 1) },   // cor do bioma que este planeta abriga
+    uGrow: { value: 0 },                      // 0..1 conforme cresce na sua mão
+  },
   vert: /* glsl */ `
     void main(){
       ${ROOT_AND_SEED}
@@ -542,6 +551,8 @@ export const planetMaterial = make('planetas', {
   `,
   frag: /* glsl */ `
     uniform float uWarp;
+    uniform vec3 uTint;
+    uniform float uGrow;
 
     void main(){
       vec3 N = normalize(vNormalW);
@@ -564,6 +575,9 @@ export const planetMaterial = make('planetas', {
       vec3 gelado = mix(vec3(0.52, 0.66, 0.78), vec3(0.88, 0.93, 0.97), fenda);
 
       vec3 base = tipo < 0.4 ? gasoso : (tipo < 0.78 ? rochoso : gelado);
+      // O bioma que o planeta guarda tinge a superfície: é assim que se sabe,
+      // olhando, para onde ele leva.
+      base = mix(base, base * 0.35 + uTint * 0.95, 0.62);
 
       // Terminador: luz vinda de cima e do lado, com penumbra larga.
       float luz = dot(N, normalize(vec3(0.45, 0.7, 0.35)));
@@ -577,6 +591,11 @@ export const planetMaterial = make('planetas', {
       float aro = pow(1.0 - abs(dot(N, V)), 3.0);
       col += base * aro * (0.35 + dia * 0.8);
       col += palette(vSeed + uTime * 0.02) * aro * 0.35 * uMagic;
+
+      // Perto de abrir, o planeta acende pelas bordas: o aviso de que
+      // aumentar mais um pouco atravessa.
+      col += uTint * aro * uGrow * 2.5;
+      col += uTint * uGrow * uGrow * 0.6;
 
       gl_FragColor = vec4(filmic(col) * uWarp, 1.0);
     }
@@ -744,15 +763,16 @@ export const fireflyMaterial = make('vagalumes', {
       vec3 V = normalize(cameraPosition - vWorld);
       float core = pow(max(dot(N, V), 0.0), 1.1);
 
-      // Piscar irregular: duas senóides incomensuráveis, então o padrão
-      // demora muito a se repetir e a luz não parece metrônomo.
-      float pisca = 0.45
-        + 0.35 * sin(uTime * 2.3 + vSeed * 31.0)
-        + 0.20 * sin(uTime * 3.7 + vSeed * 17.0);
-      pisca = max(pisca, 0.08);
+      // Respiração irregular, não pisca-pisca: duas senóides incomensuráveis
+      // para não virar metrônomo, com piso alto para o contraste ficar baixo.
+      // Ia de 0,08 a 1,0 — doze vezes de brilho, cintilação demais.
+      float osc = 0.78
+        + 0.14 * sin(uTime * 1.15 + vSeed * 31.0)
+        + 0.08 * sin(uTime * 1.85 + vSeed * 17.0);
+      float pisca = damp(osc, 0.78);
 
       vec3 col = palette(0.12 + vSeed * 0.1 + uTime * 0.02);
-      gl_FragColor = vec4(trippy(col) * core * pisca * 2.2 * vFade, 1.0);
+      gl_FragColor = vec4(trippy(col) * core * pisca * 1.7 * vFade, 1.0);
     }
   `,
 });
@@ -797,7 +817,7 @@ export const highlightMaterial = make('realce', {
     void main(){
       vSeed = 0.0;
       // infla ao longo da normal para virar uma casca em volta do objeto
-      vec3 p = position + normal * (0.035 + sin(uTime * 6.0) * 0.012);
+      vec3 p = position + normal * (0.035 + sin(uTime * 2.4) * 0.010);
       emit(p, normal);
     }
   `,
@@ -834,7 +854,7 @@ export const reticleMaterial = make('reticulo', {
     void main(){
       float r = length(vLocal.xz);
       float a = atan(vLocal.z, vLocal.x);
-      float dashes = step(0.35, fract(a * 3.8 + uTime * 0.35));
+      float dashes = smoothstep(0.30, 0.42, fract(a * 3.8 + uTime * 0.25));
       float ring = smoothstep(0.055, 0.0, abs(r - 0.13));
       float halo = smoothstep(0.16, 0.0, r) * 0.35;
       float alpha = ring * (0.35 + 0.65 * dashes) + halo;

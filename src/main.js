@@ -16,7 +16,8 @@ import { Butterflies, Fireflies } from './creatures.js';
 import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
-import { Space, Emergence } from './space.js';
+import { Space, Emergence, ENTER_SCALE } from './space.js';
+import { biomes, byId } from './biomes.js';
 import { butterflyMaterial, cocoonMaterial, skyMaterial as _sky } from './shaders/materials.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
@@ -111,6 +112,8 @@ const state = {
   blessed: false,     // há alguém abençoado com vaga-lumes?
   world: 'floresta',  // floresta | espaco
   warp: 0,            // 0 floresta .. 1 espaço
+  biome: 0,           // índice em biomes.js
+  calm: 0.45,         // amortecedor de cintilação, 0..1
   scanSweep: 0,
   scanReveal: 0,
 };
@@ -200,6 +203,8 @@ function ping(strength = 1) {
 /** Fecha o mapeamento e faz a floresta brotar dentro do cômodo lido. */
 function commitRoom() {
   forest.applyRoom(room);
+  // Descampado: a floresta é obra de quem planta, não da geração.
+  forest.seedBare(state.seed);
   shared.uOrigin.value.copy(forest.position);
   forest.visible = true;
   room.view.visible = false;
@@ -223,12 +228,8 @@ function commitRoom() {
   scanEl?.classList.remove('on');
   ping(1);
   audio.chime(12, 0.28);
-  const extras = [];
-  if (forest.surfaces.length) extras.push(`${forest.surfaces.length} móvel(is) tomado(s)`);
-  if (roomMesh.volumeCount) extras.push('oclusão ativa');
-  toast(`${forest.treeCount} árvores em ${room.area.toFixed(1)} m²`
-    + (extras.length ? ` · ${extras.join(' · ')}` : ''),
-    palettes[state.paletteIndex].swatch);
+  const b = byId(state.biome);
+  toast(`${b.saudacao} Palma para cima faz nascer uma semente.`, b.swatch);
 }
 
 /**
@@ -306,12 +307,53 @@ function hatch(indice) {
   toast('Ela nasceu — siga com o olhar', palettes[state.paletteIndex].swatch);
 }
 
+/**
+ * Atravessa para o mundo de um planeta. Tudo o que muda é o bioma, a paleta e
+ * o chão — a mecânica é a mesma em todos: terra nua, sementes, e um casulo que
+ * devolve ao espaço.
+ */
+function enterWorld(biomeId) {
+  const b = byId(biomeId);
+  state.biome = b.id;
+  state.paletteIndex = b.palette;
+  const p = palettes[b.palette];
+  target.uPalA.copy(p.a); target.uPalB.copy(p.b);
+  target.uPalC.copy(p.c); target.uPalD.copy(p.d);
+
+  state.seed = (state.seed * 1103515245 + 12345) >>> 0;
+  forest.seedBare(state.seed);
+  forest.visible = true;
+  state.world = 'floresta';
+  state.intro = 0;
+
+  space.resetScales();
+  ping(1);
+  audio.chime(12, 0.3);
+  toast(`${b.name} — ${b.saudacao}`, b.swatch);
+}
+
 function backToForest() {
   if (state.world === 'floresta') return;
   state.world = 'floresta';
   ping(0.8);
   audio.chime(5, 0.24);
   toast('De volta à clareira', palettes[state.paletteIndex].swatch);
+}
+
+/**
+ * Modo calmo de verdade: zera a oscilação de brilho da cena inteira.
+ *
+ * Brilho variável é gatilho de crise em epilepsia fotossensível. As
+ * frequências daqui já ficam abaixo de 1 Hz, longe da faixa perigosa de 3 a
+ * 30 Hz, mas amplitude também conta — e num headset a cabeça nunca para, então
+ * qualquer variação vira cintilação percebida.
+ */
+function toggleCalm() {
+  state.calm = state.calm > 0.05 ? 0 : 0.45;
+  shared.uCalm.value = state.calm;
+  toast(state.calm === 0
+    ? 'Sem cintilação — brilho constante'
+    : 'Cintilação suave restaurada', palettes[state.paletteIndex].swatch);
 }
 
 function toggleBloom() {
@@ -370,8 +412,8 @@ const PLANT_MESSAGE = {
   cheio: 'A floresta está cheia — B/Y semeia outra',
 };
 
-function plantAt(worldPoint) {
-  const result = forest.plant(forest.worldToLocal(worldPoint.clone()));
+function plantAt(worldPoint, kind = 'normal') {
+  const result = forest.plant(forest.worldToLocal(worldPoint.clone()), Math.random, kind);
   if (result === 'ok') {
     ping(0.55);
     audio.chime([0, 4, 7, 11, 14][Math.floor(Math.random() * 5)], 0.14);
@@ -538,6 +580,7 @@ function bindPreview() {
     if (k === 't') toggleTrip();
     if (k === 'r') reseed();
     if (k === 'm') toast(audio.toggleMute() ? 'Som mudo' : 'Som ligado');
+    if (k === 'c') toggleCalm();
   });
 }
 
@@ -738,6 +781,7 @@ const PAD = {
   recenter: () => { magic.recenter(); toast('Frente recentrada'); },
   sky: toggleSky,
   bloom: toggleBloom,
+  calm: toggleCalm,
 };
 el('pad').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
@@ -748,6 +792,7 @@ el('pad').addEventListener('click', (e) => {
 // Mãos livres
 // ---------------------------------------------------------------------------
 const grabbed = new Map();   // HandState -> alça devolvida por forest.lift
+let escalaRef = null;        // referência da pinça de duas mãos sobre um planeta
 
 /** Ponto da mão em coordenadas locais da floresta. */
 function toLocal(worldPoint) { return forest.worldToLocal(worldPoint.clone()); }
@@ -774,8 +819,11 @@ const hands = new Hands(renderer, {
 
     // A semente na palma tem prioridade: se ela está madura, a pinça a pega.
     if (hand.handedness === seeds.hand && seeds.take()) {
-      audio.chime(24, 0.12);
-      toast('Semente na mão — solte perto do chão para plantar');
+      audio.chime(seeds.kind === 'cocoon' ? 28 : 24, 0.12);
+      toast(seeds.kind === 'cocoon'
+        ? 'Semente de casulo — dela nasce a árvore que leva ao espaço'
+        : 'Semente na mão — solte perto do chão para plantar',
+        palettes[state.paletteIndex].swatch);
       return;
     }
 
@@ -796,10 +844,17 @@ const hands = new Hands(renderer, {
   onPinchEnd: (hand) => {
     // Semente solta: planta onde caiu, se couber.
     if (hand.handedness === seeds.hand) {
+      const kind = seeds.kind;
       const onde = seeds.release();
       if (onde) {
         const chao = new Vector3(onde.x, forest.position.y, onde.z);
-        if (plantAt(chao) === 'ok') { ping(0.7); audio.chime(12, 0.2); }
+        if (plantAt(chao, kind) === 'ok') {
+          ping(0.7);
+          audio.chime(12, 0.2);
+          toast(kind === 'cocoon'
+            ? 'Árvore de casulo plantada — dez segundos'
+            : 'Plantada — dez segundos para crescer', palettes[state.paletteIndex].swatch);
+        }
         return;
       }
     }
@@ -833,6 +888,28 @@ function updateHands(dt) {
 
   if (state.phase !== 'growing') { forest.highlight(null); return; }
 
+  // Duas mãos no mesmo planeta = escala. Afastar as mãos aumenta; passando do
+  // limiar, o planeta se abre e você atravessa para o mundo dele.
+  const seguro = [...grabbed.entries()].find(([, h]) => h.espaco);
+  if (seguro && state.world === 'espaco') {
+    const [maoQueSegura, alca] = seguro;
+    const outra = hands.states.find((st) => st !== maoQueSegura && st.tracked && st.pinching);
+    if (outra) {
+      const d = maoQueSegura.pinch.distanceTo(outra.pinch);
+      if (!escalaRef) escalaRef = { d: Math.max(d, 0.04), s: alca.planeta.scale.x };
+      const atravessa = space.scaleHeld(alca.planeta, escalaRef.s * (d / escalaRef.d));
+      if (atravessa) {
+        grabbed.delete(maoQueSegura);
+        escalaRef = null;
+        enterWorld(alca.planeta.userData.bioma);
+      }
+    } else {
+      escalaRef = null;
+    }
+  } else {
+    escalaRef = null;
+  }
+
   let spin = 0;
   let hover = null;
   for (const st of hands.states) {
@@ -860,6 +937,14 @@ function updateHands(dt) {
   }
 
   wristMenu.update(dt, hands.byHandedness('left'), hands.byHandedness('right'));
+}
+
+// Quem pediu menos movimento no sistema recebe a cena sem oscilação nenhuma,
+// sem precisar achar o botão.
+const reduzirMovimento = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+if (reduzirMovimento) {
+  state.calm = 0;
+  shared.uCalm.value = 0;
 }
 
 const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
@@ -900,6 +985,9 @@ function frame(time, xrFrame) {
   shared.uPalC.value.lerp(target.uPalC, k);
   shared.uPalD.value.lerp(target.uPalD, k);
   shared.uTrip.value += (state.tripTarget - shared.uTrip.value) * k;
+  // Trocar de mundo é animar este float: um só conjunto de materiais serve
+  // para todos os biomas.
+  shared.uBiome.value += (state.biome - shared.uBiome.value) * (1 - Math.exp(-dt * 1.4));
 
   if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
     // Durante a captura a tela é do sistema, e ler os planos antigos aqui só
@@ -1048,7 +1136,7 @@ detect().then((res) => {
 
 // Atalho de inspeção: no console dá para mexer ao vivo, por exemplo
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
-window.floresta = { forest, room, roomMesh, sky, constelacao, space, emergence, hatch, backToForest, butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
+window.floresta = { forest, room, roomMesh, sky, constelacao, space, emergence, hatch, backToForest, enterWorld, biomes, butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds, hands, wristMenu, magic, state, shared, renderer, camera, orbit, cyclePalette, toggleTrip, reseed };
 
 window.addEventListener('beforeunload', () => {
   roomMesh.dispose();

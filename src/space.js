@@ -4,6 +4,7 @@ import {
 } from '../vendor/three/three.module.min.js';
 import { planetMaterial, trailMaterial, skyLifeMaterial } from './shaders/materials.js';
 import { rng } from './forest.js';
+import { biomes } from './biomes.js';
 
 /**
  * A cena do espaço, para onde a borboleta leva.
@@ -14,6 +15,9 @@ import { rng } from './forest.js';
  */
 
 const PLANETS = 7;
+/** Escala a partir da qual o planeta se abre e você atravessa para o mundo dele. */
+export const ENTER_SCALE = 3.4;
+const MIN_SCALE = 0.5;
 const _m = new Matrix4();
 const _p = new Vector3();
 const _q = new Quaternion();
@@ -35,7 +39,13 @@ export class Space extends Group {
     // própria mexida pela mão, e são só sete — sete draw calls é barato.
     for (let i = 0; i < PLANETS; i++) {
       const raio = 0.20 + r() * 0.40;   // tamanho de bola de praia: dá vontade de pegar
-      const corpo = new Mesh(new SphereGeometry(raio, 20, 14), planetMaterial);
+      // Material por planeta: cada um carrega a cor do bioma que guarda. O
+      // programa de shader continua sendo um só, então o custo é de uniforms.
+      const mat = planetMaterial.clone();
+      const bioma = biomes[i % biomes.length];
+      mat.uniforms.uTint.value = bioma.planetColor.clone();
+
+      const corpo = new Mesh(new SphereGeometry(raio, 20, 14), mat);
       corpo.frustumCulled = false;
 
       const grupo = new Group();
@@ -59,7 +69,7 @@ export class Space extends Group {
         giro: 0.15 + r() * 0.4,
         inclina: (r() - 0.5) * 0.6,
       };
-      grupo.userData = { orbita, corpo, raio, preso: false };
+      grupo.userData = { orbita, corpo, raio, preso: false, bioma: bioma.id, mat };
       this.planets.push(grupo);
       this.add(grupo);
     }
@@ -97,8 +107,29 @@ export class Space extends Group {
   setProgress(v) {
     this.progress = v;
     this.visible = v > 0.01;
-    planetMaterial.uniforms.uWarp.value = v;
+    for (const g of this.planets) g.userData.mat.uniforms.uWarp.value = v;
     return v;
+  }
+
+  /**
+   * Redimensiona o planeta na mão. Devolve true quando ele passa do limiar —
+   * é o momento de atravessar para o mundo dele.
+   */
+  scaleHeld(planeta, fator) {
+    const s = Math.min(ENTER_SCALE + 0.4, Math.max(MIN_SCALE, fator));
+    planeta.scale.setScalar(s);
+    // Acende conforme se aproxima do limiar.
+    planeta.userData.mat.uniforms.uGrow.value =
+      Math.max(0, (s - 1.6) / (ENTER_SCALE - 1.6));
+    return s >= ENTER_SCALE;
+  }
+
+  /** Devolve todos os planetas ao tamanho normal. */
+  resetScales() {
+    for (const g of this.planets) {
+      g.scale.setScalar(1);
+      g.userData.mat.uniforms.uGrow.value = 0;
+    }
   }
 
   update(t, dt, head) {
@@ -153,6 +184,7 @@ export class Space extends Group {
   dispose() {
     for (const g of this.planets) {
       g.traverse((o) => o.isMesh && o.geometry.dispose());
+      g.userData.mat.dispose();
     }
     this.stars.geometry.dispose();
     this.clear();
