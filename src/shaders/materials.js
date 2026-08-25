@@ -68,7 +68,7 @@ export const barkMaterial = make('casca', {
       fiber = smoothstep(-0.25, 0.85, fiber);
 
       // seiva luminosa viajando da raiz para a copa
-      float up = fract(h * 0.26 - uTime * 0.13 + vSeed);
+      float up = fract(h * 0.20 - uTime * 0.07 + vSeed);
       float sap = pow(1.0 - abs(up * 2.0 - 1.0), 6.0);
 
       vec3 casca = barkColor(vSeed * 3.1 + twist * 0.25);
@@ -92,15 +92,15 @@ export const canopyMaterial = make('copa', {
     void main(){
       ${ROOT_AND_SEED}
       // a copa respira além de balançar
-      float breathe = 1.0 + sin(uTime * 0.8 + root.x + root.z) * 0.035 * (0.4 + uTrip);
+      float breathe = 1.0 + sin(uTime * 0.35 + root.x + root.z) * 0.030 * (0.4 + uTrip);
       emit(sway(position * breathe, root, 1.0), normal);
     }
   `,
   frag: /* glsl */ `
     void main(){
       ${FRAG_FADE}
-      vec3 q = vLocal * 1.7 + vec3(0.0, uTime * 0.11, 0.0);
-      float warp = vnoise(q * 0.7 + uTime * 0.08);
+      vec3 q = vLocal * 1.7 + vec3(0.0, uTime * 0.045, 0.0);
+      float warp = vnoise(q * 0.7 + uTime * 0.035);
       float n = fbm2(q + warp * 1.5);
       float cells = smoothstep(0.30, 0.66, n);
 
@@ -138,7 +138,7 @@ export const stemMaterial = make('caule', {
     void main(){
       ${FRAG_FADE}
       float h = vLocal.y;
-      float rings = sin(h * 22.0 - uTime * 1.1 + vSeed * 6.28) * 0.5 + 0.5;
+      float rings = sin(h * 9.0 - uTime * 0.30 + vSeed * 6.28) * 0.5 + 0.5;
       vec3 caule = mix(vec3(0.78, 0.74, 0.64), vec3(0.55, 0.50, 0.42), vSeed);
       caule *= 0.78 + 0.28 * rings;
 
@@ -167,8 +167,8 @@ export const capMaterial = make('chapeu', {
       float r = length(vLocal.xz);
       float a = atan(vLocal.z, vLocal.x);
 
-      float rings  = sin(r * 24.0 - uTime * 1.25 + vSeed * 6.28) * 0.5 + 0.5;
-      float spokes = sin(a * 9.0 + uTime * 0.38 + vSeed * 10.0) * 0.5 + 0.5;
+      float rings  = sin(r * 10.0 - uTime * 0.30 + vSeed * 6.28) * 0.5 + 0.5;
+      float spokes = sin(a * 6.0 + uTime * 0.12 + vSeed * 10.0) * 0.5 + 0.5;
       float spots  = smoothstep(0.60, 0.78, vnoise(vLocal * 9.0 + vSeed * 30.0));
 
       vec3 chapeu = capColor(vSeed * 4.3);
@@ -238,7 +238,7 @@ export const cocoonMaterial = make('casulo', {
     uniform float uReady;
     void main(){
       ${FRAG_FADE}
-      float aneis = sin(vLocal.y * 90.0) * 0.5 + 0.5;
+      float aneis = sin(vLocal.y * 22.0) * 0.5 + 0.5;
       vec3 seda = mix(vec3(0.62, 0.55, 0.38), vec3(0.80, 0.74, 0.56), aneis);
 
       // Batimento interno: duas senóides, acelerando conforme uReady sobe.
@@ -306,9 +306,9 @@ export const groundMaterial = make('micelio', {
       vec2 d = vWorld.xz - uOrigin.xz;
       float r = length(d);
 
-      float n = fbm2(vec3(d * 0.55, uTime * 0.09));
+      float n = fbm2(vec3(d * 0.55, uTime * 0.04));
       float veins = 1.0 - smoothstep(0.0, 0.085, abs(n - 0.5));  // isolinha do ruído
-      float wave  = ripple(1.5, 2.4);
+      float wave  = ripple(0.45, 1.3);
       float shock = smoothstep(0.10, 0.0, abs(r - uPulse * 6.0)) * uPulse;
 
       float a = (veins * (0.30 + 0.45 * wave) + shock * 0.8) * vFade;
@@ -338,7 +338,7 @@ export const grassMaterial = make('capim', {
       float h = clamp(vLocal.y / 0.42, 0.0, 1.0);
       // Amplitude baixa de propósito: são mais de mil lâminas finas na tela,
       // e contraste alto nelas vira cintilação com qualquer movimento.
-      float scan = damp(sin(h * 9.0 - uTime * 1.6 + vSeed * 6.28) * 0.5 + 0.5, 0.5);
+      float scan = damp(sin(h * 4.0 - uTime * 0.45 + vSeed * 6.28) * 0.5 + 0.5, 0.5);
       vec3 verde = leafColor(vSeed * 5.7);
       verde = mix(verde * 0.45, verde * 1.25, h);   // base na sombra, ponta ao sol
 
@@ -523,7 +523,7 @@ export const skyLifeMaterial = make('medusas', {
 
       // Tentáculos: o corpo apaga para baixo, e umas listras descem dele.
       float baixo = smoothstep(-0.9, 0.25, N.y);
-      float franja = 0.5 + 0.5 * sin(atan(N.z, N.x) * 11.0 + uTime * 1.3);
+      float franja = 0.5 + 0.5 * sin(atan(N.z, N.x) * 7.0 + uTime * 0.40);
       float cauda = (1.0 - baixo) * franja * 0.5;
 
       vec3 col = palette(vSeed * 0.5 + uTime * 0.07);
@@ -697,17 +697,42 @@ export const butterflyMaterial = make('borboletas', {
       vSpan = aSpan;
       vWing = aWing;
 
-      float bater = sin(uTime * (9.0 + vSeed * 5.0) + vSeed * 20.0);
-      float ang = bater * 1.05 * aSpan * abs(aWing);
-      float c = cos(ang), sn = sin(ang);
+      // Frequência entre 3 e 4,5 Hz. Menos que a borboleta real, que passa de
+      // 8, porque em VR uma asa a 8 Hz na periferia lê como tremulação.
+      float freq = (3.0 + vSeed * 1.5) * mix(0.5, 1.0, uCalm);
+      float fase = fract(uTime * freq + vSeed * 7.0);
 
+      // Perfil ASSIMÉTRICO: sobe em 35% do ciclo e desce nos 65% restantes.
+      // Senóide pura dá vaivém de metrônomo; borboleta bate e deixa cair.
+      float sobe = smoothstep(0.0, 1.0, fase / 0.35);
+      float desce = 1.0 - smoothstep(0.0, 1.0, (fase - 0.35) / 0.65);
+      float perfil = fase < 0.35 ? sobe : desce;
+
+      // Plana de vez em quando: sem as pausas o voo fica mecânico.
+      float planando = smoothstep(0.45, 0.85, sin(uTime * 0.31 + vSeed * 9.0));
+      perfil = mix(perfil, 0.42, planando * 0.85);
+
+      // De 14 graus abaixo da horizontal a 77 acima — quase se tocando em cima.
+      float ang = mix(-0.25, 1.35, perfil) * aSpan * abs(aWing);
+
+      // Rotação em torno de Y, o eixo do CORPO: é isso que levanta a asa.
+      // Em torno de Z ela apenas varria dentro do próprio plano, que foi por
+      // que o voo não parecia batida de asa.
+      float a = ang * sign(aWing);
+      float c = cos(a), sn = sin(a);
       vec3 p = position;
-      // gira em torno de Z: a asa sobe e desce, o corpo fica parado
-      float x = p.x, y = p.y;
-      p.x = x * c - y * sn * sign(aWing);
-      p.y = x * sn * sign(aWing) + y * c;
+      float x = p.x, z = p.z;
+      p.x = x * c + z * sn;
+      p.z = -x * sn + z * c;
 
-      emit(p, normal);
+      // A normal precisa acompanhar, senão a asa levantada continua sombreada
+      // como se estivesse deitada.
+      vec3 nrm = normal;
+      float nx = nrm.x, nz = nrm.z;
+      nrm.x = nx * c + nz * sn;
+      nrm.z = -nx * sn + nz * c;
+
+      emit(p, nrm);
     }
   `,
   frag: /* glsl */ `

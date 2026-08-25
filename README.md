@@ -52,10 +52,19 @@ como antes.
 
 ## Criaturas e corpo
 
-**Borboletas** vagam pela clareira. O voo é a soma de senóides de frequências
-não múltiplas, então o padrão leva minutos para se repetir — não fica com cara
-de órbita. As asas batem no vertex shader, flexionando da dobradiça para a
-ponta.
+**Borboletas** vagam pela clareira. As asas giram em torno do **eixo do corpo**
+— girar em torno de Z, que era o erro original, apenas varria a asa dentro do
+próprio plano e nunca parecia batida. O perfil é assimétrico: sobe em 35% do
+ciclo, de 14° abaixo da horizontal a 77° acima, e cai devagar nos 65%
+restantes. Senóide pura dá vaivém de metrônomo; borboleta bate e deixa cair. De
+tempos em tempos elas planam, e a normal acompanha a rotação, senão a asa
+levantada continuaria sombreada como se estivesse deitada.
+
+A frequência é de 3 a 4,5 Hz, menos que a borboleta real, que passa de 8 — em
+VR uma asa a 8 Hz na periferia lê como tremulação.
+
+O voo  é a soma de senóides de frequências não múltiplas, então o padrão leva
+minutos para se repetir — não fica com cara de órbita.
 
 **Vaga-lumes** circulam você. O alvo é o peito do corpo inferido, seguido com
 atraso: o bando se estica quando você anda e se junta quando você para.
@@ -136,6 +145,17 @@ A fonte pior não era nenhuma animação. Eram as **estrelas de borda dura**: um
 cada movimento de cabeça, elas apareciam e sumiam de golpe. Agora nascem no
 centro da célula e somem suavemente na borda. Os vaga-lumes iam de 0,08 a 1,0 —
 doze vezes de brilho — e hoje respiram entre 0,78 e 1,0.
+
+### Padrões que corriam demais
+
+O segundo problema não era velocidade, era **densidade**. O chapéu de cogumelo
+tinha 24 anéis num raio de 40 cm — 60 por metro. Numa superfície curva, com a
+cabeça em movimento, isso serrilha e o padrão parece correr. O casulo chegava a
+90 anéis de altura.
+
+As densidades caíram para 2 a 4 faixas por metro e a rolagem para menos de 0,1
+faixa por segundo. O mesmo valeu para caule, capim, micélio do chão e franja
+das medusas.
 
 O botão **🌙 Sem brilho** (ou a tecla `C`) zera toda modulação: o brilho fica
 constante. Quem pede *menos movimento* nas preferências do sistema já entra
