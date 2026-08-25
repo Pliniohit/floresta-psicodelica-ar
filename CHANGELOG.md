@@ -15,6 +15,49 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.23.0 — Universo Encantado, e a trilha entrou
+
+### O nome
+
+"Floresta Psicodélica" descrevia o primeiro protótipo: uma mata, low poly,
+saturada. Já não é isso — são sete cenários encadeados por uma borboleta, tudo
+em nuvens de partículas, e o extremo saturado virou um modo opcional. O projeto
+passou a se chamar **Universo Encantado**, e o cogumelo do ícone deu lugar à
+borboleta, que é quem conduz a experiência.
+
+O endereço publicado **não muda**: continua em
+`pliniohit.github.io/floresta-psicodelica-ar/`. Renomear o repositório
+quebraria o link que já está compartilhado.
+
+### A trilha
+
+"Birth of the Mbira" entrou no lugar do drone gerado — que não sumiu: recua
+para um leito quase inaudível e continua sustentando a cena.
+
+**O laço foi montado, não só cortado.** O original tinha 0,94 s de silêncio no
+começo e 0,51 s no fim: 1,45 s de ar parado a cada volta. O silêncio saiu, e os
+três segundos finais foram sobrepostos aos três iniciais em fusão cruzada — a
+cauda da volta anterior ainda soa enquanto a próxima entra, e a emenda deixa de
+existir.
+
+**Opus antes de mp3, e não por tamanho.** O mp3 não fecha laço: o formato guarda
+um atraso de codificação e um enchimento no fim que o decodificador entrega
+junto com o áudio, e são alguns milissegundos de silêncio colados nas duas
+pontas. Em música ambiente de quatro minutos, isso é um soluço audível a cada
+volta. O Opus registra no contêiner quantas amostras descartar. O mp3 fica como
+reserva para quem não decodifica Opus.
+
+### Dois bugs no caminho
+
+O `fetch` da trilha usava `cache: 'force-cache'`, que devolve o que estiver
+guardado **sem revalidar**. Para quem tivesse aberto o site antes de a trilha
+existir, o que estava guardado era um 404 — e a busca continuava "falhando"
+contra um arquivo que já estava no servidor. Só um cache limpo resolveria.
+Agora é cache comum, que pergunta se mudou.
+
+E o servidor de desenvolvimento não tinha `.mp3`, `.ogg` nem `.wav` na tabela de
+tipos, então servia áudio como fluxo de bytes anônimo.
+
 ## v0.22.1 — Borboletas coloridas, partículas pequenas
 
 Elas estavam brancas, e a causa era de escala.

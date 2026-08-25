@@ -32,6 +32,9 @@ const MIME = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
 };
 
 /** IPv4 de todas as interfaces não-internas — é por um destes que o Quest entra. */
@@ -104,7 +107,7 @@ if (PLAIN) {
 const scheme = PLAIN ? 'http' : 'https';
 server.listen(PORT, '0.0.0.0', () => {
   const ips = lanAddresses();
-  console.log('\n  🍄  Floresta Psicodélica AR\n');
+  console.log('\n  🦋  Universo Encantado\n');
   console.log(`      neste Mac   ${scheme}://localhost:${PORT}`);
   for (const ip of ips) console.log(`      no Quest 3  ${scheme}://${ip}:${PORT}`);
   if (PLAIN) {

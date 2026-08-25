@@ -1,13 +1,18 @@
-# 🍄 Floresta Psicodélica AR
+# 🦋 Universo Encantado
 
-Floresta low poly com texturas animadas em **realidade aumentada com passthrough**
-para **Meta Quest 3**, feita em WebXR + Three.js. Abre direto no navegador do
-headset — não precisa instalar nada, nem sideload, nem Unity.
+Sete cenários em nuvens de partículas, em **realidade aumentada com
+passthrough** para **Meta Quest 3**, feitos em WebXR + Three.js. Abre direto no
+navegador do headset — não precisa instalar nada, nem sideload, nem Unity.
 
-A floresta **cresce dentro do seu cômodo mapeado** e os troncos são espaçados
-para você **caminhar entre eles**. As copas ficam acima de 2,1 m e se cruzam por
-cima da sua cabeça: é essa combinação — chão livre, dossel fechado — que faz
-parecer floresta de verdade em vez de um cenário que você observa de fora.
+Tudo **cresce dentro do seu cômodo mapeado**, e o que encadeia um cenário no
+seguinte é a **borboleta que sai do casulo**: ela sobe deixando rastro, o mundo
+se dissolve atrás dela e o próximo se monta em volta. Do outro lado do teto o
+céu é inteiramente virtual — é por ele que se vê a copa das árvores, os
+planetas gigantes e as estrelas cadentes.
+
+A vegetação é espaçada para você **caminhar entre ela**, e as copas se cruzam
+acima de 2,1 m: é essa combinação — chão livre, dossel fechado — que faz
+parecer mata de verdade em vez de um cenário que você observa de fora.
 
 **Nenhuma imagem é carregada.** Todas as "texturas" são geradas por shader a cada
 frame: ruído de valor 3D combinado com paletas de cosseno. É por isso que o app

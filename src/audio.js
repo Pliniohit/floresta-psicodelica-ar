@@ -1,8 +1,19 @@
 /**
  * Onde a trilha mora. Se o arquivo existir, ele é A trilha; se não existir,
  * o drone gerado continua sendo. O primeiro que carregar ganha.
+ *
+ * O OPUS VEM PRIMEIRO, e não por tamanho.
+ *
+ * A trilha toca em laço, e mp3 não fecha laço: o formato guarda um atraso de
+ * codificação e um enchimento no fim que o decodificador entrega junto com o
+ * áudio. São alguns milissegundos de silêncio grudados nas duas pontas, e em
+ * quatro minutos de música ambiente isso vira um soluço audível a cada volta.
+ * O Opus carrega no contêiner quantas amostras descartar, e o navegador
+ * devolve o buffer exato — o laço fecha sem costura.
+ *
+ * O mp3 continua na lista como reserva para quem não decodifica Opus.
  */
-const TRILHA = ['assets/trilha.mp3'];
+const TRILHA = ['assets/trilha.ogg', 'assets/trilha.mp3'];
 
 /**
  * Som da experiência.
@@ -106,7 +117,15 @@ export class Ambience {
     for (const url of caminhos) {
       let buf;
       try {
-        const r = await fetch(url, { cache: 'force-cache' });
+        // Cache normal, e não 'force-cache'.
+        //
+        // 'force-cache' devolve o que estiver guardado sem revalidar — e o
+        // que estava guardado, para quem abriu o site antes de a trilha
+        // existir, era um 404. A busca "falhava" contra um arquivo que já
+        // estava no servidor, e a única saída era limpar o cache do
+        // navegador. A trilha é grande, mas é um arquivo só e imutável: o
+        // cache comum já a guarda, e ainda pergunta se mudou.
+        const r = await fetch(url);
         if (!r.ok) continue;
         buf = await ctx.decodeAudioData(await r.arrayBuffer());
       } catch {

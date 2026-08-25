@@ -1,7 +1,7 @@
 {
   "name": "floresta-psicodelica-ar",
-  "version": "0.22.1",
-  "description": "Floresta psicodélica low poly com texturas animadas por shader, em realidade aumentada para Meta Quest 3 (WebXR).",
+  "version": "0.23.0",
+  "description": "Universo Encantado: sete cenários em nuvens de partículas, encadeados por uma borboleta, em realidade aumentada para Meta Quest 3 (WebXR).",
   "type": "module",
   "private": true,
   "scripts": {
