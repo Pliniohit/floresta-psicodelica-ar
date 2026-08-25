@@ -17,6 +17,23 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.14.0 — Plantio destravado, planetas parados e buracos negros
 
+**O plantio travava o jogo inteiro.** "Palma para cima" dependia do sinal de um
+produto vetorial que varia com a lateralidade e que eu nunca pude conferir em
+hardware; invertido, a semente nunca nascia. Agora o gesto é **abrir a mão**,
+medido pela extensão dos dedos sobre o tamanho da palma — adimensional e sem
+orientação. Vale para as duas mãos. A pinça também passou a priorizar planta ao
+alcance sobre semente.
+
+**Planetas** pararam de seguir a cabeça e ficaram sólidos. O campo de estrelas
+em `Points` saiu: pontos de um pixel serrilham a cada movimento, e eram eles que
+faziam o espaço piscar.
+
+**O ambiente cede à passagem**: a vegetação deita onde você pisa e levanta
+depois.
+
+**Pegar de longe** pelo raio do controle, e **buracos negros** nas paredes,
+visíveis só no espaço.
+
 ## v0.13.0 — Asas à deriva e versionamento
 
 Asas de 1,7–2,5 Hz para 0,62–0,92 Hz, planando ~45% do tempo, curso de -8° a
