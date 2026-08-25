@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.16.0 — Teto aberto, árvore de galhos com frutos, e lugar para a trilha
+
 ## v0.15.0 — O cômodo veste cada mundo, e tudo se alcança de longe
 
 ### Sentado, deitado, de pé
