@@ -17,6 +17,66 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.19.0 — Aquarela como interruptor, e o céu começa no teto
 
+### Sair do low poly não é acrescentar triângulo
+
+A cena tem 13 mil triângulos e o Quest 3 aguenta ordens de magnitude mais.
+O orçamento sobra. O que faz ler como low poly é a normal **facetada** — o
+`weld()` produz geometria sem índice de propósito, para que cada face tenha a
+sua. E o que faz a referência ler como pintura é o comportamento do pigmento,
+que quantidade de geometria nenhuma produz.
+
+Então virou um interruptor, na tecla `A`, com as três marcas da aquarela:
+
+- **Lavada** — o valor se agrupa em poucos patamares, com a fronteira mordida
+  pelo grão, porque cada demão é uma passagem de pincel
+- **Borda molhada** — o pigmento migra para a beirada da poça enquanto seca e
+  a borda fica *mais escura* que o meio. É o contrário do que a computação
+  gráfica faz sozinha, e é a assinatura da técnica
+- **Granulação** — o pigmento assenta nos vales do papel
+
+Mais contorno a bico de pena, pelo mesmo termo de raspão apertado com expoente
+alto — e não por detecção de borda em pós-processamento, que em estéreo custa
+dobrado.
+
+### Duas tentativas erradas, e as duas valem registro
+
+A **primeira** aplicava a luz duas vezes: o material já iluminava antes de
+chamar, e a função refazia a conta. Junto com isso, deixava a lavada *levantar*
+valor até 1,22× — e aquarela é subtrativa, o papel é o branco. Com o `filmic`
+logo adiante comprimindo o que passa de um, a cena inteira convergiu para o
+mesmo bege.
+
+A **segunda** suavizava a normal até o fim. As formas viraram seixos de argila
+e perderam a legibilidade que o low poly tinha.
+
+### O achado
+
+A face plana de um low poly **já é** uma lavada chapada. A referência é lavada
+com contorno escuro — o que está mais perto do facetado do que do liso.
+
+Então a normal quase não suaviza (22%), e quem carrega a leitura de pintura é
+a tinta e o papel. A normal lisa continua guardada num segundo atributo, ao
+lado da facetada, calculada em tempo de construção: dá para variar a dose sem
+refazer malha nenhuma.
+
+### O grão é ancorado em mundo, e isso é conforto
+
+Quase todo shader de aquarela ancora o grão na **tela**. Em estéreo, isso faz
+cada olho receber um grão diferente sobre a mesma superfície; o cérebro não
+funde as duas imagens e o resultado é rivalidade binocular — desconforto real,
+do tipo que faz tirar o aparelho da cabeça. Ancorado no objeto, os dois olhos
+veem o mesmo grão no mesmo lugar.
+
+### O céu começa no teto
+
+Com o oclusor ativo, o céu deixou de ter desvanecimento angular. Ele é opaco em
+**toda** direção, e quem o recorta é a sala: parede e chão escrevem
+profundidade e o escondem, o teto não escreve e o deixa passar.
+
+Do teto para cima, 100% virtual. Do teto para baixo, a sua sala. Sem oclusor
+não há o que recorte, e só nesse caso ele volta a abrir por ângulo.
+
+
 ## v0.18.0 — A jornada: sete cenários em cadeia
 
 Esta versão nasceu de uma leitura: os 5.773 quadros de *Odada*, analisados um
