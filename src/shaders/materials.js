@@ -1628,3 +1628,113 @@ export const fishMaterial = make('peixes', {
     }
   `,
 });
+
+// ---------------------------------------------------------------------------
+// VAGA-LUMES — o campo de partículas que substituiu os orbes.
+//
+// Os orbes eram icosaedros sólidos de vinte faces pairando acima da cabeça:
+// poliedro flutuando não lê como bicho, lê como geometria esquecida no ar.
+// Um vaga-lume é um PONTO de luz, e um ponto custa a vigésima parte.
+//
+// Tudo acontece no vertex shader a partir da semente: a deriva, o tamanho, a
+// fase do pisca. O JavaScript escreve as posições de origem uma vez e nunca
+// mais toca — um campo de setecentos custa uma chamada de desenho.
+// ---------------------------------------------------------------------------
+export const fireflyFieldMaterial = make('campo-de-vagalumes', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  uniforms: { uSize: { value: 42.0 } },
+  vert: /* glsl */ `
+    attribute float aSeed;
+    uniform float uSize;
+
+    void main(){
+      vSeed = aSeed;
+      float s = aSeed * 6.28318;
+
+      // Deriva de três senóides sem razão simples entre as frequências: o
+      // padrão leva minutos para se repetir, então nenhum deles anda em
+      // círculo visível.
+      vec3 p = position;
+      p.x += sin(uTime * 0.110 + s) * 0.42 + sin(uTime * 0.047 + s * 2.3) * 0.24;
+      p.z += cos(uTime * 0.093 + s * 1.7) * 0.40 + cos(uTime * 0.061 + s) * 0.21;
+      p.y += sin(uTime * 0.071 + s * 3.1) * 0.28;
+
+      vec4 world = modelMatrix * vec4(p, 1.0);
+      vWorld = world.xyz;
+      vLocal = p;
+      vNormalW = vec3(0.0, 1.0, 0.0);
+      vec4 mv = viewMatrix * world;
+      vFade = clamp(1.0 - (-mv.z - 7.0) / 11.0, 0.0, 1.0);
+      gl_PointSize = uSize * (0.55 + aSeed * 0.85) / max(-mv.z, 0.30);
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      if (d > 0.25) discard;
+
+      // Núcleo duro dentro de halo macio. Só o halo dá borrão de algodão; só
+      // o núcleo dá pixel duro. É a soma dos dois que lê como luz pequena.
+      float k = 1.0 - d * 4.0;
+      float nucleo = pow(k, 6.0);
+      float halo = pow(k, 1.6);
+
+      // Pisca devagar, cada um no seu tempo. No mais rápido dá 0,21 Hz —
+      // muito abaixo da faixa de 3 a 30 Hz que dispara crise em epilepsia
+      // fotossensível — e ainda passa pelo amortecedor global.
+      float fase = uTime * (0.10 + fract(vSeed * 3.3) * 0.11) + vSeed * 20.0;
+      float acende = damp(pow(sin(fase) * 0.5 + 0.5, 3.0), 0.42);
+
+      // E acendem quando você chega perto, como o resto da mata.
+      float brilho = (0.22 + acende * 0.95 + presenca(vWorld) * 0.85) * vFade;
+      if (brilho <= 0.004) discard;
+
+      vec3 col = bioHue(vSeed * 0.7) * (halo * 0.50 + nucleo * 1.7);
+      gl_FragColor = vec4(col * brilho * (0.55 + uGlow), 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// CONSTELAÇÃO — pontos, não pedras.
+//
+// As estrelas eram icosaedros sólidos de raio 1 numa cúpula de escala 9: no
+// céu isso não lê como estrela, lê como pedra flutuando. Estrela é ponto.
+// ---------------------------------------------------------------------------
+export const starPointMaterial = make('estrelas-da-constelacao', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  uniforms: { uSize: { value: 210.0 } },
+  vert: /* glsl */ `
+    attribute float aSeed;
+    uniform float uSize;
+    void main(){
+      vSeed = aSeed;
+      vec4 world = modelMatrix * vec4(position, 1.0);
+      vWorld = world.xyz; vLocal = position; vNormalW = vec3(0.0, 1.0, 0.0);
+      vec4 mv = viewMatrix * world;
+      vFade = 1.0;
+      gl_PointSize = uSize * (0.7 + aSeed * 0.6) / max(-mv.z, 1.0);
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      if (d > 0.25) discard;
+      float k = 1.0 - d * 4.0;
+      // Núcleo pequeno e halo largo: é o que dá o "brilho" de estrela sem
+      // precisar de nenhuma cruz de difração desenhada.
+      float luz = pow(k, 7.0) * 1.8 + pow(k, 1.4) * 0.35;
+      // Cintila devagar, cada uma no seu tempo, e amortecida.
+      float cintila = damp(0.72 + 0.28 * sin(uTime * 0.22 + vSeed * 31.0), 0.80);
+      gl_FragColor = vec4(bioHue(0.08 + vSeed * 0.2) * luz * cintila, 1.0);
+    }
+  `,
+});

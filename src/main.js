@@ -12,7 +12,7 @@ import { MagicWindow } from './magicwindow.js';
 import { RoomMesh } from './occlusion.js';
 import { Sky } from './sky.js';
 import { skyMaterial, scanMaterial, capMaterial } from './shaders/materials.js';
-import { Butterflies, Fireflies, Cardume } from './creatures.js';
+import { Butterflies, Fireflies, Cardume, Pirilampos } from './creatures.js';
 import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
@@ -89,6 +89,11 @@ const butterflies = new Butterflies(12);
 // Debaixo d'água não voa borboleta. O cardume ocupa o mesmo lugar na cena e
 // nunca aparece junto com elas — é um ou outro, conforme o cenário.
 const cardume = new Cardume(18);
+
+// O campo de vaga-lumes: setecentos pontos, uma chamada de desenho. Ocupou o
+// lugar dos orbes, que eram poliedros sólidos flutuando sem explicação.
+const pirilampos = new Pirilampos(700);
+scene.add(pirilampos);
 butterflies.visible = false;
 scene.add(butterflies);
 scene.add(cardume);
@@ -392,6 +397,7 @@ function commitRoom() {
   const raioSala = Math.sqrt(room.area / Math.PI);
   butterflies.fitTo(raioSala);
   cardume.fitTo(raioSala);
+  pirilampos.fitTo(forest.footprint, alturaTeto);
   auraFireflies.visible = true;
   bodyGrowth.visible = true;
   bodyGrowth.setBlooming(state.bloomOn);
@@ -506,6 +512,8 @@ function montarCena(i) {
   state.intro = 0;
 
   tide.setNivel(c.lamina.altura);
+  // A densidade que era dos orbes agora rege o campo de vaga-lumes.
+  pirilampos.setDensidade(c.populacao.orbe ?? 1);
   for (const p of passos) p.z = 0;   // cenário novo, chão intacto
   _ultimoPasso.set(1e9, 0, 1e9);
   ping(1);
@@ -1644,6 +1652,7 @@ detect().then((res) => {
 window.floresta = {
   // cena
   forest, room, roomMesh, sky, constelacao, space, emergence, buracos, shell, tide,
+  pirilampos, cardume,
   butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds,
   hands, wristMenu, magic,
   // estado
@@ -1667,6 +1676,7 @@ window.addEventListener('beforeunload', () => {
   emergence.dispose();
   shell.dispose();
   tide.dispose();
+  pirilampos.dispose();
   buracos.dispose();
   hands.dispose();
   wristMenu.dispose();

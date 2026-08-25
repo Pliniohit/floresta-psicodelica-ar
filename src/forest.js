@@ -1,6 +1,6 @@
 import {
   Group, InstancedMesh, Mesh, Points, BufferGeometry, BufferAttribute,
-  Shape, ShapeGeometry, IcosahedronGeometry, Matrix4, Vector2, Vector3,
+  Shape, ShapeGeometry, Matrix4, Vector2, Vector3,
   Quaternion,
 } from '../vendor/three/three.module.min.js';
 import * as G from './geometry.js';
@@ -168,10 +168,10 @@ export class Forest extends Group {
     this.cocoons = new InstanceSet([cocoonMesh, haloMesh], CAPACITY.cocoon);
     this.cocoonSpots = [];   // posições locais, para detectar o toque
 
-    const orbMesh = new InstancedMesh(new IcosahedronGeometry(0.05, 0), M.orbMaterial, CAPACITY.orb);
-    orbMesh.renderOrder = 4;
-    this.add(orbMesh);
-    this.orbs = new InstanceSet([orbMesh], CAPACITY.orb);
+// Os orbes — icosaedros sólidos pairando acima da cabeça — saíram daqui.
+    // Poliedro flutuando não lê como bicho, lê como geometria esquecida no ar.
+    // Quem ocupa aquele espaço agora é o campo de vaga-lumes, em creatures.js,
+    // que é feito de PONTOS e cabe numa chamada de desenho só.
 
     // Casca de realce mostrada em volta do objeto que a mão vai pegar.
     this.highlights = {
@@ -344,7 +344,7 @@ export class Forest extends Group {
     this.seedValue = seedValue;
     this.growing.length = 0;
     for (const sp of this.species) sp.set.clear();
-    for (const set of [this.mushrooms, this.crystals, this.grass, this.orbs,
+    for (const set of [this.mushrooms, this.crystals, this.grass,
       this.ferns, this.reeds, this.shrubs, this.flowers, this.cocoons]) set.clear();
     this.cocoonSpots.length = 0;
 
@@ -372,7 +372,7 @@ export class Forest extends Group {
     this.seedValue = seedValue;
     this.growing.length = 0;
     for (const sp of this.species) sp.set.clear();
-    this.mushrooms.clear(); this.crystals.clear(); this.grass.clear(); this.orbs.clear();
+    this.mushrooms.clear(); this.crystals.clear(); this.grass.clear();
     this.ferns.clear(); this.reeds.clear(); this.shrubs.clear(); this.flowers.clear();
     this.cocoons.clear(); this.cocoonSpots.length = 0;
 
@@ -497,20 +497,7 @@ export class Forest extends Group {
 
     this.#colonize(r);
 
-    // Orbes: pairam acima da cabeça, sem restrição de piso.
-    const orbCount = n(PER_M2.orb, CAPACITY.orb, 'orbe');
-    for (let i = 0, guard = 0; i < orbCount && guard < orbCount * 12; guard++) {
-      const x = b.minX + r() * (b.maxX - b.minX);
-      const z = b.minZ + r() * (b.maxZ - b.minZ);
-      if (!pointInPolygon(x, z, this.footprint)) continue;
-      const s = 0.5 + r() * 1.4;
-      _p.set(x, 1.7 + r() * 1.6, z);
-      _q.identity();
-      _s.set(s, s, s);
-      this.orbs.add(_p, _q, _s);
-      i++;
-    }
-    this.orbs.flush();
+
 
     return this;
   }
@@ -987,7 +974,7 @@ export class Forest extends Group {
   dispose() {
     for (const sp of this.species) sp.set.dispose();
     this.mushrooms.dispose(); this.crystals.dispose();
-    this.grass.dispose(); this.orbs.dispose();
+    this.grass.dispose();
     this.ferns.dispose(); this.reeds.dispose();
     this.shrubs.dispose(); this.flowers.dispose(); this.cocoons.dispose();
     this.ground?.geometry.dispose();

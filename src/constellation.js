@@ -1,8 +1,8 @@
 import {
-  Group, Mesh, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
-  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
+  Group, Mesh, BufferGeometry,
+  BufferAttribute, Matrix4, Vector3, Quaternion, Points,
 } from '../vendor/three/three.module.min.js';
-import { skyLifeMaterial } from './shaders/materials.js';
+import { skyLifeMaterial, starPointMaterial } from './shaders/materials.js';
 
 /**
  * Uma constelação desenhada no céu.
@@ -71,22 +71,33 @@ export class Constellation extends Group {
     // Estrelas
     // As estrelas não se movem, mas o material espera aSeed quando
     // instanciado — sem o atributo, todas sairiam com a mesma cor.
-    const geoEstrela = new IcosahedronGeometry(1, 0);
+    // PONTOS, e não icosaedros. Um sólido de raio 1 numa cúpula de escala 9
+    // não lê como estrela: lê como pedra flutuando no céu, que foi
+    // exatamente a queixa. Estrela é ponto de luz.
+    const posEstrela = new Float32Array(this.stars3D.length * 3);
+    for (let i = 0; i < this.stars3D.length; i++) {
+      posEstrela[i * 3] = this.stars3D[i].x;
+      posEstrela[i * 3 + 1] = this.stars3D[i].y;
+      posEstrela[i * 3 + 2] = this.stars3D[i].z;
+    }
+    const geoEstrela = new BufferGeometry();
+    geoEstrela.setAttribute('position', new BufferAttribute(posEstrela, 3));
     const sementes = new Float32Array(this.stars3D.length);
     for (let i = 0; i < sementes.length; i++) sementes[i] = (i * 0.6180339887) % 1;
-    geoEstrela.setAttribute('aSeed', new InstancedBufferAttribute(sementes, 1));
-
-    this.stars = new InstancedMesh(geoEstrela, skyLifeMaterial, this.stars3D.length);
+    geoEstrela.setAttribute('aSeed', new BufferAttribute(sementes, 1));
+    this.stars = new Points(geoEstrela, starPointMaterial);
     this.stars.frustumCulled = false;
     this.stars.renderOrder = -1998;   // com o resto do céu, no fundo de tudo
     this.add(this.stars);
 
-    this.sizes = this.stars3D.map((_, i) => (shape.edges.some((e) => e.includes(i)) ? 0.26 : 0.17));
-    for (let i = 0; i < this.stars3D.length; i++) {
-      _m.compose(this.stars3D[i], _q.identity(), _s.setScalar(this.sizes[i]));
-      this.stars.setMatrixAt(i, _m);
+    // As posições já foram escritas no atributo; um Points não tem matriz por
+    // instância para compor. Quem era vértice de aresta ganha um ponto maior,
+    // e isso viaja pela própria semente.
+    for (let i = 0; i < sementes.length; i++) {
+      if (shape.edges.some((e) => e.includes(i))) sementes[i] = 0.65 + sementes[i] * 0.35;
+      else sementes[i] *= 0.45;
     }
-    this.stars.instanceMatrix.needsUpdate = true;
+    geoEstrela.attributes.aSeed.needsUpdate = true;
 
     // Linhas: fitas finas, porque espessura de linha é travada em 1 px na
     // maioria das plataformas e 1 px some a 34 m de distância.

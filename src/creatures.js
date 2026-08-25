@@ -1,8 +1,10 @@
 import {
   Group, InstancedMesh, InstancedBufferAttribute, BufferGeometry,
-  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion,
+  BufferAttribute, IcosahedronGeometry, Matrix4, Vector3, Quaternion, Points,
 } from '../vendor/three/three.module.min.js';
-import { butterflyMaterial, fireflyMaterial, fishMaterial } from './shaders/materials.js';
+import {
+  butterflyMaterial, fireflyMaterial, fishMaterial, fireflyFieldMaterial,
+} from './shaders/materials.js';
 import { rng } from './forest.js';
 
 const _m = new Matrix4();
@@ -391,4 +393,74 @@ export class Cardume extends Group {
   }
 
   dispose() { this.mesh.geometry.dispose(); this.clear(); }
+}
+
+
+/**
+ * CAMPO DE VAGA-LUMES.
+ *
+ * Substitui os orbes, que eram icosaedros sólidos pairando acima da cabeça —
+ * poliedro flutuando não lê como bicho, lê como geometria esquecida no ar.
+ *
+ * Aqui cada vaga-lume é um ponto, e toda a vida dele (deriva, tamanho, fase do
+ * pisca) acontece no shader a partir da semente. O JavaScript escreve as
+ * posições de origem uma vez, quando o cômodo é lido, e nunca mais toca: o
+ * campo inteiro custa UMA chamada de desenho, e por isso pode ser grande.
+ */
+export class Pirilampos extends Group {
+  constructor(count = 700) {
+    super();
+    this.name = 'campo-de-vagalumes';
+    this.frustumCulled = false;
+    this.count = count;
+
+    this.pos = new Float32Array(count * 3);
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(this.pos, 3));
+    const sementes = new Float32Array(count);
+    const r = rng(4409);
+    for (let i = 0; i < count; i++) sementes[i] = r();
+    geo.setAttribute('aSeed', new BufferAttribute(sementes, 1));
+
+    this.points = new Points(geo, fireflyFieldMaterial);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 7;
+    this.add(this.points);
+  }
+
+  /**
+   * Espalha o campo pelo volume do cômodo lido.
+   *
+   * A altura tem viés para BAIXO (raiz quadrada do sorteio): vaga-lume de
+   * verdade se concentra rente ao mato, e distribuir uniforme até o teto dava
+   * um chuvisco parado no alto, sem relação com a mata embaixo.
+   */
+  fitTo(footprint, alturaTeto = 2.6) {
+    if (!footprint?.length) return this;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of footprint) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minZ = Math.min(minZ, p.y); maxZ = Math.max(maxZ, p.y);
+    }
+    // Uma folga para fora da pegada: eles não param na linha da parede.
+    const folga = 0.5;
+    const r = rng(77 + Math.round((maxX - minX) * 100));
+    for (let i = 0; i < this.count; i++) {
+      this.pos[i * 3] = minX - folga + r() * (maxX - minX + folga * 2);
+      // Potência > 1 empurra o sorteio para BAIXO. A raiz quadrada faz o
+      // contrário — foi o que eu tinha escrito, contra o próprio comentário.
+      this.pos[i * 3 + 1] = 0.12 + Math.pow(r(), 1.8) * Math.max(0.8, alturaTeto - 0.35);
+      this.pos[i * 3 + 2] = minZ - folga + r() * (maxZ - minZ + folga * 2);
+    }
+    this.points.geometry.attributes.position.needsUpdate = true;
+    return this;
+  }
+
+  /** Quantos estão vivos nesta cena. */
+  setDensidade(k) {
+    this.points.geometry.setDrawRange(0, Math.max(0, Math.round(this.count * k)));
+    return this;
+  }
+
+  dispose() { this.points.geometry.dispose(); this.clear(); }
 }
