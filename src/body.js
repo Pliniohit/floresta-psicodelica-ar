@@ -1,6 +1,7 @@
 import {
-  Group, InstancedMesh, Matrix4, Vector3, Quaternion,
+  Group, Matrix4, Vector3, Quaternion,
 } from '../vendor/three/three.module.min.js';
+import { NuvemDePontos } from './nuvem.js';
 import { rng } from './forest.js';
 
 /**
@@ -143,8 +144,14 @@ export class BodyGrowth extends Group {
     this.name = 'floracao-do-corpo';
     this.frustumCulled = false;
 
-    this.mesh = new InstancedMesh(geometry, material, count);
-    this.mesh.frustumCulled = false;
+    // NUVEM, e não malha. Um cogumelo sólido brotando do próprio ombro é
+    // uma coisa estranha de se ver em passthrough: ele oclui o seu braço de
+    // verdade e vira um objeto grudado. Em pontos ele lê como luz saindo do
+    // corpo, que é o que a cena sempre quis dizer.
+    //
+    // A nuvem finge ser InstancedMesh, então o cálculo de onde cada broto
+    // nasce ao longo dos ossos continua igual.
+    this.mesh = new NuvemDePontos(geometry, material, count, 240, 909);
     this.mesh.renderOrder = 7;
     this.mesh.count = 0;
     this.add(this.mesh);

@@ -334,3 +334,69 @@ export function reticleRing(radius = 0.2) {
   g.computeVertexNormals();
   return g;
 }
+
+/**
+ * AMOSTRA PONTOS NA SUPERFÍCIE de uma geometria, ponderando por ÁREA.
+ *
+ * É o coração do estudo de nuvem de pontos. A ponderação por área é a parte
+ * que não dá para pular: sorteando triângulos por igual, a nuvem acumula
+ * pontos onde a malha é mais detalhada — a copa de uma árvore fica densa nos
+ * cantinhos e rala nas faces grandes, e a silhueta se perde. Ponderando pela
+ * área, a densidade fica uniforme na SUPERFÍCIE, que é o que faz a nuvem ter
+ * a forma do objeto.
+ *
+ * O sorteio dentro do triângulo usa a raiz do primeiro número aleatório. Sem
+ * a raiz, as coordenadas baricêntricas se concentram num canto: é o erro
+ * clássico, e produz nuvem com veios.
+ *
+ * @param {THREE.BufferGeometry} geo  malha de origem (não indexada ou não)
+ * @param {number} quantos            quantos pontos gerar
+ * @param {() => number} r            fonte de aleatoriedade, para ser repetível
+ * @returns {Float32Array} posições, em espaço de objeto
+ */
+export function samplePoints(geo, quantos, r = Math.random) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const pos = g.attributes.position.array;
+  const nTri = pos.length / 9;
+  if (nTri < 1 || quantos < 1) return new Float32Array(0);
+
+  // Soma acumulada das áreas: sortear um número nela e procurar por busca
+  // binária dá exatamente a probabilidade proporcional à área.
+  const acum = new Float64Array(nTri);
+  let total = 0;
+  for (let t = 0; t < nTri; t++) {
+    const o = t * 9;
+    const ax = pos[o], ay = pos[o + 1], az = pos[o + 2];
+    const bx = pos[o + 3] - ax, by = pos[o + 4] - ay, bz = pos[o + 5] - az;
+    const cx = pos[o + 6] - ax, cy = pos[o + 7] - ay, cz = pos[o + 8] - az;
+    // Metade da norma do produto vetorial é a área do triângulo.
+    const nx = by * cz - bz * cy;
+    const ny = bz * cx - bx * cz;
+    const nz = bx * cy - by * cx;
+    total += Math.hypot(nx, ny, nz) * 0.5;
+    acum[t] = total;
+  }
+  if (total <= 0) return new Float32Array(0);
+
+  const out = new Float32Array(quantos * 3);
+  for (let i = 0; i < quantos; i++) {
+    const alvo = r() * total;
+    let lo = 0, hi = nTri - 1;
+    while (lo < hi) {
+      const meio = (lo + hi) >> 1;
+      if (acum[meio] < alvo) lo = meio + 1; else hi = meio;
+    }
+    const o = lo * 9;
+
+    // Baricêntricas uniformes. A raiz é o que impede a concentração no canto.
+    const s = Math.sqrt(r());
+    const t2 = r();
+    const u = 1 - s, v = s * (1 - t2), w = s * t2;
+
+    out[i * 3] = pos[o] * u + pos[o + 3] * v + pos[o + 6] * w;
+    out[i * 3 + 1] = pos[o + 1] * u + pos[o + 4] * v + pos[o + 7] * w;
+    out[i * 3 + 2] = pos[o + 2] * u + pos[o + 5] * v + pos[o + 8] * w;
+  }
+  if (g !== geo) g.dispose();
+  return out;
+}

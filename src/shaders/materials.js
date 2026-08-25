@@ -1738,3 +1738,220 @@ export const starPointMaterial = make('estrelas-da-constelacao', {
     }
   `,
 });
+
+// ---------------------------------------------------------------------------
+// NUVEM — a vegetação feita de pontos.
+//
+// Compõe a transformação da instância por conta própria, porque o prelúdio do
+// projeto só sabe ler `instanceMatrix`, que é coisa de InstancedMesh. Aqui a
+// transformação vem em quatro atributos (posição, giro, escala, semente), e
+// isso custa dez floats por planta no lugar de dezesseis.
+//
+// A COR sai da família, escolhida por uniform: uma nuvem de casca puxa as
+// cores de casca da cena, uma de folha puxa as de folha. Assim o sistema de
+// cenários inteiro continua valendo — trocar de mundo repinta a nuvem junto.
+// ---------------------------------------------------------------------------
+export const nuvemMaterial = make('nuvem', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  uniforms: {
+    uTamanho: { value: 26.0 },
+    uFamilia: { value: 1 },     // 0 casca, 1 folha, 2 chapéu, 3 pétala, 4 fruta
+    uRigidez: { value: 1.0 },   // o quanto esta planta cede ao vento
+  },
+  vert: /* glsl */ `
+    attribute vec3 iPos;
+    attribute vec4 iQuat;
+    attribute vec3 iEsc;
+    attribute float iSemente;
+    attribute float aPonto;
+    uniform float uTamanho;
+    uniform float uRigidez;
+    varying float vPonto;
+
+    /** Gira um vetor por quaternion, sem montar matriz. */
+    vec3 rotQ(vec4 q, vec3 v){
+      return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+    }
+
+    void main(){
+      vSeed = iSemente;
+      vPonto = aPonto;
+
+      // A planta montada: gabarito escalado, girado, e posto na sua raiz.
+      vec3 local = rotQ(iQuat, position * iEsc) + iPos;
+      vec3 raizMundo = (modelMatrix * vec4(iPos, 1.0)).xyz;
+
+      // Vento e pisada agem sobre a planta já montada, e derivam da raiz em
+      // mundo — é o que mantém todos os pontos de uma planta soldados.
+      local = trample(local, raizMundo);
+      local = sway(local, raizMundo, uRigidez);
+
+      vec4 mundo = modelMatrix * vec4(local, 1.0);
+      vWorld = mundo.xyz;
+      vLocal = local;
+      // Sem malha não há normal; a direção que sai do eixo da planta é a
+      // aproximação honesta, e só serve para dar volume ao brilho.
+      vNormalW = normalize(mat3(modelMatrix) * normalize(local - iPos + vec3(0.0, 0.001, 0.0)));
+
+      vec4 mv = viewMatrix * mundo;
+      vFade = clamp(1.0 - (-mv.z - 6.0) / 10.0, 0.0, 1.0);
+      // O ponto encolhe com a distância como qualquer coisa com tamanho, e
+      // acompanha a escala da própria planta.
+      gl_PointSize = uTamanho * (0.55 + aPonto * 0.75) * max(iEsc.y, 0.05) / max(-mv.z, 0.3);
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uFamilia;
+    varying float vPonto;
+
+    vec3 corDaFamilia(float s){
+      int f = int(uFamilia + 0.5);
+      if (f == 0) return barkColor(s);
+      if (f == 1) return leafColor(s);
+      if (f == 2) return capColor(s);
+      if (f == 3) return petalColor(s);
+      if (f == 4) return fruitColor(s);
+      if (f == 5) return chapeuClaro(s);   // cristal: o tom claro do trio
+      return leafColor(s);
+    }
+
+    void main(){
+      ${FRAG_FADE}
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      if (d > 0.25) discard;
+      float k = 1.0 - d * 4.0;
+      // Núcleo dentro de halo: o mesmo perfil dos vaga-lumes, que é o que
+      // faz um ponto ler como partícula de luz e não como quadrado borrado.
+      float perfil = pow(k, 5.0) * 1.35 + pow(k, 1.5) * 0.40;
+
+      // Cada ponto varia um pouco dentro da mesma planta, senão a nuvem fica
+      // de uma cor só e volta a parecer uma malha pintada.
+      float s = vSeed + vPonto * 0.42;
+      vec3 col = corDaFamilia(s);
+
+      float t = s + uTime * 0.03;
+      col = enchant(col, t, 0.40);
+      col *= 0.55 + 0.60 * wrapLight(vNormalW);
+      // A altura acende: ponta de planta pega mais luz que a base.
+      col += bio(pow(clamp(vLocal.y * 0.55, 0.0, 1.0), 2.0) * 0.8, t + 0.3, 0.9);
+      col += bio(presenca(vWorld), t + 0.15, 1.4);
+
+      float a = perfil * vFade * (0.55 + 0.45 * vPonto);
+      if (a <= 0.004) discard;
+      gl_FragColor = vec4(filmic(col) * a, a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// BORBOLETA EM NUVEM DE PONTOS.
+//
+// A silhueta vem de um modelo 3D assado em coordenadas (ver
+// scripts/assar-nuvem.mjs); a BATIDA é a mesma que levou várias versões para
+// acertar, e ela sobreviveu porque o que a asa precisa saber cabe em dois
+// números por ponto: de que lado do corpo ele está, e o quanto ele está
+// distante da dobradiça. Os dois se leem direto das coordenadas.
+//
+// A diferença para a versão em malha é o EIXO. Na geometria procedural o
+// corpo corria em Y e a asa girava em torno de Y; no modelo assado o corpo
+// corre em Z, então o giro é em torno de Z. Errar isso faz a asa varrer
+// dentro do próprio plano, que foi o defeito da v0.10.
+// ---------------------------------------------------------------------------
+export const butterflyCloudMaterial = make('borboleta-nuvem', {
+  transparent: true,
+  depthWrite: false,
+  blending: AdditiveBlending,
+  uniforms: { uTamanho: { value: 30.0 } },
+  vert: /* glsl */ `
+    attribute vec3 iPos;
+    attribute vec4 iQuat;
+    attribute vec3 iEsc;
+    attribute float iSemente;
+    attribute float aPonto;
+    attribute float aWing;   // -1 esquerda, +1 direita, 0 corpo
+    attribute float aSpan;   // 0 dobradiça .. 1 ponta
+    uniform float uTamanho;
+    varying float vPonto;
+    varying float vSpan;
+
+    vec3 rotQ(vec4 q, vec3 v){
+      return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+    }
+
+    void main(){
+      vSeed = iSemente;
+      vPonto = aPonto;
+      vSpan = aSpan;
+
+      // RAJADA E PLANEIO — o padrão que identifica uma borboleta. Ela bate
+      // algumas vezes fundo, para, e plana.
+      float freq = (2.05 + vSeed * 0.55) * mix(0.55, 1.0, uCalm);
+      float ciclo = fract(uTime / (6.4 + vSeed * 2.6) + vSeed * 3.1);
+      float rajada = smoothstep(0.30, 0.40, ciclo) * (1.0 - smoothstep(0.62, 0.76, ciclo));
+
+      // A ponta chega depois da dobradiça: é o atraso que faz a asa parecer
+      // membrana e não placa.
+      float fase = fract(uTime * freq + vSeed * 7.0 - aSpan * 0.17);
+      float sobe = smoothstep(0.0, 1.0, fase / 0.34);
+      float desce = 1.0 - smoothstep(0.0, 1.0, (fase - 0.34) / 0.66);
+      float batida = fase < 0.34 ? sobe : desce;
+      float planeio = 0.30 + sin(uTime * 0.28 + vSeed * 5.0) * 0.055;
+      float perfil = mix(planeio, batida, rajada);
+
+      float ang = mix(-0.35, 1.45, perfil) * aSpan * abs(aWing) * sign(aWing);
+
+      // Giro em torno de Z, o eixo do CORPO neste modelo.
+      vec3 p = position;
+      float c = cos(ang), sn = sin(ang);
+      float x = p.x, y = p.y;
+      p.x = x * c - y * sn;
+      p.y = x * sn + y * c;
+      // O corpo sobe quando as asas descem.
+      p.y -= (perfil - 0.45) * 0.045 * rajada;
+
+      vec3 local = rotQ(iQuat, p * iEsc) + iPos;
+      vec4 mundo = modelMatrix * vec4(local, 1.0);
+      vWorld = mundo.xyz;
+      vLocal = p;
+      vNormalW = normalize(mat3(modelMatrix) * rotQ(iQuat, vec3(0.0, 1.0, 0.0)));
+      vec4 mv = viewMatrix * mundo;
+      vFade = clamp(1.0 - (-mv.z - 6.0) / 10.0, 0.0, 1.0);
+      gl_PointSize = uTamanho * (0.55 + aPonto * 0.7) * max(iEsc.y, 0.05) / max(-mv.z, 0.25);
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  frag: /* glsl */ `
+    varying float vPonto;
+    varying float vSpan;
+
+    void main(){
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      if (d > 0.25) discard;
+      float k = 1.0 - d * 4.0;
+      float perfil = pow(k, 5.0) * 1.3 + pow(k, 1.5) * 0.4;
+
+      // Três espécies, sorteadas pela borboleta e não pelo ponto: senão cada
+      // ponto de uma mesma asa sairia de uma espécie diferente.
+      float esp = fract(vSeed * 5.9);
+      vec3 monarca = mix(vec3(0.82, 0.34, 0.05), vec3(0.95, 0.58, 0.12), vSpan);
+      vec3 morpho  = mix(vec3(0.10, 0.22, 0.62), vec3(0.32, 0.60, 0.92), vSpan);
+      vec3 branca  = mix(vec3(0.86, 0.84, 0.78), vec3(0.98, 0.97, 0.92), vSpan);
+      vec3 asa = esp < 0.4 ? monarca : (esp < 0.72 ? morpho : branca);
+
+      // A borda escura, que é o que faz a silhueta ler como asa.
+      asa = mix(asa, asa * 0.28, smoothstep(0.74, 1.0, vSpan));
+
+      vec3 col = enchant(asa, vSeed + uTime * 0.04, 0.30);
+      col += bio(vSpan * 0.5 + presenca(vWorld), vSeed + 0.3, 0.9);
+
+      float a = perfil * vFade * (0.6 + 0.4 * vPonto);
+      if (a <= 0.004) discard;
+      gl_FragColor = vec4(filmic(col) * a * 1.4, a);
+    }
+  `,
+});

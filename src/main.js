@@ -11,8 +11,12 @@ import { WristMenu } from './menu.js';
 import { MagicWindow } from './magicwindow.js';
 import { RoomMesh } from './occlusion.js';
 import { Sky } from './sky.js';
-import { skyMaterial, scanMaterial, capMaterial } from './shaders/materials.js';
-import { Butterflies, Fireflies, Cardume, Pirilampos } from './creatures.js';
+import {
+  skyMaterial, scanMaterial, nuvemMaterial, cloneMaterial,
+} from './shaders/materials.js';
+import {
+  Butterflies, Fireflies, Cardume, Pirilampos, criarNuvemDeBorboletas,
+} from './creatures.js';
 import { Body, BodyGrowth } from './body.js';
 import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
@@ -108,7 +112,10 @@ blessedFireflies.visible = false;
 scene.add(blessedFireflies);
 
 const body = new Body();
-const bodyGrowth = new BodyGrowth(forest.geo.cap, capMaterial, 27);
+const bodyGrowth = new BodyGrowth(
+  forest.geo.cap,
+  cloneMaterial(nuvemMaterial, { uFamilia: 2, uRigidez: 0.0, uTamanho: 20 }),
+  27);
 bodyGrowth.visible = false;
 scene.add(bodyGrowth);
 
@@ -130,7 +137,7 @@ scene.add(shell);
 const tide = new Tide();
 scene.add(tide);
 
-const emergence = new Emergence(butterflies.mesh.geometry, butterflyMaterial);
+const emergence = new Emergence(criarNuvemDeBorboletas);
 scene.add(emergence);
 
 const xr = new XRStage(renderer);

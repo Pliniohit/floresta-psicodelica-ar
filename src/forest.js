@@ -5,6 +5,7 @@ import {
 } from '../vendor/three/three.module.min.js';
 import * as G from './geometry.js';
 import * as M from './shaders/materials.js';
+import { NuvemDePontos } from './nuvem.js';
 import {
   pointInPolygon, polygonArea, polygonBounds, polygonCentroid, distanceToEdges,
 } from './room.js';
@@ -114,47 +115,66 @@ export class Forest extends Group {
     this.seedValue = 1;
 
     this.geo = {};
-    // Tronco, copa e frutos: três malhas por espécie, uma lista de
+
+    /**
+     * Cada tipo de planta vira uma NUVEM DE PONTOS amostrada na superfície da
+     * própria malha. A malha continua existindo — ela é a forma de onde os
+     * pontos saem, e é ela que o teste de geometria mede — mas não é mais
+     * desenhada.
+     *
+     * A nuvem finge ser um InstancedMesh, então o InstanceSet e toda a
+     * mecânica de plantar, pegar e carregar não sabem que mudou nada.
+     */
+    const nuvem = (fonte, capacidade, pontos, familia, rigidez, tamanho, semente) => {
+      const mat = M.cloneMaterial(M.nuvemMaterial, {
+        uFamilia: familia, uRigidez: rigidez, uTamanho: tamanho,
+      });
+      const n = new NuvemDePontos(fonte, mat, capacidade, pontos, semente);
+      n.renderOrder = 4;
+      this.add(n);
+      return n;
+    };
+
+    // Tronco, copa e frutos: três nuvens por espécie, uma lista de
     // transformações só. O InstanceSet mantém as três soldadas, e o shader de
     // vento faz o resto — todas derivam o balanço da mesma raiz em mundo.
-    this.species = [G.speciesTower(), G.speciesUmbrella(), G.speciesBranched()].map((sp) => {
-      this.geo.trunk ??= sp.trunk;
-      const trunkMesh = new InstancedMesh(sp.trunk, M.barkMaterial, CAPACITY.tree);
-      const canopyMesh = new InstancedMesh(sp.canopy, M.canopyMaterial, CAPACITY.tree);
-      const fruitMesh = new InstancedMesh(sp.fruit, M.fruitMaterial, CAPACITY.tree);
-      this.add(trunkMesh, canopyMesh, fruitMesh);
-      return { set: new InstanceSet([trunkMesh, canopyMesh, fruitMesh], CAPACITY.tree) };
-    });
+    this.species = [G.speciesTower(), G.speciesUmbrella(), G.speciesBranched()]
+      .map((sp, k) => {
+        this.geo.trunk ??= sp.trunk;
+        return {
+          set: new InstanceSet([
+            nuvem(sp.trunk, CAPACITY.tree, 900, 0, 1.0, 20, 101 + k),
+            nuvem(sp.canopy, CAPACITY.tree, 2200, 1, 1.0, 22, 211 + k),
+            nuvem(sp.fruit, CAPACITY.tree, 260, 4, 1.0, 26, 331 + k),
+          ], CAPACITY.tree),
+        };
+      });
 
     const mush = G.mushroom();
     this.geo.cap = mush.cap;
-    const stemMesh = new InstancedMesh(mush.stem, M.stemMaterial, CAPACITY.mushroom);
-    const capMesh = new InstancedMesh(mush.cap, M.capMaterial, CAPACITY.mushroom);
-    this.add(stemMesh, capMesh);
-    this.mushrooms = new InstanceSet([stemMesh, capMesh], CAPACITY.mushroom);
+    this.mushrooms = new InstanceSet([
+      nuvem(mush.stem, CAPACITY.mushroom, 180, 2, 1.6, 18, 401),
+      nuvem(mush.cap, CAPACITY.mushroom, 520, 2, 1.6, 20, 419),
+    ], CAPACITY.mushroom);
 
     const crystalGeo = G.crystal();
     this.geo.crystal = crystalGeo;
-    const crystalMesh = new InstancedMesh(crystalGeo, M.crystalMaterial, CAPACITY.crystal);
-    crystalMesh.renderOrder = 3;
-    this.add(crystalMesh);
-    this.crystals = new InstanceSet([crystalMesh], CAPACITY.crystal);
+    this.crystals = new InstanceSet([
+      nuvem(crystalGeo, CAPACITY.crystal, 300, 5, 0.4, 20, 503),
+    ], CAPACITY.crystal);
 
-    const grassMesh = new InstancedMesh(G.blade(), M.grassMaterial, CAPACITY.grass);
-    this.add(grassMesh);
-    this.grass = new InstanceSet([grassMesh], CAPACITY.grass);
+    // Capim: poucos pontos por lâmina, porque são milhares de lâminas. Dez
+    // pontos bastam para a lâmina ler como lâmina, e dez mil lâminas ainda
+    // cabem numa chamada de desenho.
+    this.grass = new InstanceSet([
+      nuvem(G.blade(), CAPACITY.grass, 14, 1, 5.0, 15, 601),
+    ], CAPACITY.grass);
 
-    // Sub-bosque: samambaia, junco, arbusto e flor. Cada um é uma malha
-    // instanciada só — quatro draw calls para toda a variedade do chão.
-    const fernMesh = new InstancedMesh(G.fern(), M.grassMaterial, CAPACITY.fern);
-    const reedMesh = new InstancedMesh(G.reed(), M.grassMaterial, CAPACITY.reed);
-    const shrubMesh = new InstancedMesh(G.shrub(), M.canopyMaterial, CAPACITY.shrub);
-    const flowerMesh = new InstancedMesh(G.flower(), M.flowerMaterial, CAPACITY.flower);
-    this.add(fernMesh, reedMesh, shrubMesh, flowerMesh);
-    this.ferns = new InstanceSet([fernMesh], CAPACITY.fern);
-    this.reeds = new InstanceSet([reedMesh], CAPACITY.reed);
-    this.shrubs = new InstanceSet([shrubMesh], CAPACITY.shrub);
-    this.flowers = new InstanceSet([flowerMesh], CAPACITY.flower);
+    // Sub-bosque: samambaia, junco, arbusto e flor.
+    this.ferns = new InstanceSet([nuvem(G.fern(), CAPACITY.fern, 150, 1, 5.0, 16, 701)], CAPACITY.fern);
+    this.reeds = new InstanceSet([nuvem(G.reed(), CAPACITY.reed, 80, 1, 5.0, 16, 719)], CAPACITY.reed);
+    this.shrubs = new InstanceSet([nuvem(G.shrub(), CAPACITY.shrub, 460, 1, 3.0, 19, 733)], CAPACITY.shrub);
+    this.flowers = new InstanceSet([nuvem(G.flower(), CAPACITY.flower, 120, 3, 3.0, 19, 751)], CAPACITY.flower);
 
     // Casulos pendurados nos galhos.
     const cocoonGeo = G.cocoon();

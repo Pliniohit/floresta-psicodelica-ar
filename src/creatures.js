@@ -4,7 +4,10 @@ import {
 } from '../vendor/three/three.module.min.js';
 import {
   butterflyMaterial, fireflyMaterial, fishMaterial, fireflyFieldMaterial,
+  butterflyCloudMaterial,
 } from './shaders/materials.js';
+import { NuvemDePontos } from './nuvem.js';
+import { nuvem as nuvemBorboleta } from './nuvens/borboleta.js';
 import { rng } from './forest.js';
 
 const _m = new Matrix4();
@@ -130,12 +133,8 @@ export class Butterflies extends Group {
     this.name = 'borboletas';
     this.frustumCulled = false;
 
-    const geo = butterflyGeometry();
-    geo.setAttribute('aSeed', seedAttribute(count, 8123));
-    this.mesh = new InstancedMesh(geo, butterflyMaterial, count);
-    this.mesh.frustumCulled = false;
+    this.mesh = criarNuvemDeBorboletas(count, 8123);
     this.mesh.renderOrder = 6;
-    this.mesh.count = 0;
     this.add(this.mesh);
 
     this.count = count;
@@ -463,4 +462,42 @@ export class Pirilampos extends Group {
   }
 
   dispose() { this.points.geometry.dispose(); this.clear(); }
+}
+
+
+/**
+ * A nuvem de borboletas, a partir do modelo assado.
+ *
+ * A batida de asa sobreviveu à troca de malha por pontos porque tudo o que
+ * ela precisa saber cabe em dois números por ponto: de que LADO do corpo ele
+ * está e a que DISTÂNCIA da dobradiça. Os dois se leem direto da coordenada,
+ * sem depender de como a malha foi construída.
+ *
+ * No modelo assado o corpo corre em Z e a envergadura em X — foi o que a
+ * caixa da nuvem disse —, então o lado é o sinal de x e a envergadura é |x|
+ * normalizado.
+ */
+export function criarNuvemDeBorboletas(quantas, semente) {
+  const pts = nuvemBorboleta();
+  const n = pts.length / 3;
+  const aWing = new Float32Array(n);
+  const aSpan = new Float32Array(n);
+
+  // Meia envergadura da nuvem normalizada, para o span chegar a 1 na ponta.
+  let meia = 0;
+  for (let i = 0; i < n; i++) meia = Math.max(meia, Math.abs(pts[i * 3]));
+  meia = meia || 1;
+
+  for (let i = 0; i < n; i++) {
+    const x = pts[i * 3];
+    // Perto da linha do meio é CORPO: não bate, e é isso que impede o tórax
+    // de se partir em dois quando a asa sobe.
+    aWing[i] = Math.abs(x) < meia * 0.06 ? 0 : Math.sign(x);
+    aSpan[i] = Math.min(1, Math.abs(x) / meia);
+  }
+
+  const nuvem = new NuvemDePontos(
+    pts, butterflyCloudMaterial, quantas, 0, semente, { aWing, aSpan });
+  nuvem.count = 0;
+  return nuvem;
 }

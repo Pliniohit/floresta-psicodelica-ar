@@ -1,6 +1,8 @@
-import { Mesh, CylinderGeometry, Vector3, Quaternion, Matrix4 } from '../vendor/three/three.module.min.js';
+import {
+  Mesh, Points, BufferGeometry, BufferAttribute, Vector3, Quaternion, Matrix4,
+} from '../vendor/three/three.module.min.js';
 import * as G from './geometry.js';
-import { reticleMaterial, crystalMaterial } from './shaders/materials.js';
+import { reticleMaterial, starPointMaterial } from './shaders/materials.js';
 
 const _origin = new Vector3();
 const _dir = new Vector3();
@@ -61,10 +63,31 @@ export class Interaction {
 
   /** Feixe fino apontando para -Z, aditivo para brilhar sobre o passthrough. */
   #beam() {
-    const g = new CylinderGeometry(0.0035, 0.0012, 4.0, 5, 1, true);
-    g.rotateX(-Math.PI / 2);
-    g.translate(0, 0, -2.0);
-    const m = new Mesh(g, crystalMaterial);
+    // Feixe em PONTOS, não em cilindro.
+    //
+    // Um cilindro fino a quatro metros vira uma agulha sólida atravessando a
+    // sala — geometria dura no meio de uma cena que agora é toda partícula.
+    // Em pontos ele lê como energia, e ainda rarefaz com a distância: a
+    // densidade cai ao longo do raio, então a origem é firme na mão e a ponta
+    // se dissolve, que é o que diz "aponta para lá" sem cravar uma linha.
+    const N = 130;
+    const pos = new Float32Array(N * 3);
+    const sem = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      // Distribuição enviesada para perto: raiz empurra a densidade para a
+      // origem, que é onde o feixe precisa ser lido como saindo da mão.
+      const t = Math.sqrt(i / N);
+      const ang = i * 2.39996;                       // ângulo áureo: sem faixas
+      const raio = 0.0035 + t * 0.010;
+      pos[i * 3] = Math.cos(ang) * raio;
+      pos[i * 3 + 1] = Math.sin(ang) * raio;
+      pos[i * 3 + 2] = -t * 4.0;
+      sem[i] = (i * 0.6180339887) % 1;
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(pos, 3));
+    g.setAttribute('aSeed', new BufferAttribute(sem, 1));
+    const m = new Points(g, starPointMaterial);
     m.frustumCulled = false;
     m.renderOrder = 9;
     return m;

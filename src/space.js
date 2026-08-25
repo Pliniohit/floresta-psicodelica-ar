@@ -1,6 +1,6 @@
 import {
   Group, Mesh, InstancedMesh, Points, BufferGeometry, BufferAttribute,
-  SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion,
+  SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, Euler,
 } from '../vendor/three/three.module.min.js';
 import { planetMaterial, trailMaterial, cloneMaterial } from './shaders/materials.js';
 import { rng } from './forest.js';
@@ -40,6 +40,7 @@ const CONTATO = 11.0;     // dureza do contato; sempre vence a gravidade
 const AMORTECE = 0.30;    // atrito, para o sistema não ganhar energia
 const V_MAX = 1.3;        // m/s
 const _up = new Vector3(0, 1, 0);
+const _e2 = new Euler();
 
 export class Space extends Group {
   constructor() {
@@ -379,16 +380,20 @@ export class Space extends Group {
  * durante a animação.
  */
 export class Emergence extends Group {
-  constructor(butterflyGeometry, butterflyMaterial, trailLength = 90) {
+  constructor(criarNuvem, trailLength = 90) {
     super();
     this.name = 'eclosao';
     this.frustumCulled = false;
     this.visible = false;
 
-    this.mesh = new Mesh(butterflyGeometry, butterflyMaterial);
-    this.mesh.scale.setScalar(2.2);       // maior que as comuns: é a protagonista
-    this.mesh.frustumCulled = false;
+    // Uma nuvem de capacidade 1: é a mesma borboleta das outras, só que
+    // sozinha e maior — a protagonista da travessia.
+    this.mesh = criarNuvem(1, 9001);
+    this.mesh.count = 1;
     this.add(this.mesh);
+    this._m = new Matrix4();
+    this._q = new Quaternion();
+    this._e = new Vector3(2.2, 2.2, 2.2);
 
     this.n = trailLength;
     this.pos = new Float32Array(trailLength * 3);
@@ -438,9 +443,13 @@ export class Emergence extends Group {
       this.from.y + altura,
       this.from.z + Math.sin(giro) * abre,
     );
-    this.mesh.position.copy(_p);
-    this.mesh.rotation.y = giro + Math.PI / 2;
-    this.mesh.rotation.z = Math.sin(t * 2.2) * 0.22;
+    // A nuvem não tem position/rotation: ela tem uma lista de instâncias, e
+    // esta tem uma só. A pose vai por matriz, como em qualquer instância.
+    _e2.set(0, giro + Math.PI / 2, Math.sin(t * 2.2) * 0.22);
+    this._q.setFromEuler(_e2);
+    this._m.compose(_p, this._q, this._e);
+    this.mesh.setMatrixAt(0, this._m);
+    this.mesh.instanceMatrix.needsUpdate = true;
 
     // Emite no anel, envelhecendo o resto.
     const i = this.cursor;
