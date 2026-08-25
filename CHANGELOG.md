@@ -15,6 +15,8 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.17.0 — Floresta bioluminescente
+
 ## v0.16.1 — O teto vira abertura por altura, não por rótulo
 
 Correção da v0.16.0, que não resolveu o problema que dizia resolver.
