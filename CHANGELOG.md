@@ -17,6 +17,65 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.17.0 — Floresta bioluminescente
 
+### A regra
+
+Bioluminescência é luz **desenhada**, não brilho geral. Uma folha inteira acesa
+lê como plástico retroiluminado; o que lê como vivo é a nervura acesa e o resto
+da folha escuro.
+
+Por isso a função nova, `bio(mascara, tom, forca)`, recebe **sempre** uma
+máscara — nervura, mancha, ponta, miolo — e nunca 1.0. E vem acompanhada de
+`nightBody`, que **escurece** o corpo conforme a luz interna sobe. É contraste,
+não intensidade: sem escurecer, subir o brilho só lavaria a cena de branco,
+porque o que não brilha ficaria mais claro junto.
+
+### A cor precisou de paleta própria
+
+A primeira tentativa usou a paleta da cena e os cogumelos saíram brancos —
+guarda-chuvas de plástico, sem cor nenhuma. A paleta produz pastéis com os três
+canais altos; multiplicada pela força da luz e passada pelo `filmic`, ela satura
+e vira branco chapado.
+
+A bioluminescência de verdade vive numa faixa estreita, o ciano-verde de 490 nm,
+com desvios para o azul e para o verde-limão. Com o canal vermelho baixo, a cor
+**sobrevive à saturação**: por mais que se aumente, ela clareia sem perder o tom.
+
+E dar uma cor comum a tudo que brilha é o que faz a mata inteira parecer um
+organismo só. Cada mundo tem a sua — brasa no fogo, azul-abissal na água.
+
+### Onde a luz mora
+
+| Onde | Máscara |
+| --- | --- |
+| Folha | a nervura, isolinha do mesmo ruído que já desenhava as manchas |
+| Tronco | o fundo do sulco, não a crista — é o que dá relevo em vez de neon |
+| Cogumelo | as manchas (agora escuras no corpo) e a lamela por baixo da aba |
+| Caule | anéis subindo, estreitados por expoente |
+| Flor | só o miolo: a flor vira uma lamparina pequena |
+| Capim | só a ponta, com expoente alto — são mil lâminas finas, e acender a lâmina toda viraria um tapete cintilante |
+| Fruta | mais forte no lado **escuro**: é o avesso da luz externa, e é o que a faz parecer iluminada por dentro |
+| Chão | duas tramas de micélio em escalas diferentes — uma malha dentro de outra |
+
+### O chão reage ao corpo
+
+As mesmas pisadas que amassam a vegetação no vertex shader agora **acendem** o
+micélio no fragment, e apagam sozinhas conforme a pisada envelhece. É plâncton
+na areia: o lugar responde ao corpo com luz.
+
+Não custou uniform novo — o buffer de doze passos já existia; só precisou ser
+declarado também do lado do fragment.
+
+### Controle e segurança
+
+Quatro degraus (apagada · discreta · acesa · profusa), no último orbe do menu
+de pulso e na tecla `B` da prévia. É dial e não interruptor porque o efeito muda
+a leitura da mata inteira, e há quem queira só um sinal de vida.
+
+O uniform é perseguido no laço em vez de saltar: uma mata que acende de estalo é
+justamente o tipo de mudança brusca de brilho que este projeto evita. O pulso da
+luz é de **0,09 Hz** e ainda passa por `damp`, longe da faixa de 3 a 30 Hz.
+
+
 ## v0.16.1 — O teto vira abertura por altura, não por rótulo
 
 Correção da v0.16.0, que não resolveu o problema que dizia resolver.
