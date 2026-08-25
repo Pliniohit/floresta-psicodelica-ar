@@ -27,6 +27,7 @@ const _m = new Matrix4();
 const _p = new Vector3();
 const _q = new Quaternion();
 const _s = new Vector3();
+const _s2 = new Vector3();
 const _up = new Vector3(0, 1, 0);
 
 export class Space extends Group {
@@ -52,6 +53,10 @@ export class Space extends Group {
       // Identidade fixa: é ela que decide se o planeta é gasoso, rochoso ou
       // gelado, e ela não pode mudar enquanto ele orbita.
       mat.uniforms.uSeed.value = r();
+      // Cada planeta É um elemento, e a superfície tem de dizer qual: terra
+      // com continentes, fogo rachado de magma, água coberta de nuvem. Sem
+      // isso não dá para escolher para onde ir — só para descobrir depois.
+      mat.uniforms.uElement.value = bioma.id;
 
       const corpo = new Mesh(new SphereGeometry(raio, 20, 14), mat);
       corpo.frustumCulled = false;
@@ -143,6 +148,27 @@ export class Space extends Group {
       const d = g.getWorldPosition(_p).distanceTo(world);
       const limite = g.userData.raio * 1.9 + 0.12;
       if (d < limite && d < dist) { dist = d; melhor = g; }
+    }
+    return melhor;
+  }
+
+  /**
+   * Planeta sob a mira. Sentado ou deitado não dá para alcançar uma órbita de
+   * um metro e meio com o braço, então o alcance é a mira, não o alcance.
+   */
+  pickAlongRay(origem, direcao, alcance = 9) {
+    let melhor = null, melhorT = Infinity;
+    for (const g of this.planets) {
+      g.getWorldPosition(_p);
+      _p.sub(origem);
+      const t = _p.dot(direcao);
+      if (t < 0.05 || t > alcance) continue;
+      _p.copy(origem).addScaledVector(direcao, t);
+      // Corredor proporcional ao próprio planeta, com um piso generoso: os
+      // pequenos ficariam impossíveis de acertar de longe.
+      const raio = Math.max(g.userData.raio * g.scale.x * 1.8, 0.22);
+      if (_p.distanceTo(g.getWorldPosition(_s2)) > raio) continue;
+      if (t < melhorT) { melhorT = t; melhor = g; }
     }
     return melhor;
   }

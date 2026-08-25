@@ -21,6 +21,7 @@ export const shared = {
   uSteps:  { value: Array.from({ length: 12 }, () => new Vector3(0, 0, 0)) },
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
+  uVanish: { value: 0 },      // 0 mundo inteiro, 1 mundo dissolvido
   uOrigin: { value: new Vector3() },
   uPalA:   { value: new Vector3(0.5, 0.5, 0.5) },
   uPalB:   { value: new Vector3(0.5, 0.5, 0.5) },
@@ -503,6 +504,10 @@ export const skyMaterial = make('ceu', {
     uFull: { value: 0.62 },      // onde já está cheio
     uSky: { value: 1.0 },        // liga/desliga com transição
     uSpace: { value: 0.0 },      // 0 céu sobre a sala, 1 espaço profundo
+    // Teto de opacidade. O céu NUNCA fecha de todo: abaixo de 1.0 sempre
+    // sobra passthrough por baixo, e a sala continua legível mesmo no espaço.
+    // É o que mantém isto realidade mista em vez de virar realidade virtual.
+    uMaxVeil: { value: 0.86 },
   },
   vert: /* glsl */ `
     void main(){
@@ -515,13 +520,14 @@ export const skyMaterial = make('ceu', {
     uniform float uFull;
     uniform float uSky;
     uniform float uSpace;
+    uniform float uMaxVeil;
 
     void main(){
       vec3 dir = normalize(vWorld - cameraPosition);
       float up = dir.y;
 
       // Nada abaixo da linha: ali está a sala de verdade.
-      float veu = smoothstep(uHorizon, uFull, up) * uSky;
+      float veu = smoothstep(uHorizon, uFull, up) * uSky * uMaxVeil;
       if (veu <= 0.004) discard;
 
       // Nebulosa: fbm com domain warping, girando devagar.
@@ -611,6 +617,7 @@ export const planetMaterial = make('planetas', {
     uTint: { value: new Vector3(1, 1, 1) },   // cor do bioma que este planeta abriga
     uGrow: { value: 0 },                      // 0..1 conforme cresce na sua mão
     uSeed: { value: 0 },                      // identidade fixa deste planeta
+    uElement: { value: 0 },                   // 0 terra, 1 fogo, 2 água
   },
   vert: /* glsl */ `
     uniform float uSeed;
@@ -628,31 +635,39 @@ export const planetMaterial = make('planetas', {
     uniform float uWarp;
     uniform vec3 uTint;
     uniform float uGrow;
+    uniform float uElement;
 
     void main(){
       vec3 N = normalize(vNormalW);
       vec3 P = normalize(vLocal);
 
-      float tipo = fract(vSeed * 3.7);
+      // A superfície é decidida pelo ELEMENTO que o planeta guarda, não por
+      // sorteio: cada planeta é um elemento, e tem de dar para escolher para
+      // onde ir olhando para ele. A semente só varia o desenho dentro do tipo.
 
-      // Gasoso: faixas horizontais onduladas pelo ruído.
-      float faixa = sin(P.y * 14.0 + fbm2(P * 3.0 + uTime * 0.03) * 5.0);
-      vec3 gasoso = mix(vec3(0.62, 0.48, 0.32), vec3(0.86, 0.78, 0.62), faixa * 0.5 + 0.5);
-      gasoso = mix(gasoso, vec3(0.72, 0.42, 0.30), smoothstep(0.55, 0.95, faixa));
+      // TERRA — continentes e mares, verde sobre azul.
+      float relevo = fbm3(P * 3.2 + vSeed * 10.0);
+      vec3 pTerra = mix(vec3(0.07, 0.19, 0.34), vec3(0.22, 0.44, 0.20),
+                        smoothstep(0.45, 0.57, relevo));
+      pTerra = mix(pTerra, vec3(0.50, 0.46, 0.30), smoothstep(0.68, 0.80, relevo));
 
-      // Rochoso: manchas de ruído, continentes e mares.
-      float terra = fbm3(P * 3.2 + vSeed * 10.0);
-      vec3 rochoso = mix(vec3(0.16, 0.24, 0.38), vec3(0.34, 0.42, 0.24), smoothstep(0.45, 0.58, terra));
-      rochoso = mix(rochoso, vec3(0.60, 0.56, 0.46), smoothstep(0.66, 0.78, terra));
+      // FOGO — basalto escuro rachado, magma nas fendas.
+      float veia = fbm2(P * 4.4 + vSeed * 6.0);
+      float fenda = pow(max(0.0, 1.0 - abs(veia - 0.5) * 2.2), 7.0);
+      vec3 pFogo = mix(vec3(0.09, 0.05, 0.04), vec3(0.95, 0.38, 0.08), fenda);
+      pFogo += vec3(1.0, 0.48, 0.12) * fenda
+             * damp(0.6 + 0.4 * sin(uTime * 0.42 + vSeed * 9.0), 0.6) * 0.6;
 
-      // Gelado: quase branco com fendas azuis.
-      float fenda = smoothstep(0.46, 0.5, abs(fbm2(P * 5.0 + vSeed * 3.0) - 0.5));
-      vec3 gelado = mix(vec3(0.52, 0.66, 0.78), vec3(0.88, 0.93, 0.97), fenda);
+      // ÁGUA — oceano com faixas de nuvem por cima.
+      float onda = fbm3(P * 2.6 + vec3(uTime * 0.012, 0.0, 0.0) + vSeed * 4.0);
+      vec3 pAgua = mix(vec3(0.04, 0.19, 0.46), vec3(0.16, 0.50, 0.74),
+                       smoothstep(0.38, 0.62, onda));
+      pAgua = mix(pAgua, vec3(0.90, 0.94, 0.98), smoothstep(0.68, 0.84, onda));
 
-      vec3 base = tipo < 0.4 ? gasoso : (tipo < 0.78 ? rochoso : gelado);
-      // O bioma que o planeta guarda tinge a superfície: é assim que se sabe,
-      // olhando, para onde ele leva.
-      base = mix(base, base * 0.35 + uTint * 0.95, 0.62);
+      float el = uElement;
+      vec3 base = el < 0.5 ? pTerra : (el < 1.5 ? pFogo : pAgua);
+      // A cor do bioma reforça, mas já não precisa carregar a leitura sozinha.
+      base = mix(base, base * 0.55 + uTint * 0.70, 0.34);
 
       // Terminador: luz vinda de cima e do lado, com penumbra larga.
       float luz = dot(N, normalize(vec3(0.45, 0.7, 0.35)));
@@ -824,26 +839,38 @@ export const butterflyMaterial = make('borboletas', {
       vSpan = aSpan;
       vWing = aWing;
 
-      // Menos de 1 Hz. A borboleta real passa de 8, mas fidelidade aqui joga
-      // contra: vinte asas rápidas no campo de visão leem como enxame agitado,
-      // e o que se quer é uma coisa à deriva.
-      float freq = (0.62 + vSeed * 0.30) * mix(0.6, 1.0, uCalm);
-      float fase = fract(uTime * freq + vSeed * 7.0);
+      // RAJADA E PLANEIO.
+      //
+      // O que identifica uma borboleta não é a frequência: é o padrão. Ela
+      // bate algumas vezes fundo, para, e plana. Bater sem parar dava o
+      // "frenético" de antes; planar sempre — que foi a correção anterior —
+      // tirou a batida junto, e aí não parecia mais borboleta.
+      //
+      // Então: rajadas curtas de batida funda, separadas por planeios longos.
+      float freq = (2.05 + vSeed * 0.55) * mix(0.55, 1.0, uCalm);
 
-      // Perfil ASSIMÉTRICO: sobe em 35% do ciclo e desce nos 65% restantes.
+      // Um ciclo de ~7 s: bate durante um terço dele, plana no resto.
+      float ciclo = fract(uTime / (6.4 + vSeed * 2.6) + vSeed * 3.1);
+      float rajada = smoothstep(0.30, 0.40, ciclo) * (1.0 - smoothstep(0.62, 0.76, ciclo));
+
+      // Atraso ao longo da envergadura: a ponta chega depois da dobradiça, e
+      // é esse atraso que faz a asa parecer membrana e não placa.
+      float fase = fract(uTime * freq + vSeed * 7.0 - aSpan * 0.17);
+
+      // Perfil ASSIMÉTRICO: sobe em 34% do ciclo e desce nos 66% restantes.
       // Senóide pura dá vaivém de metrônomo; borboleta bate e deixa cair.
-      float sobe = smoothstep(0.0, 1.0, fase / 0.35);
-      float desce = 1.0 - smoothstep(0.0, 1.0, (fase - 0.35) / 0.65);
-      float perfil = fase < 0.35 ? sobe : desce;
+      float sobe = smoothstep(0.0, 1.0, fase / 0.34);
+      float desce = 1.0 - smoothstep(0.0, 1.0, (fase - 0.34) / 0.66);
+      float batida = fase < 0.34 ? sobe : desce;
 
-      // Plana a maior parte do tempo. Antes eram batidas contínuas com pausas
-      // curtas; agora é o contrário — plana, e de vez em quando bate.
-      float planando = smoothstep(-0.35, 0.45, sin(uTime * 0.11 + vSeed * 9.0));
-      perfil = mix(perfil, 0.38, planando * 0.94);
+      // Planando, as asas ficam num diedro raso que respira devagar.
+      float planeio = 0.30 + sin(uTime * 0.28 + vSeed * 5.0) * 0.055;
 
-      // De 8 graus abaixo da horizontal a 63 acima. Curso menor que o real,
-      // porque amplitude grande a essa lentidão lê como remada.
-      float ang = mix(-0.14, 1.10, perfil) * aSpan * abs(aWing);
+      float perfil = mix(planeio, batida, rajada);
+
+      // Curso amplo: 20 graus abaixo da horizontal até quase se encostarem
+      // por cima do dorso. É o curso que faz a silhueta ler como borboleta.
+      float ang = mix(-0.35, 1.45, perfil) * aSpan * abs(aWing);
 
       // Rotação em torno de Y, o eixo do CORPO: é isso que levanta a asa.
       // Em torno de Z ela apenas varria dentro do próprio plano, que foi por
@@ -861,6 +888,11 @@ export const butterflyMaterial = make('borboletas', {
       float nx = nrm.x, nz = nrm.z;
       nrm.x = nx * c + nz * sn;
       nrm.z = -nx * sn + nz * c;
+
+      // O corpo inteiro sobe quando as asas descem. Uma borboleta parada no
+      // ar enquanto as asas remam parece de brinquedo; é este solavanco de um
+      // centímetro que dá peso ao bicho.
+      p.z -= (perfil - 0.45) * 0.011 * rajada;
 
       emit(p, nrm);
     }
@@ -1026,3 +1058,144 @@ export const allMaterials = registry;
 export function disposeMaterials() {
   for (const m of registry) m.dispose();
 }
+
+// ---------------------------------------------------------------------------
+// PAREDES DO CÔMODO — a casca temática.
+//
+// As paredes de verdade continuam ali: este material é ADITIVO e não escreve
+// profundidade, então o que ele faz é pintar POR CIMA do passthrough, não
+// substituí-lo. Trepadeiras no mundo de terra, fendas de brasa no de fogo,
+// ondas atravessando a alvenaria no de água — e em todos os casos você
+// continua vendo a sua sala por baixo.
+//
+// É o que responde a "as paredes têm que estar sempre ao nosso redor": em vez
+// de fugir do cômodo, cada mundo veste o cômodo.
+// ---------------------------------------------------------------------------
+export const wallMaterial = make('paredes', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  blending: AdditiveBlending,
+  uniforms: { uShell: { value: 0 } },
+  vert: /* glsl */ `
+    void main(){
+      vSeed = 0.0;
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uShell;
+
+    void main(){
+      if (uShell < 0.004) discard;
+
+      // O quadrilátero da parede não pode ter contorno visível: ele é uma
+      // aproximação da parede real, e uma borda reta denunciaria o erro.
+      vec2 q = abs(vLocal.xy);
+      float borda = smoothstep(0.5, 0.34, q.x) * smoothstep(0.5, 0.26, q.y);
+      if (borda <= 0.004) discard;
+
+      float b = clamp(uBiome, 0.0, 2.0);
+      float wTerra = 1.0 - smoothstep(0.0, 1.0, b);
+      float wFogo  = 1.0 - clamp(abs(b - 1.0), 0.0, 1.0);
+      float wAgua  = smoothstep(1.0, 2.0, b);
+
+      float h = max(vWorld.y - uOrigin.y, 0.0);
+
+      // TERRA — trepadeiras subindo do rodapé, rareando com a altura.
+      // Filete fino e folha destacada: gavinha larga vira mancha de tinta
+      // verde na parede, e o que se quer é ver a alvenaria por entre elas.
+      float trilha = fbm2(vec3(vWorld.xz * 2.6, vWorld.y * 0.5));
+      float fio = vWorld.x * 3.4 + vWorld.z * 2.6 + trilha * 3.0;
+      float gavinha = smoothstep(0.44, 0.50, abs(fract(fio) - 0.5));
+      float folha = smoothstep(0.66, 0.96, fract(vWorld.y * 6.0 + trilha * 4.0)) * gavinha;
+      vec3 cTerra = (vec3(0.11, 0.34, 0.15) * gavinha + vec3(0.26, 0.58, 0.21) * folha)
+                  * exp(-h * 0.50) * 1.4;
+
+      // FOGO — a parede racha e o que está atrás dela brilha.
+      float veia = fbm2(vec3(vWorld.xz * 3.1, vWorld.y * 1.2 - uTime * 0.035));
+      float fenda = pow(max(0.0, 1.0 - abs(veia - 0.5) * 2.4), 6.0);
+      vec3 cFogo = mix(vec3(0.52, 0.11, 0.03), vec3(1.0, 0.60, 0.16), fenda)
+                 * fenda
+                 * damp(0.78 + 0.22 * sin(uTime * 0.55 + vWorld.y * 1.6), 0.86)
+                 * (0.55 + exp(-h * 0.34));
+
+      // ÁGUA — ondas horizontais atravessando a alvenaria, subindo devagar.
+      float onda = sin((vWorld.y - uTime * 0.20) * 5.0
+                     + fbm2(vec3(vWorld.xz * 1.5, uTime * 0.045)) * 3.6);
+      float crista = pow(max(onda, 0.0), 3.0);
+      vec3 cAgua = mix(vec3(0.03, 0.22, 0.40), vec3(0.32, 0.80, 0.95), crista)
+                 * (0.30 + crista * 1.15);
+
+      vec3 col = cTerra * wTerra + cFogo * wFogo + cAgua * wAgua;
+      float a = borda * uShell;
+      if (a <= 0.004) discard;
+      gl_FragColor = vec4(filmic(col), a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// LÂMINA — a superfície horizontal que atravessa o cômodo na altura da
+// cintura no mundo de água (você fica submerso até ali) e rente ao chão no de
+// fogo (névoa de brasa). No mundo de terra ela some.
+//
+// Translúcida de propósito: as suas pernas de verdade continuam aparecendo
+// por baixo, e é isso que faz a água parecer estar NA sala.
+// ---------------------------------------------------------------------------
+export const tideMaterial = make('lamina', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  uniforms: { uShell: { value: 0 } },
+  vert: /* glsl */ `
+    void main(){
+      vSeed = 0.0;
+      vec3 p = position;
+      // Onda de gravidade lenta em duas direções não múltiplas: o padrão
+      // demora a se repetir, então a superfície não fica obviamente cíclica.
+      //
+      // A fase vem da posição em MUNDO, não da local: a malha é um plano
+      // unitário esticado pela escala do objeto, e em espaço local ela mede
+      // meio metro de lado — a onda sairia com um comprimento só, do tamanho
+      // da sala inteira.
+      vec3 w = (modelMatrix * vec4(position, 1.0)).xyz;
+      p.z += sin(w.x * 1.9 + uTime * 0.50) * 0.028
+           + sin(w.z * 2.3 - uTime * 0.37) * 0.021;
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uShell;
+
+    void main(){
+      if (uShell < 0.004) discard;
+
+      vec2 q = abs(vLocal.xy);
+      float borda = smoothstep(0.5, 0.28, q.x) * smoothstep(0.5, 0.28, q.y);
+      if (borda <= 0.004) discard;
+
+      float b = clamp(uBiome, 0.0, 2.0);
+      float wFogo = 1.0 - clamp(abs(b - 1.0), 0.0, 1.0);
+      float wAgua = smoothstep(1.0, 2.0, b);
+      float peso = wAgua + wFogo * 0.55;
+      if (peso < 0.01) discard;
+
+      // Cáustica: a interferência de dois ruídos que deslizam em sentidos
+      // opostos. É mais barato que traçar refração e lê igual.
+      float c1 = fbm2(vec3(vWorld.xz * 2.2 + vec2(uTime * 0.055, -uTime * 0.04), 0.0));
+      float c2 = fbm2(vec3(vWorld.xz * 3.1 - vec2(uTime * 0.042, uTime * 0.065), 4.0));
+      float caustica = pow(max(0.0, 1.0 - abs(c1 - c2) * 4.2), 3.0);
+
+      vec3 agua = mix(vec3(0.02, 0.18, 0.32), vec3(0.18, 0.60, 0.78), caustica);
+      agua += vec3(0.55, 0.95, 1.0) * caustica * 0.75;
+
+      vec3 brasa = vec3(0.92, 0.34, 0.06) * (0.25 + caustica * 0.9);
+
+      vec3 col = agua * wAgua + brasa * wFogo;
+      float a = borda * uShell * peso * (0.26 + caustica * 0.44);
+      if (a <= 0.004) discard;
+      gl_FragColor = vec4(filmic(col), a);
+    }
+  `,
+});

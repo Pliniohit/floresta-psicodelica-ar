@@ -1,6 +1,6 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Vector2, Vector3,
-  Raycaster, Plane, Clock, MathUtils,
+  Raycaster, Plane, Clock, MathUtils, Matrix4,
 } from '../vendor/three/three.module.min.js';
 import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
@@ -18,6 +18,7 @@ import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
 import { Space, Emergence, ENTER_SCALE } from './space.js';
 import { BlackHoles } from './blackholes.js';
+import { Shell, Tide, wallsFromFootprint } from './shell.js';
 import { biomes, byId } from './biomes.js';
 import { butterflyMaterial, cocoonMaterial, skyMaterial as _sky } from './shaders/materials.js';
 import { Ambience } from './audio.js';
@@ -91,6 +92,14 @@ scene.add(space);
 
 const buracos = new BlackHoles();
 scene.add(buracos);
+
+// A casca do cômodo: as paredes reais vestidas pelo mundo em que você está.
+// Fica FORA da floresta de propósito — a floresta encolhe e dissolve na
+// travessia, e as paredes não podem ir junto: elas são a sua sala.
+const shell = new Shell();
+scene.add(shell);
+const tide = new Tide();
+scene.add(tide);
 
 const emergence = new Emergence(butterflies.mesh.geometry, butterflyMaterial);
 scene.add(emergence);
@@ -223,9 +232,23 @@ function commitRoom() {
 
   // Buracos ancorados nas paredes lidas. Ficam preparados aqui, mas só
   // aparecem quando você atravessa para o espaço.
-  buracos.applyWalls(forest.wallBases, state.seed);
+  // Onde o chão acaba, a parede começa. A leitura de planos verticais só vem
+  // quando o Space Setup tem paredes marcadas, e sem essa saída metade das
+  // salas ficaria sem casca e sem buraco nenhum.
+  const paredes = forest.wallBases.length
+    ? forest.wallBases : wallsFromFootprint(forest.footprint);
+
+  buracos.applyWalls(paredes, state.seed);
   buracos.position.copy(forest.position);
   buracos.setProgress(0);
+
+  // Paredes e lâmina compartilham a origem do cômodo, mas não a escala nem o
+  // afundamento da floresta: a sala fica onde está.
+  const alturaTeto = room.ceilingY != null ? room.ceilingY - room.floorY : 2.6;
+  shell.applyWalls(paredes, alturaTeto);
+  shell.position.copy(forest.position);
+  tide.applyFootprint(forest.footprint);
+  tide.position.copy(forest.position);
 
   butterflies.fitTo(Math.sqrt(room.area / Math.PI));
   butterflies.visible = true;
@@ -239,7 +262,8 @@ function commitRoom() {
   ping(1);
   audio.chime(12, 0.28);
   const b = byId(state.biome);
-  toast(`${b.saudacao} Palma para cima faz nascer uma semente.`, b.swatch);
+  toast(`${b.saudacao} Abra a mão para nascer uma semente; `
+    + 'pince mirando o chão para plantar, de pé ou sentado.', b.swatch);
 }
 
 /**
@@ -310,6 +334,7 @@ function hatch(indice) {
   const mundo = forest.localToWorld(saidaLocal.clone());
 
   emergence.launch(mundo);
+  virouLuz = false;
   // Planetas nascem em volta de onde você está AGORA e ficam parados ali:
   // é o que permite dar a volta neles caminhando.
   space.position.set(_head.x, forest.position.y, _head.z);
@@ -452,10 +477,14 @@ function aheadOfCamera(distance = 2.0) {
 // ---------------------------------------------------------------------------
 // Controles XR
 // ---------------------------------------------------------------------------
+/** Já houve o clarão do topo desta subida? */
+let virouLuz = false;
+
 /** O que cada controle está puxando de longe. */
 const puxando = new Map();
 const _origem = new Vector3();
 const _direcao = new Vector3();
+const _invForest = new Matrix4();
 
 const interaction = new Interaction(renderer, scene, camera, {
   onSelectEnd: (controller) => {
@@ -845,6 +874,54 @@ let escalaRef = null;        // referência da pinça de duas mãos sobre um pla
 /** Ponto da mão em coordenadas locais da floresta. */
 function toLocal(worldPoint) { return forest.worldToLocal(worldPoint.clone()); }
 
+const _rOrig = new Vector3();
+const _rDir = new Vector3();
+const _rOrigL = new Vector3();
+const _rDirL = new Vector3();
+const _pMao = new Vector3();
+
+/**
+ * O raio de uma mão, do olho PARA a mão e adiante.
+ *
+ * Poderia sair do dedo, mas o dedo indicador se dobra para encostar no
+ * polegar justamente quando você pinça — e aí a direção do dedo aponta para
+ * qualquer lugar menos o alvo. Da cabeça através da mão é estável em qualquer
+ * postura, e o gesto que ele pede é o natural: cobrir o alvo com a mão.
+ *
+ * Isto é o que faz a experiência inteira funcionar SENTADO ou DEITADO. Nada
+ * aqui depende de você alcançar as coisas com o braço.
+ */
+function handRayFrom(ponto, origem = _rOrig, direcao = _rDir) {
+  camera.getWorldPosition(_pMao);
+  direcao.copy(ponto).sub(_pMao);
+  if (direcao.lengthSq() < 1e-6) direcao.set(0, 0, -1);
+  direcao.normalize();
+  return origem.copy(ponto);
+}
+
+function handRay(st, origem = _rOrig, direcao = _rDir) {
+  handRayFrom(st.pinch, origem, direcao);
+  return direcao;
+}
+
+/** O mesmo raio, em coordenadas locais da floresta. */
+function raioLocal(origem, direcao) {
+  _rOrigL.copy(origem);
+  forest.worldToLocal(_rOrigL);
+  _rDirL.copy(direcao)
+    .transformDirection(_invForest.copy(forest.matrixWorld).invert())
+    .normalize();
+  return _rDirL;
+}
+
+/** Onde o raio encontra o chão da floresta, em mundo. Null se não encontra. */
+function chaoDoRaio(origem, direcao, alcance = 9) {
+  if (direcao.y > -0.02) return null;
+  const t = (forest.position.y - origem.y) / direcao.y;
+  if (t < 0 || t > alcance) return null;
+  return origem.clone().addScaledVector(direcao, t);
+}
+
 const hands = new Hands(renderer, {
   onPinchStart: (hand) => {
     if (state.phase === 'mapping') {
@@ -855,11 +932,20 @@ const hands = new Hands(renderer, {
     }
     if (state.phase !== 'growing') return;
 
-    // No espaço a pinça só serve para pegar planeta.
+    handRay(hand, _rOrig, _rDir);
+
+    // No espaço a pinça só serve para pegar planeta — encostado nele, ou sob
+    // a mira, que é o que vale quando você está sentado e a órbita passa
+    // longe do braço.
     if (state.world === 'espaco') {
-      const planeta = space.pick(hand.pinch);
+      const planeta = space.pick(hand.pinch) ?? space.pickAlongRay(_rOrig, _rDir);
       if (planeta) {
-        grabbed.set(hand, { espaco: true, planeta: space.lift(planeta) });
+        const d = planeta.getWorldPosition(_pMao).distanceTo(_rOrig);
+        const alca = { espaco: true, planeta: space.lift(planeta) };
+        // Longe da mão, ele fica preso ao raio e acompanha o pulso. Perto,
+        // segue a mão direto — mexer o pulso ali seria movimento demais.
+        if (d > 0.40) { alca.raio = true; alca.distancia = d; alca.ponto = new Vector3(); }
+        grabbed.set(hand, alca);
         audio.chime(19, 0.12);
       }
       return;
@@ -881,16 +967,40 @@ const hands = new Hands(renderer, {
       audio.chime(seeds.kind === 'cocoon' ? 28 : 24, 0.12);
       toast(seeds.kind === 'cocoon'
         ? 'Semente de casulo — dela nasce a árvore que leva ao espaço'
-        : 'Semente na mão — solte perto do chão para plantar',
+        : 'Semente na mão — aponte para o chão e solte',
         palettes[state.paletteIndex].swatch);
       return;
     }
 
-    // Pinça no vazio, perto do chão: brota uma árvore ali.
-    if (hand.pinch.y - forest.position.y < 1.3) {
-      const ground = new Vector3(hand.pinch.x, forest.position.y, hand.pinch.z);
-      plantAt(ground);
+    // --- daqui para baixo, tudo é à DISTÂNCIA -----------------------------
+    // Sentado ou deitado nada disso está ao alcance do braço, e é justamente
+    // por isso que existe. Pinçar mirando é o gesto único da experiência.
+    raioLocal(_rOrig, _rDir);
+
+    // Casulo sob a mira: é a porta para o espaço, então vem antes de tudo.
+    const ci = forest.pickCocoonAlongRay(_rOrigL, _rDirL);
+    if (ci >= 0) { hatch(ci); return; }
+
+    const distante = forest.pickAlongRay(_rOrigL, _rDirL);
+    if (distante) {
+      const alca = forest.lift(distante);
+      alca.raio = true;
+      alca.distancia = distante.dist * forest.scale.x;
+      alca.ponto = new Vector3();
+      grabbed.set(hand, alca);
+      audio.chime(19, 0.1);
+      return;
     }
+
+    // Nada sob a mira: planta onde o raio encosta no chão. Com a mão já perto
+    // do piso vale a própria mão — quem está de pé e agachado não deveria ter
+    // de mirar para plantar aos próprios pés.
+    if (hand.pinch.y - forest.position.y < 0.9) {
+      plantAt(new Vector3(hand.pinch.x, forest.position.y, hand.pinch.z));
+      return;
+    }
+    const chao = chaoDoRaio(_rOrig, _rDir);
+    if (chao) plantAt(chao);
   },
 
   onPinchEnd: (hand) => {
@@ -899,7 +1009,11 @@ const hands = new Hands(renderer, {
       const kind = seeds.kind;
       const onde = seeds.release();
       if (onde) {
-        const chao = new Vector3(onde.x, forest.position.y, onde.z);
+        // Com a mão no alto, quem escolhe o lugar é a mira: soltar a semente
+        // sentado plantaria sempre debaixo da própria cadeira.
+        const mirado = onde.y - forest.position.y > 0.9
+          ? chaoDoRaio(handRayFrom(onde), _rDir) : null;
+        const chao = mirado ?? new Vector3(onde.x, forest.position.y, onde.z);
         if (plantAt(chao, kind) === 'ok') {
           ping(0.7);
           audio.chime(12, 0.2);
@@ -917,7 +1031,9 @@ const hands = new Hands(renderer, {
 
     if (handle.espaco) { space.drop(handle.planeta); audio.chime(9, 0.12); return; }
 
-    const result = forest.drop(handle, toLocal(hand.pinch));
+    // O que veio pelo raio é solto onde o raio o deixou, não onde a mão está.
+    const ondeCai = handle.raio ? handle.ponto : hand.pinch;
+    const result = forest.drop(handle, toLocal(ondeCai));
     ping(0.5);
     audio.chime(result === 'plantado' ? 7 : -7, 0.14);
     if (result === 'devolvido') toast('Não coube ali — voltou para o lugar');
@@ -967,13 +1083,27 @@ function updateHands(dt) {
   for (const st of hands.states) {
     if (!st.tracked) continue;
     const handle = grabbed.get(st);
-    if (handle?.espaco) {
+    if (handle?.raio) {
+      // Preso ao raio: mexer o pulso arrasta o objeto lá longe. A distância
+      // fica congelada, então ele orbita você em vez de vir vindo.
+      handRay(st, _rOrig, _rDir);
+      handle.ponto.copy(_rOrig).addScaledVector(_rDir, handle.distancia);
+      if (handle.espaco) space.carry(handle.planeta, handle.ponto);
+      else forest.carry(handle, toLocal(handle.ponto), clock.elapsedTime * 1.2);
+    } else if (handle?.espaco) {
       space.carry(handle.planeta, st.pinch);
     } else if (handle) {
       spin = clock.elapsedTime * 1.6;
       forest.carry(handle, toLocal(st.pinch), spin);
     } else if (!hover) {
+      // Realça o que está ao alcance; se não há nada, o que está sob a mira.
+      // O realce é a única confirmação de que o raio achou alguma coisa.
       hover = forest.pick(toLocal(st.pinch));
+      if (!hover && state.world === 'floresta') {
+        handRay(st, _rOrig, _rDir);
+        raioLocal(_rOrig, _rDir);
+        hover = forest.pickAlongRay(_rOrigL, _rDirL);
+      }
     }
   }
   forest.highlight(hover);
@@ -1114,6 +1244,15 @@ function frame(time, xrFrame) {
     constelacao.update(_head);
   }
 
+  // As paredes ficam vestidas o tempo todo, inclusive no espaço: o cômodo é
+  // o palco em todos os mundos, e sumir com ele quebraria a mistura.
+  if (state.phase === 'growing') {
+    shell.setAmount(state.intro);
+    // A lâmina, não: uma superfície de água na altura da cintura só faz
+    // sentido enquanto há chão. No espaço ela recua.
+    tide.setBiome(shared.uBiome.value, state.intro * (1 - state.warp));
+  }
+
   // --- travessia entre os dois mundos -------------------------------------
   if (state.phase === 'growing') {
     const alvoWarp = state.world === 'espaco' ? 1 : 0;
@@ -1126,16 +1265,34 @@ function frame(time, xrFrame) {
     space.setProgress(w);
     // As paredes do seu cômodo se rompem junto com a travessia.
     buracos.setProgress(w);
-    emergence.update(dt, clock.elapsedTime);
+    const subida = emergence.update(dt, clock.elapsedTime);
+    // No alto da subida ela vira luz. O clarão é LENTO de propósito: uPulse
+    // decai em cerca de dois segundos, muito abaixo da faixa de 3 a 30 Hz
+    // que dispara crise em epilepsia fotossensível.
+    if (subida > 0.88 && !virouLuz) {
+      virouLuz = true;
+      shared.uPulse.value = 1;
+      audio.chime(36, 0.5);
+      toast('Ela virou luz', palettes[state.paletteIndex].swatch);
+    }
 
-    // A floresta encolhe e afunda para longe, em vez de sumir de uma vez.
+    // O MUNDO EVAPORA.
+    //
+    // Enquanto a borboleta sobe, tudo o que cresceu se dissolve — a rasteira
+    // primeiro, as copas por último. Antes a floresta só encolhia, e encolher
+    // lê como "a cena foi embora"; dissolver lê como "ela levou o mundo".
+    // Termina em 75% da subida: o último trecho ela sobe sozinha.
+    shared.uVanish.value = Math.min(1, Math.max(0, (w - 0.05) / 0.70));
+
     forest.visible = w < 0.99;
     butterflies.visible = w < 0.6;
     bodyGrowth.visible = w < 0.8;
 
-    // O céu abre até cobrir tudo: no espaço não há mais horizonte de sala.
-    skyMaterial.uniforms.uHorizon.value = 0.10 - w * 1.3;
-    skyMaterial.uniforms.uFull.value = 0.62 - w * 1.3;
+    // O céu abre, mas NUNCA fecha em volta: abaixo da linha do horizonte
+    // continua sendo a sua sala. É deliberado — isto é realidade mista, e o
+    // preço de virar realidade virtual seria perder as paredes de vista.
+    skyMaterial.uniforms.uHorizon.value = 0.10 - w * 0.30;
+    skyMaterial.uniforms.uFull.value = 0.62 - w * 0.34;
     skyMaterial.uniforms.uSpace.value = w;
     // E o oclusor sai de cena: paredes não fazem sentido no espaço.
     if (roomMesh.entries.length) {
@@ -1168,11 +1325,13 @@ function frame(time, xrFrame) {
       const e = state.intro * state.intro * (3 - 2 * state.intro);
       forest.scale.setScalar(Math.max(0.001, state.scale * e));
     } else {
-      // Encolhe conforme o warp: a clareira fica para trás.
-      forest.scale.setScalar(state.scale * (1 - state.warp * 0.85));
+      // Quem faz a clareira sumir agora é a dissolução; o encolhimento é só
+      // um empurrãozinho de perspectiva. Os dois juntos, como era antes,
+      // davam a impressão de que a cena tinha sido sugada para um ralo.
+      forest.scale.setScalar(state.scale * (1 - state.warp * 0.14));
     }
     forest.rotation.y = state.spin;
-    forest.position.y = shared.uOrigin.value.y - state.warp * 2.4;
+    forest.position.y = shared.uOrigin.value.y - state.warp * 0.35;
   }
 
   renderer.render(scene, camera);
@@ -1238,7 +1397,7 @@ detect().then((res) => {
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
 window.floresta = {
   // cena
-  forest, room, roomMesh, sky, constelacao, space, emergence, buracos,
+  forest, room, roomMesh, sky, constelacao, space, emergence, buracos, shell, tide,
   butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds,
   hands, wristMenu, magic,
   // estado
@@ -1259,6 +1418,8 @@ window.addEventListener('beforeunload', () => {
   seeds.dispose();
   space.dispose();
   emergence.dispose();
+  shell.dispose();
+  tide.dispose();
   buracos.dispose();
   hands.dispose();
   wristMenu.dispose();

@@ -570,6 +570,34 @@ export class Forest extends Group {
     return -1;
   }
 
+  /**
+   * Casulo sob a mira, em coordenadas LOCAIS.
+   *
+   * Existe porque a experiência tem de funcionar sentado e deitado: encostar
+   * o dedo num casulo pendurado a um metro e meio pressupõe estar de pé e
+   * poder chegar até ele. Aqui basta apontar.
+   *
+   * O corredor é largo — mira de mão treme, e errar o casulo é errar a única
+   * porta para o espaço.
+   */
+  pickCocoonAlongRay(origem, direcao, alcance = 7, corredor = 0.42) {
+    const inv = 1 / (this.scale.x || 1);
+    const raio = corredor * inv;
+    let melhor = -1, melhorT = Infinity;
+    for (let i = 0; i < this.cocoonSpots.length; i++) {
+      const c = this.cocoonSpots[i];
+      if (c.aberto) continue;
+      _p.copy(c.pos); _p.y -= 0.11 * c.escala;
+      _p2.copy(_p).sub(origem);
+      const t = _p2.dot(direcao);
+      if (t < 0.05 || t > alcance * inv) continue;
+      _p2.copy(origem).addScaledVector(direcao, t);
+      if (_p2.distanceTo(_p) > raio) continue;
+      if (t < melhorT) { melhorT = t; melhor = i; }
+    }
+    return melhor;
+  }
+
   /** Abre o casulo: some da cena e não pode ser tocado de novo. */
   openCocoon(index) {
     const c = this.cocoonSpots[index];

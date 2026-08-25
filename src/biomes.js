@@ -1,7 +1,13 @@
 import { Vector3 } from '../vendor/three/three.module.min.js';
 
 /**
- * Os mundos.
+ * Os mundos — um por ELEMENTO.
+ *
+ * Cada planeta lá em cima guarda um destes, e a superfície dele diz qual:
+ * continentes na terra, magma nas fendas do fogo, nuvem sobre oceano na água.
+ * Aumentar a escala do planeta atravessa para o mundo do elemento dele.
+ *
+ * O primeiro, onde a experiência começa, é a TERRA: verde, planta, natureza.
  *
  * Cada bioma é um índice que vai para o uniform `uBiome`, e os shaders
  * interpolam entre as faixas de cor de cada um. Isso mantém UM conjunto de
@@ -12,17 +18,17 @@ import { Vector3 } from '../vendor/three/three.module.min.js';
  * que devolve ao espaço. É o que fecha o ciclo.
  */
 
-export const BIOME = { CLAREIRA: 0, FOGO: 1, AGUA: 2 };
+export const BIOME = { TERRA: 0, FOGO: 1, AGUA: 2 };
 
 export const biomes = [
   {
-    id: BIOME.CLAREIRA,
-    name: 'Clareira',
+    id: BIOME.TERRA,
+    name: 'Mundo de Terra',
     swatch: '#7fe0a8',
     palette: 2,                       // Bosque Esmeralda
     planetColor: new Vector3(0.22, 0.52, 0.28),
     ambience: { hz: 73.42, filtro: 420 },
-    saudacao: 'Terra nua. Plante.',
+    saudacao: 'Chão de terra viva. Plante.',
   },
   {
     id: BIOME.FOGO,
@@ -31,7 +37,7 @@ export const biomes = [
     palette: 3,                       // Alvorada
     planetColor: new Vector3(0.62, 0.16, 0.08),
     ambience: { hz: 55.0, filtro: 280 },
-    saudacao: 'Chão de brasa. Plante mesmo assim.',
+    saudacao: 'As paredes racharam de brasa. Plante mesmo assim.',
   },
   {
     id: BIOME.AGUA,
@@ -40,7 +46,7 @@ export const biomes = [
     palette: 0,                       // Clareira Enluarada
     planetColor: new Vector3(0.12, 0.34, 0.68),
     ambience: { hz: 98.0, filtro: 620 },
-    saudacao: 'Fundo de água. Plante.',
+    saudacao: 'A água bate na cintura. Plante no fundo.',
   },
 ];
 

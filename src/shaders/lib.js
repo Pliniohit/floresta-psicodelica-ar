@@ -297,6 +297,7 @@ varying float vSeed;
 
 uniform vec3 uOrigin;   // base da floresta em coordenadas de mundo
 uniform float uPulse;   // 0..1, decai depois de cada interação
+uniform float uVanish;  // 0 mundo inteiro, 1 mundo dissolvido (ver FRAG_FADE)
 
 // Luz "envolvente" barata: dá volume às faces low poly sem custo de PBR.
 float wrapLight(vec3 n){
@@ -312,6 +313,29 @@ float ripple(float speed, float density){
 `;
 
 /** Recorta o fragmento se ele estiver longe demais — evita cauda infinita em AR. */
+export const FRAG_CLIP = /* glsl */ `
+  if (vFade <= 0.001) discard;
+`;
+
+/**
+ * DISSOLUÇÃO.
+ *
+ * Quando a borboleta sai do casulo e sobe, o mundo não encolhe: ele evapora.
+ * O corte é por fragmento, com limiar que sobe com a altura e com um ruído
+ * ancorado em mundo — então a rasteira some primeiro e as copas por último,
+ * em manchas irregulares em vez de uma linha reta subindo.
+ *
+ * Fica no mesmo bloco do recorte por distância porque as duas coisas são a
+ * mesma decisão: este fragmento ainda existe?
+ */
 export const FRAG_FADE = /* glsl */ `
   if (vFade <= 0.001) discard;
+  if (uVanish > 0.001) {
+    float altRel = clamp((vWorld.y - uOrigin.y) / 3.0, 0.0, 1.0);
+    // Manchas grandes e macias por baixo, granulado fino por cima. Só o
+    // granulado dava um xadrez de cubos de nove centímetros, que lê como
+    // falha de renderização e não como coisa se desfazendo.
+    float grao = vnoise(vWorld * 3.2) * 0.78 + hash13(floor(vWorld * 41.0)) * 0.22;
+    if (uVanish > altRel * 0.52 + grao * 0.46 + 0.02) discard;
+  }
 `;
