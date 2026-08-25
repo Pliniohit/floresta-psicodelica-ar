@@ -246,11 +246,52 @@ export const cocoonMaterial = make('casulo', {
       bat *= 0.75 + 0.25 * sin(uTime * 0.9 + vSeed * 5.0);
       float vida = damp(bat, 0.55);
 
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float aro = pow(1.0 - abs(dot(N, V)), 2.0);
+
       float t = vSeed + uTime * 0.03;
-      vec3 col = enchant(seda, t, 0.3);
-      col += palette(t + 0.3) * vida * (0.30 + uReady * 1.6);
-      col *= 0.6 + 0.55 * wrapLight(vNormalW);
+      vec3 col = enchant(seda, t, 0.3) * (0.5 + 0.5 * wrapLight(vNormalW));
+      // Aceso por dentro: é o único objeto da cena que PRECISA ser achado,
+      // então ele é o mais luminoso, com folga.
+      col += palette(t + 0.3) * (0.9 + vida * 0.7 + uReady * 1.4);
+      col += vec3(1.0, 0.92, 0.72) * aro * (0.7 + vida * 0.5);
       gl_FragColor = vec4(filmic(col), 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// HALO DO CASULO — casca luminosa em volta, visível do outro lado do cômodo.
+// Sem ela o casulo se perde entre as folhas, e ele é o objeto que abre o
+// próximo mundo: não pode depender de sorte para ser encontrado.
+// ---------------------------------------------------------------------------
+export const cocoonGlowMaterial = make('halo-do-casulo', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  blending: AdditiveBlending,
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      float t = uTime * 0.9 + vSeed * 6.28;
+      vec3 p = position;
+      float pendura = clamp(-position.y / 0.22, 0.0, 1.0);
+      p.x += sin(t) * 0.012 * pendura;
+      p.z += cos(t * 0.8) * 0.010 * pendura;
+      // Respira devagar, sem piscar.
+      p += normal * (0.055 + 0.012 * sin(uTime * 0.7 + vSeed * 5.0));
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float aro = pow(1.0 - abs(dot(N, V)), 1.6);
+      float respira = damp(0.72 + 0.28 * sin(uTime * 0.7 + vSeed * 5.0), 0.72);
+      vec3 col = mix(palette(uTime * 0.04 + vSeed), vec3(1.0, 0.93, 0.74), 0.45);
+      gl_FragColor = vec4(col * aro * respira * 1.5, 1.0);
     }
   `,
 });

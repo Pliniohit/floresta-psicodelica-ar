@@ -43,7 +43,7 @@ export class Seeds extends Group {
     // que leva ao espaço. Contada, não sorteada: sorteio deixaria o jogador
     // sem saída se a sorte não viesse.
     this.plantadas = 0;
-    this.cadaCasulo = 4;
+    this.cadaCasulo = 3;   // cedo o bastante para a mecânica ser descoberta
     this.kind = 'normal';
   }
 

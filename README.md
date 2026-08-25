@@ -52,7 +52,15 @@ como antes.
 
 ## Criaturas e corpo
 
-**Borboletas** vagam pela clareira. As asas giram em torno do **eixo do corpo**
+**Borboletas** vagam pela clareira. Cada lado é um leque de triângulos da
+dobradiça até um contorno arredondado, e as duas asas do lado se encostam
+formando uma silhueta contínua, como a de uma monarca — a versão anterior tinha
+duas lascas finas e pontudas por lado e parecia libélula. A proporção
+envergadura/comprimento é 1,33; libélula fica perto de 0,8. Os pontos do
+contorno ganham um pouco de Z conforme se afastam da dobradiça, então a asa é
+abaulada em vez de placa plana.
+
+As asas giram em torno do **eixo do corpo**
 — girar em torno de Z, que era o erro original, apenas varria a asa dentro do
 próprio plano e nunca parecia batida. O perfil é assimétrico: sobe em 35% do
 ciclo, de 14° abaixo da horizontal a 77° acima, e cai devagar nos 65%
@@ -167,16 +175,22 @@ Todo mundo começa **descampado**: chão nu e capim ralo. A floresta é obra de
 quem planta.
 
 Vire a palma para cima, pegue a semente, solte no chão. A árvore leva **dez
-segundos** para crescer — a espera é o que dá peso ao gesto. A cada quatro
+segundos** para crescer — a espera é o que dá peso ao gesto. A cada três
 sementes, uma é de **casulo**: maior na mão, e dela nasce a árvore de galhos
 abertos com um casulo pendurado.
+
+O casulo pendura na **altura do braço** (1,3 a 1,4 m) e é o objeto mais
+luminoso da cena, com um halo próprio que respira. As duas coisas são
+deliberadas: ele é o que abre o próximo mundo, então não pode depender de sorte
+para ser achado — nem ficar fora de alcance. Na primeira versão ele pendurava a
+2,6 vezes a altura da árvore, de 3,2 a 5,1 m do chão, onde nenhuma mão chega.
 
 Toque no casulo e a borboleta te leva ao espaço. Lá, **pegue um planeta com uma
 mão e pince com a outra**: afastar as mãos aumenta a escala. Passando do
 limiar, o planeta se abre e você atravessa para o mundo dele — vermelho é fogo,
 azul é água, verde é clareira. E lá tem chão nu, sementes e um casulo de volta.
 
-A semente de casulo é **contada, não sorteada** (uma a cada quatro). Sorteio
+A semente de casulo é **contada, não sorteada** (uma a cada três). Sorteio
 deixaria alguém preso num mundo se a sorte não viesse.
 
 Trocar de mundo é animar um único float (`uBiome`): o mesmo conjunto de
@@ -379,16 +393,18 @@ O tronco é o que bloqueia a passagem; a copa não, porque fica acima da cabeça
 Então o espaçamento se aplica **só aos troncos**, e as copas ficam livres para
 se cruzar por cima:
 
-- **Perto da parede, adensa** (1,15 m entre troncos) — ninguém circula colado no
-  rodapé, e a densidade ali é o que dá a sensação de mata fechada ao redor.
-- **No meio do cômodo, abre** (2,00 m) — é por onde você anda.
+- **Perto da parede, adensa** (1,85 m entre troncos) — ninguém circula colado no
+  rodapé.
+- **No meio do cômodo, abre** (2,90 m) — bem mais que o mínimo caminhável, de
+  propósito: mata rala deixa ver o espaço entre as árvores, e é isso que faz
+  cada uma contar.
 - **Móveis viram buracos.** Planos horizontais entre 12 cm e 1,5 m do chão são
   lidos como mesa/sofá e nada é plantado dentro deles.
 - **Plantar manualmente respeita a mesma regra.** Se o ponto fecharia a
   passagem, o app recusa e avisa, em vez de deixar você se murar sem perceber.
 
-`npm test` mede isso: no pior cômodo testado sobra **1,03 m de vão livre** entre
-as cascas de dois troncos vizinhos.
+`npm test` mede isso: no pior cômodo testado sobram **1,88 m de vão livre**
+entre as cascas de dois troncos vizinhos.
 
 ### Decisões que importam para o desempenho
 

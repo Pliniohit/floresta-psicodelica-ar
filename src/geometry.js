@@ -203,12 +203,12 @@ export function flower(height = 0.30) {
  * A origem fica no PONTO DE SUSPENSÃO, no alto — assim a instância é colocada
  * no galho e o casulo pende para baixo sozinho.
  */
-export function cocoon(length = 0.16) {
-  const corpo = new IcosahedronGeometry(0.045, 1);
+export function cocoon(length = 0.20) {
+  const corpo = new IcosahedronGeometry(0.055, 1);
   const fio = new CylinderGeometry(0.0035, 0.0035, 0.05, 4, 1, true);
   return weld([
     place(fio, { y: -0.025 }),
-    place(corpo, { y: -0.05 - length * 0.5, sy: length / 0.09, sx: 0.85, sz: 0.85 }),
+    place(corpo, { y: -0.05 - length * 0.5, sy: length / 0.11, sx: 0.82, sz: 0.82 }),
   ]);
 }
 

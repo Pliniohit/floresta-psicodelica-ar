@@ -17,28 +17,78 @@ const _up = new Vector3(0, 1, 0);
 // ---------------------------------------------------------------------------
 
 /**
- * Uma borboleta: corpo fino e duas asas de dois triângulos cada. Os atributos
- * `aWing` e `aSpan` dizem ao vertex shader qual asa é e a que distância da
- * dobradiça o vértice está — é o que permite a asa flexionar ao bater.
+ * Uma borboleta.
+ *
+ * A versão anterior tinha duas lascas finas e pontudas por lado, e por isso
+ * parecia libélula: libélula tem asa estreita e corpo comprido, borboleta tem
+ * asa LARGA e arredondada e corpo curto e grosso.
+ *
+ * Cada lado é um leque de triângulos saindo da dobradiça até um contorno
+ * arredondado, e as duas asas do lado se encostam, formando uma silhueta
+ * contínua como a de uma monarca.
+ *
+ * Os pontos do contorno ganham um pouco de Z proporcional à distância da
+ * dobradiça: a asa fica ligeiramente abaulada em vez de ser uma placa plana,
+ * e é isso que impede a leitura de recorte de papel.
  */
+
+/** Contorno da asa dianteira, do lado direito. Espelhado para o esquerdo. */
+const FOREWING = [
+  [0.014, 0.030], [0.038, 0.038], [0.062, 0.032],
+  [0.076, 0.014], [0.070, -0.006], [0.044, -0.014], [0.014, -0.012],
+];
+/** Contorno da asa traseira, menor e mais redonda, encostando na dianteira. */
+const HINDWING = [
+  [0.014, -0.012], [0.042, -0.018], [0.058, -0.036],
+  [0.048, -0.056], [0.024, -0.058], [0.006, -0.040],
+];
+
+const FORE_HINGE = [0.002, 0.010];
+const HIND_HINGE = [0.002, -0.020];
+const CAMBER = 0.16;      // quanto a asa abauda ao longo da envergadura
+
 function butterflyGeometry() {
   const pos = [], wing = [], span = [];
 
-  const tri = (a, b, c, w, spans) => {
-    pos.push(...a, ...b, ...c);
-    wing.push(w, w, w);
-    span.push(...spans);
+  const empurra = (p, w, sp) => { pos.push(...p); wing.push(w); span.push(sp); };
+
+  /** Leque de triângulos da dobradiça até o contorno. */
+  const leque = (hinge, contorno, lado, extensaoMax) => {
+    const hx = hinge[0] * lado, hy = hinge[1];
+    for (let i = 0; i < contorno.length - 1; i++) {
+      const a = contorno[i], b = contorno[i + 1];
+      const spanA = Math.hypot(a[0] - hinge[0], a[1] - hinge[1]) / extensaoMax;
+      const spanB = Math.hypot(b[0] - hinge[0], b[1] - hinge[1]) / extensaoMax;
+      empurra([hx, hy, 0], lado, 0);
+      empurra([a[0] * lado, a[1], spanA * CAMBER * 0.09], lado, Math.min(1, spanA));
+      empurra([b[0] * lado, b[1], spanB * CAMBER * 0.09], lado, Math.min(1, spanB));
+    }
   };
 
-  // corpo: um losango estreito ao longo de Y
-  tri([0, -0.035, 0], [0.006, 0.035, 0], [-0.006, 0.035, 0], 0, [0, 0, 0]);
+  const alcance = (hinge, contorno) => Math.max(
+    ...contorno.map((p) => Math.hypot(p[0] - hinge[0], p[1] - hinge[1])));
+  const foreMax = alcance(FORE_HINGE, FOREWING);
+  const hindMax = alcance(HIND_HINGE, HINDWING);
 
   for (const lado of [-1, 1]) {
-    const x = (v) => v * lado;
-    // asa dianteira, maior
-    tri([0, 0.020, 0], [x(0.052), 0.034, 0.004], [x(0.044), -0.004, 0.002], lado, [0, 1, 0.8]);
-    // asa traseira, menor
-    tri([0, 0.004, 0], [x(0.044), -0.004, 0.002], [x(0.030), -0.036, 0.004], lado, [0, 0.8, 0.7]);
+    leque(FORE_HINGE, FOREWING, lado, foreMax);
+    leque(HIND_HINGE, HINDWING, lado, hindMax);
+  }
+
+  // Corpo curto e grosso, com tórax mais largo que o abdômen.
+  const corpo = [
+    [[0, 0.034, 0], [0.007, 0.010, 0.004], [-0.007, 0.010, 0.004]],   // cabeça
+    [[0.007, 0.010, 0.004], [0.006, -0.014, 0.003], [-0.007, 0.010, 0.004]],
+    [[-0.007, 0.010, 0.004], [0.006, -0.014, 0.003], [-0.006, -0.014, 0.003]],
+    [[0.006, -0.014, 0.003], [0, -0.050, 0], [-0.006, -0.014, 0.003]],  // abdômen
+  ];
+  for (const t of corpo) for (const v of t) empurra(v, 0, 0);
+
+  // Antenas: dois filetes para a frente. Libélula não tem; a silhueta muda.
+  for (const lado of [-1, 1]) {
+    empurra([lado * 0.002, 0.032, 0], 0, 0);
+    empurra([lado * 0.016, 0.056, 0.002], 0, 0);
+    empurra([lado * 0.007, 0.032, 0], 0, 0);
   }
 
   const g = new BufferGeometry();

@@ -32,16 +32,18 @@ const _up = new Vector3(0, 1, 0);
 // folga e deixamos as copas se cruzarem por cima, que é o que forma o dossel.
 // ---------------------------------------------------------------------------
 const WALK = {
-  trunkGapOpen: 2.00,   // distância mínima entre troncos no meio do cômodo
-  trunkGapWall: 1.15,   // perto da parede pode adensar: ninguém circula ali
-  openFrom: 2.00,       // a partir desta distância da parede já é "meio do cômodo"
+  // Bem mais largo que o mínimo caminhável: floresta rala deixa ver o
+  // espaço entre as árvores, e é isso que faz cada uma contar.
+  trunkGapOpen: 2.90,   // distância mínima entre troncos no meio do cômodo
+  trunkGapWall: 1.85,   // perto da parede pode adensar: ninguém circula ali
+  openFrom: 1.80,       // a partir desta distância da parede já é "meio do cômodo"
   wallMargin: 0.40,     // troncos não encostam na parede
   obstacleMargin: 0.30, // nem dentro de móveis
 };
 
 /** Densidades por metro quadrado de piso livre. */
 const PER_M2 = {
-  tree: 0.42,
+  tree: 0.16,       // eram 0,42 — mata rala, não bosque fechado
   mushroom: 0.42,   // eram 1,1 — viraram acento, não tapete
   crystal: 0.40,
   grass: 70,
@@ -56,7 +58,7 @@ const ON_SURFACE = { mushroom: 2.5, moss: 320 };
 /** Trepadeiras por metro linear de parede. */
 const VINES_PER_M = 3.2;
 const CAPACITY = {
-  tree: 60, mushroom: 60, crystal: 32, grass: 2600,
+  tree: 26, mushroom: 60, crystal: 32, grass: 2600,
   fern: 90, shrub: 40, flower: 120, reed: 70, cocoon: 14, orb: 40,
 };
 const SPORES = 900;
@@ -151,8 +153,11 @@ export class Forest extends Group {
     this.geo.cocoon = cocoonGeo;
     const cocoonMesh = new InstancedMesh(cocoonGeo, M.cocoonMaterial, CAPACITY.cocoon);
     cocoonMesh.renderOrder = 5;
-    this.add(cocoonMesh);
-    this.cocoons = new InstanceSet([cocoonMesh], CAPACITY.cocoon);
+    const haloMesh = new InstancedMesh(cocoonGeo, M.cocoonGlowMaterial, CAPACITY.cocoon);
+    haloMesh.renderOrder = 8;
+    this.add(cocoonMesh, haloMesh);
+    // Uma lista só de transformações para os dois: o halo nunca desencontra.
+    this.cocoons = new InstanceSet([cocoonMesh, haloMesh], CAPACITY.cocoon);
     this.cocoonSpots = [];   // posições locais, para detectar o toque
 
     const orbMesh = new InstancedMesh(new IcosahedronGeometry(0.05, 0), M.orbMaterial, CAPACITY.orb);
@@ -386,9 +391,8 @@ export class Forest extends Group {
       if (altura > 1.05 && this.cocoons.count < CAPACITY.cocoon && r() < 0.45) {
         const a = r() * Math.PI * 2;
         const raio = (0.35 + r() * 0.45) * largura;
-        const alturaGalho = (2.55 + r() * 0.7) * altura;
-        const cp = new Vector3(pt.x + Math.cos(a) * raio, alturaGalho, pt.z + Math.sin(a) * raio);
-        const cs = 0.8 + r() * 0.7;
+        const cp = new Vector3(pt.x + Math.cos(a) * raio, 1.42 + r() * 0.32, pt.z + Math.sin(a) * raio);
+        const cs = 1.5 + r() * 0.5;
         this.cocoons.add(cp, _q.identity(), _s.set(cs, cs, cs));
         this.cocoonSpots.push({ pos: cp.clone(), escala: cs, aberto: false });
       }
@@ -552,7 +556,7 @@ export class Forest extends Group {
    * Casulo mais próximo de um ponto em coordenadas LOCAIS, ou null.
    * Devolve o índice, porque é por ele que o casulo é aberto depois.
    */
-  pickCocoon(local, alcance = 0.14) {
+  pickCocoon(local, alcance = 0.20) {
     const inv = 1 / (this.scale.x || 1);
     const r = alcance * inv;
     for (let i = 0; i < this.cocoonSpots.length; i++) {
@@ -646,11 +650,13 @@ export class Forest extends Group {
     if (kind === 'cocoon' && this.cocoons.count < CAPACITY.cocoon) {
       const a = r() * Math.PI * 2;
       const raio = (0.4 + r() * 0.35) * largura;
+      // ALTURA DE BRAÇO, não de copa. Antes pendurava a 2,6x a altura da
+      // árvore — de 3,2 a 5,1 m do chão, fora do alcance de qualquer mão.
       const cp = new Vector3(
         local.x + Math.cos(a) * raio,
-        (2.6 + r() * 0.5) * altura,
+        1.42 + r() * 0.32,
         local.z + Math.sin(a) * raio);
-      const cs = 0.9 + r() * 0.5;
+      const cs = 1.5 + r() * 0.5;
       const ci = this.cocoons.add(cp, _q.identity(), _s.setScalar(0.004));
       this.cocoons.flush();
       if (ci >= 0) {
