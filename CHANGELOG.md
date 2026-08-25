@@ -17,6 +17,15 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.14.1 — Semente estável para objetos em movimento
 
+A piscada dos planetas não era brilho oscilando: era o objeto **trocando de
+identidade**. Cada instância derivava sua semente da posição em mundo, o que
+serve para árvore mas não para planeta em órbita — a semente mudava a cada
+frame, e com ela a escolha entre gasoso, rochoso e gelado. Em oito quadros
+seguidos ela passou pelos três tipos.
+
+O mesmo afetava borboletas (espécie e cor), vaga-lumes (fase) e medusas. Agora
+a semente vem de atributo por instância nos enxames e de uniform nos planetas.
+
 ## v0.14.0 — Plantio destravado, planetas parados e buracos negros
 
 **O plantio travava o jogo inteiro.** "Palma para cima" dependia do sinal de um
