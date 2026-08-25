@@ -17,6 +17,15 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.13.0 — Asas à deriva e versionamento
 
+Asas de 1,7–2,5 Hz para 0,62–0,92 Hz, planando ~45% do tempo, curso de -8° a
++63° (era -14° a +77°). Fidelidade joga contra aqui: a borboleta real passa de
+8 Hz, mas vinte asas rápidas no campo de visão leem como enxame agitado.
+
+Versionamento: as doze versões anteriores marcadas retroativamente, changelog,
+`scripts/release.mjs` e a versão visível na tela inicial. As tags são o backup —
+`git checkout v0.8.0` devolve a árvore inteira, e cada uma tem zip próprio no
+GitHub.
+
 ## v0.12.0 — Ritmo
 
 Tudo a ~48% da velocidade original; transições 1,6x a 2,8x mais longas. As
