@@ -17,6 +17,83 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.15.0 — O cômodo veste cada mundo, e tudo se alcança de longe
 
+### Sentado, deitado, de pé
+
+A interação deixou de ser *alcançar* e passou a ser *mirar*. O raio de cada
+mão sai do **olho, através da mão**, e segue adiante — não sai do dedo porque
+o indicador se dobra para encostar no polegar justamente quando você pinça, e
+aí a direção do dedo aponta para qualquer lugar menos o alvo.
+
+Com isso, tudo passa a funcionar de qualquer postura:
+
+- **casulo** — pinçar mirando abre, sem precisar chegar perto e encostar
+- **planta** — pinçar mirando arranca e traz preso ao raio; mexer o pulso a
+  arrasta lá longe, com a distância congelada
+- **planeta** — pinçar mirando pega, mesmo com a órbita fora do alcance do braço
+- **plantar** — a semente cai onde o raio encosta no chão, não sob a cadeira
+
+Encostar continua funcionando. O que mudou é que já não é obrigatório.
+
+### As paredes são o palco, em todos os mundos
+
+Cada mundo agora **veste** o cômodo em vez de fugir dele. O material das
+paredes é aditivo e não escreve profundidade: ele pinta *por cima* do
+passthrough, então a sua sala continua visível por baixo.
+
+| Mundo | Nas paredes | Na horizontal |
+| --- | --- | --- |
+| Terra | trepadeiras finas subindo do rodapé, com folhas | — |
+| Fogo | a alvenaria racha e o magma brilha nas fendas | névoa de brasa rente ao chão |
+| Água | ondas atravessando a parede, subindo devagar | lâmina na altura da cintura, com cáusticas |
+
+A lâmina de água é translúcida de propósito: as suas pernas de verdade
+aparecem por baixo, e é isso que faz a água parecer estar *na* sala.
+
+Quando o Space Setup não traz paredes marcadas — o que é comum —, elas passam
+a ser derivadas do polígono do chão. Onde o chão acaba, a parede começa. Vale
+para a casca e vale para os buracos negros, que antes simplesmente não
+apareciam nessas salas.
+
+**O céu não fecha mais em volta.** Antes ele descia até cobrir tudo no espaço,
+e o resultado era realidade virtual. Agora existe um teto de opacidade e o
+horizonte para acima da linha da sala: mesmo entre os planetas, as paredes
+continuam ao seu redor — com os buracos negros abertos nelas.
+
+### O mundo evapora
+
+Ao sair do casulo, a borboleta não deixa uma cena que encolhe: deixa um mundo
+que se **dissolve**. O corte é por fragmento, com limiar que sobe com a altura
+e um ruído ancorado em mundo — a rasteira some primeiro, as copas por último,
+em manchas em vez de uma linha subindo. Termina em 75% da subida; o último
+trecho ela sobe sozinha.
+
+No alto ela vira luz: um clarão que decai em cerca de dois segundos. Lento de
+propósito, muito abaixo da faixa de 3 a 30 Hz que dispara crise em epilepsia
+fotossensível.
+
+### Cada planeta é um elemento
+
+A superfície do planeta passou a ser decidida pelo elemento que ele guarda, e
+não por sorteio: continentes e mares na terra, basalto rachado de magma no
+fogo, oceano coberto de nuvem na água. Sem isso não dava para *escolher* para
+onde ir — só para descobrir depois de já ter atravessado.
+
+### A asa volta a bater
+
+O que identifica uma borboleta não é a frequência: é o padrão. Ela bate
+algumas vezes fundo, para, e plana.
+
+Bater sem parar dava o "frenético" da v0.12; planar sempre — a correção da
+v0.13 — tirou a batida junto, e aí não parecia mais borboleta. Agora são
+**rajadas de ~1,7 Hz com curso de 100°** (de 19° abaixo da horizontal a 82°
+acima, quase se encostando por cima do dorso), separadas por planeios de
+quatro segundos em diedro raso.
+
+Junto vieram duas coisas que dão peso ao bicho: a ponta da asa chega **depois**
+da dobradiça, o que a faz parecer membrana em vez de placa; e o corpo inteiro
+sobe quando as asas descem.
+
+
 ## v0.14.1 — Semente estável para objetos em movimento
 
 A piscada dos planetas não era brilho oscilando: era o objeto **trocando de
