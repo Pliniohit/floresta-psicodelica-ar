@@ -64,7 +64,9 @@ git('add', '-A');
 git('commit', '-m', `v${nova} — ${titulo}`);
 git('tag', '-a', `v${nova}`, '-m', titulo);
 git('push', 'origin', 'main');
-git('push', 'origin', `v${nova}`);
+// --tags, não a tag isolada: tag que fica só no disco não é backup nenhum,
+// e foi o que aconteceu com as treze primeiras.
+git('push', 'origin', '--tags');
 
 // Zip da versão, para backup fora do git.
 const saida = join(RAIZ, 'releases');
