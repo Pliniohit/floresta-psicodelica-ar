@@ -67,6 +67,9 @@
   }
   #preview:hover{color:var(--ink);border-color:rgba(190,150,255,.6)}
   #status{margin-top:18px;font-size:13px;color:var(--dim);min-height:1.5em}
+  /* A versão fica visível: sem ela não dá para saber o que está sendo testado
+     quando o navegador serve uma cópia em cache. */
+  .versao{margin-top:10px;font-size:11px;color:var(--dim);opacity:.55;letter-spacing:.06em}
   #status b{color:#ff9ec7;font-weight:500}
   .keys{
     margin-top:30px;padding-top:22px;border-top:1px solid var(--edge);
@@ -163,6 +166,7 @@
     <button id="camera" hidden>Abrir com a câmera</button>
     <button id="preview">Ver prévia no navegador (sem AR)</button>
     <p id="status"></p>
+    <p class="versao"><span id="versao">v0.12.0</span></p>
 
     <div class="keys">
       <kbd>Gatilho</kbd><span>Confirmar o espaço mapeado &nbsp;·&nbsp; depois, plantar onde você aponta</span>

@@ -738,9 +738,10 @@ export const butterflyMaterial = make('borboletas', {
       vSpan = aSpan;
       vWing = aWing;
 
-      // Frequência entre 3 e 4,5 Hz. Menos que a borboleta real, que passa de
-      // 8, porque em VR uma asa a 8 Hz na periferia lê como tremulação.
-      float freq = (1.7 + vSeed * 0.8) * mix(0.55, 1.0, uCalm);
+      // Menos de 1 Hz. A borboleta real passa de 8, mas fidelidade aqui joga
+      // contra: vinte asas rápidas no campo de visão leem como enxame agitado,
+      // e o que se quer é uma coisa à deriva.
+      float freq = (0.62 + vSeed * 0.30) * mix(0.6, 1.0, uCalm);
       float fase = fract(uTime * freq + vSeed * 7.0);
 
       // Perfil ASSIMÉTRICO: sobe em 35% do ciclo e desce nos 65% restantes.
@@ -749,12 +750,14 @@ export const butterflyMaterial = make('borboletas', {
       float desce = 1.0 - smoothstep(0.0, 1.0, (fase - 0.35) / 0.65);
       float perfil = fase < 0.35 ? sobe : desce;
 
-      // Plana de vez em quando: sem as pausas o voo fica mecânico.
-      float planando = smoothstep(0.25, 0.75, sin(uTime * 0.17 + vSeed * 9.0));
-      perfil = mix(perfil, 0.42, planando * 0.92);
+      // Plana a maior parte do tempo. Antes eram batidas contínuas com pausas
+      // curtas; agora é o contrário — plana, e de vez em quando bate.
+      float planando = smoothstep(-0.35, 0.45, sin(uTime * 0.11 + vSeed * 9.0));
+      perfil = mix(perfil, 0.38, planando * 0.94);
 
-      // De 14 graus abaixo da horizontal a 77 acima — quase se tocando em cima.
-      float ang = mix(-0.25, 1.35, perfil) * aSpan * abs(aWing);
+      // De 8 graus abaixo da horizontal a 63 acima. Curso menor que o real,
+      // porque amplitude grande a essa lentidão lê como remada.
+      float ang = mix(-0.14, 1.10, perfil) * aSpan * abs(aWing);
 
       // Rotação em torno de Y, o eixo do CORPO: é isso que levanta a asa.
       // Em torno de Z ela apenas varria dentro do próprio plano, que foi por

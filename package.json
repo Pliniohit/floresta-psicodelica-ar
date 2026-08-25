@@ -1,6 +1,6 @@
 {
   "name": "floresta-psicodelica-ar",
-  "version": "1.0.0",
+  "version": "0.12.0",
   "description": "Floresta psicodélica low poly com texturas animadas por shader, em realidade aumentada para Meta Quest 3 (WebXR).",
   "type": "module",
   "private": true,
@@ -8,6 +8,7 @@
     "start": "node serve.mjs",
     "dev": "node serve.mjs",
     "dev:http": "node serve.mjs --http",
-    "test": "node test-shaders.mjs && node test-geometry.mjs && node test-layout.mjs && node test-grab.mjs"
+    "test": "node test-shaders.mjs && node test-geometry.mjs && node test-layout.mjs && node test-grab.mjs",
+    "release": "node scripts/release.mjs"
   }
 }
