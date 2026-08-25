@@ -17,6 +17,28 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.21.2 — Borboletas do tamanho de borboletas
 
+Elas estavam com **um metro de envergadura**, e a causa é a troca de malha por
+nuvem na v0.21.0.
+
+A nuvem assada sai **normalizada**: o maior lado dela vale 1. A geometria
+procedural que ela substituiu já vinha em metros, com uns doze centímetros de
+ponta a ponta. Trocar uma pela outra sem reescalar multiplicou tudo por oito.
+
+Agora a envergadura base é **12,5 cm** — uma monarca. Com a variação de tamanho
+do enxame, o conjunto vai de 9,4 a 17,1 cm, que é a faixa real. A que sai do
+casulo fica em 27,5 cm: maior que as outras, porque é a protagonista, mas não é
+um planador.
+
+### E o último bando de poliedros
+
+Os vaga-lumes que circulam o corpo ainda eram icosaedros sólidos de um
+centímetro e meio. A essa escala um poliedro não lê como luz — lê como cascalho
+colorido flutuando em volta da pessoa.
+
+É a mesma queixa que já tinha tirado os orbes de cena na v0.20.0 e as estrelas
+da constelação junto. Este bando tinha escapado. Agora é um ponto cada.
+
+
 ## v0.21.1 — A borboleta parou de rodopiar
 
 Dois erros no mesmo lugar, e o segundo é o que importa.
