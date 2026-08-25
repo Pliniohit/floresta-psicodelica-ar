@@ -17,6 +17,64 @@ git diff v0.11.0 v0.12.0 --stat
 
 ## v0.21.0 — A floresta virou nuvem de pontos
 
+Mudança de conceito, vinda do estudo de partículas guardado no Drive. A
+vegetação deixou de ser malha e virou nuvem de pontos amostrada na superfície
+da própria malha. Os triângulos da cena caíram de **12.777 para 131**.
+
+### A amostragem
+
+Ponderar por **área** é a parte que não dá para pular. Sorteando triângulos por
+igual, a nuvem acumula pontos onde a malha é mais detalhada — a copa fica densa
+nos cantinhos e rala nas faces grandes, e a silhueta se perde. Ponderando pela
+área, a densidade fica uniforme na superfície, e é isso que faz a nuvem ter a
+forma do objeto.
+
+E as coordenadas baricêntricas precisam da raiz do primeiro sorteio. Sem ela se
+concentram num canto do triângulo, e a nuvem sai com veios.
+
+### A interface que destravou tudo
+
+`NuvemDePontos` **finge ser um `InstancedMesh`**: expõe `setMatrixAt`,
+`instanceMatrix` e `count` com o mesmo comportamento. Com isso entra no
+`InstanceSet` da floresta como se fosse mais uma malha, e plantar, pegar,
+carregar, soltar e crescer seguem funcionando sem saber que agora mexem em
+pontos.
+
+Trinta e três mil pontos de vegetação em **catorze chamadas de desenho**.
+
+### A borboleta assada
+
+Veio de um `.glb` de verdade, mas **assada**: `scripts/assar-nuvem.mjs` lê o
+contêiner, junta os triângulos já no espaço da cena, amostra, quantiza em 16
+bits e escreve só as coordenadas. **482 kB de modelo viraram 20 kB.**
+
+O projeto não tem GLTFLoader, não tem CDN e não tem asset externo. Assar
+resolve os três de uma vez — e era a recomendação que o próprio estudo deixou
+escrita: *"amostrar os pontos uma vez e salvar só as coordenadas resolveria,
+dispensando o modelo"*.
+
+A batida de asa sobreviveu à troca porque tudo o que ela precisa saber cabe em
+dois números por ponto: de que **lado** do corpo ele está, e a que **distância**
+da dobradiça. Os dois se leem direto da coordenada, sem depender de como a
+malha foi construída. Mudou só o eixo: no modelo assado o corpo corre em Z, e
+não em Y como na geometria procedural.
+
+### Também viraram partículas
+
+- **O que floresce no corpo.** Um cogumelo sólido brotando do próprio ombro
+  oclui o seu braço de verdade e vira um objeto grudado. Em pontos ele lê como
+  luz saindo do corpo.
+- **O feixe do controle.** Um cilindro fino a quatro metros é uma agulha sólida
+  no meio de uma cena de partículas. Agora rarefaz com a distância — firme na
+  mão, dissolvido na ponta.
+
+### Pendência
+
+`CREDITOS.md`: não sei a origem do `.glb` da borboleta. Se for CC Attribution,
+a licença exige crédito, e uma nuvem extraída dele continua sendo obra
+derivada.
+
+
 ## v0.20.0 — Vaga-lumes em pontos; fora os poliedros flutuantes
 
 Dois poliedros sólidos flutuavam sem explicação na cena, e eram coisas
