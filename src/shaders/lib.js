@@ -217,6 +217,40 @@ vec3 nightBody(vec3 c){
 vec3 filmic(vec3 c){
   return 1.0 - exp(-max(c, 0.0) * 1.35);
 }
+
+/**
+ * A SAÍDA DE TUDO QUE É ADITIVO — e por que ela precisa existir.
+ *
+ * A mistura aditiva do three é (srcAlpha, One): o que chega ao quadro é
+ * "rgb * a" somado ao que já estava lá. Como somar nunca escurece, era
+ * tentador escrever "vec4(luz, 1.0)" e pronto — e foi o que quase todo
+ * material aditivo daqui fazia.
+ *
+ * O problema não está no COR. Está no ALFA.
+ *
+ * Em "immersive-ar" o compositor usa o alfa da nossa camada para decidir
+ * quanto da câmera passa por baixo. Alfa 1 quer dizer "aqui é só meu, não
+ * mostre o mundo real". Um sprite de partícula tem o miolo aceso e a borda
+ * quase apagada — mas escrevia alfa 1 no disco INTEIRO. Resultado: a borda
+ * virava um disco PRETO OPACO tapando a sala, e cada partícula ganhava um
+ * anel escuro. Os raios das mãos, feitos de cento e trinta desses pontos,
+ * viravam um cordão de contas pretas.
+ *
+ * Na prévia do navegador nada disso aparecia: lá o fundo já é preto, e preto
+ * sobre preto é invisível. Só em passthrough o defeito tem onde se mostrar.
+ *
+ * A correção divide a luz pelo próprio pico antes de sair. Como a mistura
+ * multiplica de volta por "a", o que chega ao quadro continua sendo "luz",
+ * exatamente como antes — mas o alfa gravado passa a ser quanta luz foi de
+ * fato somada. Borda apagada, alfa zero, a sala aparece.
+ *
+ * O pico e não a luminância: um azul saturado tem luminância baixa e mesmo
+ * assim precisa registrar presença.
+ */
+vec4 aditivo(vec3 luz){
+  float a = clamp(max(max(luz.r, luz.g), luz.b), 0.0, 1.0);
+  return vec4(luz / max(a, 1e-4), a);
+}
 `;
 
 /**

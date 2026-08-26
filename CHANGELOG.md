@@ -15,6 +15,67 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.24.1 — O contorno preto em volta de tudo que brilha
+
+Partículas com anel escuro, e os raios das mãos virando um cordão de contas
+pretas. O defeito estava em **dezoito materiais** de uma vez, e existia desde
+sempre — só que nunca dava para vê-lo aqui.
+
+### Não era a cor. Era o alfa.
+
+A mistura aditiva do three é `(srcAlpha, One)`: o que chega ao quadro é
+`rgb * a` somado ao que já estava lá. Como somar nunca escurece, escrever
+`vec4(luz, 1.0)` parecia inofensivo — e era o que quase todo material aditivo
+do projeto fazia.
+
+Só que em `immersive-ar` o compositor usa o alfa da **nossa** camada para
+decidir quanto da câmera passa por baixo. Alfa 1 quer dizer "aqui é só meu,
+não mostre o mundo real". Um sprite de partícula tem o miolo aceso e a borda
+quase apagada — mas gravava alfa 1 no disco **inteiro**. A borda virava um
+disco preto opaco tapando a sala, e cada partícula ganhava um anel escuro. O
+feixe que sai da mão é feito de cento e trinta desses pontos.
+
+**Na prévia do navegador nada disso aparecia**, porque lá o fundo já é preto, e
+preto sobre preto é invisível. Só o headset tinha onde mostrar o defeito — e só
+depois de publicado.
+
+### A correção
+
+Uma função `aditivo()` divide a luz pelo próprio pico antes de sair. Como a
+mistura multiplica de volta por `a`, o que chega ao quadro continua sendo
+exatamente a mesma luz de antes — mas o alfa gravado passa a ser **quanta luz
+foi de fato somada**. Borda apagada, alfa zero, a sala aparece.
+
+O pico e não a luminância: um azul saturado tem luminância baixa e mesmo assim
+precisa registrar presença.
+
+Cada um dos dezoito materiais foi convertido preservando a contribuição de luz
+ao pixel — `vec4(X, 1.0)` virou `aditivo(X)`, `vec4(X, a)` virou
+`aditivo(X * a)`, `vec4(X * a, a)` virou `aditivo(X * a * a)`. Sobre fundo
+preto a cena está pixel a pixel idêntica; o que mudou foi só o canal que o
+compositor lê.
+
+De quebra, as paredes voltaram a fazer o que a documentação delas sempre
+prometeu: como agora gravam alfa proporcional ao brilho do padrão, **o cômodo
+real reaparece por baixo** em vez de ser coberto por um retângulo opaco.
+
+### O teste
+
+`test-shaders.mjs` passou a exigir que todo material com `AdditiveBlending`
+termine em `aditivo()`. É uma regra que **não dá para verificar olhando a
+prévia** — daí ela virar teste. Conferido: reverter um único material faz o
+teste falhar apontando o nome dele.
+
+Um material não-aditivo (`tideMaterial`, a lâmina d'água) foi convertido por
+engano na primeira passada, porque a substituição casou por texto. A auditoria
+que compara "é aditivo" com "usa o helper" nos dois sentidos pegou.
+
+### E a crase, pela sexta vez
+
+O comentário que explica esta correção tinha crases dentro do bloco GLSL, o
+que termina o template literal do JavaScript e quebra o arquivo inteiro.
+`test-shaders.mjs` pegou na primeira execução, como das outras cinco vezes.
+
 ## v0.24.0 — O portal, e o casulo indo para o lugar certo
 
 ### O casulo levava ao lugar errado

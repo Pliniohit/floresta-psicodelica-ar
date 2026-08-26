@@ -1,6 +1,6 @@
 {
   "name": "floresta-psicodelica-ar",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "description": "Universo Encantado: sete cenários em nuvens de partículas, encadeados por uma borboleta, em realidade aumentada para Meta Quest 3 (WebXR).",
   "type": "module",
   "private": true,

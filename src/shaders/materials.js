@@ -429,7 +429,7 @@ export const cocoonGlowMaterial = make('halo-do-casulo', {
       float aro = pow(1.0 - abs(dot(N, V)), 1.6);
       float respira = damp(0.72 + 0.28 * sin(uTime * 0.35 + vSeed * 5.0), 0.72);
       vec3 col = mix(palette(uTime * 0.04 + vSeed), vec3(1.0, 0.93, 0.74), 0.45);
-      gl_FragColor = vec4(col * aro * respira * 1.5, 1.0);
+      gl_FragColor = aditivo(col * aro * respira * 1.5);
     }
   `,
 });
@@ -458,7 +458,7 @@ export const crystalMaterial = make('cristal', {
       float t = N.y * 0.6 + N.x * 0.3 + uTime * 0.16 + vSeed;
       vec3 col = palette(t) * (0.35 + fres * 1.5);
       col += palette(t + 0.5) * uPulse * 0.8;
-      gl_FragColor = vec4(trippy(col) * vFade, 1.0);
+      gl_FragColor = aditivo(trippy(col) * vFade);
     }
   `,
 });
@@ -596,7 +596,7 @@ export const sporeMaterial = make('esporos', {
       if (d > 0.25) discard;
       float soft = pow(1.0 - d * 4.0, 2.0);
       vec3 col = palette(vSeed + uTime * 0.09);
-      gl_FragColor = vec4(trippy(col) * soft * vFade * (0.8 + uPulse + uGlow * 0.7), 1.0);
+      gl_FragColor = aditivo(trippy(col) * soft * vFade * (0.8 + uPulse + uGlow * 0.7));
     }
   `,
 });
@@ -622,7 +622,7 @@ export const orbMaterial = make('orbes', {
       vec3 V = normalize(cameraPosition - vWorld);
       float core = pow(max(dot(N, V), 0.0), 1.5);
       vec3 col = palette(vSeed + uTime * 0.12);
-      gl_FragColor = vec4(trippy(col) * (0.25 + core * 1.6) * vFade, 1.0);
+      gl_FragColor = aditivo(trippy(col) * (0.25 + core * 1.6) * vFade);
     }
   `,
 });
@@ -766,7 +766,7 @@ export const skyLifeMaterial = make('brilho-de-ceu', {
 
       vec3 col = palette(vSeed * 0.5 + uTime * 0.07);
       float brilho = (rim * 1.35 + core * 0.10) * (0.35 + baixo * 0.65) + cauda * 0.35;
-      gl_FragColor = vec4(trippy(col) * brilho, 1.0);
+      gl_FragColor = aditivo(trippy(col) * brilho);
     }
   `,
 });
@@ -1103,7 +1103,7 @@ export const atmosferaMaterial = make('atmosfera', {
       // pré-multiplicar aqui aplicaria a opacidade duas vezes e a atmosfera
       // sumiria justamente onde é fina.
       float a = clamp(alfa, 0.0, 1.0) * uWarp;
-      gl_FragColor = vec4(filmic(col), a);
+      gl_FragColor = aditivo(filmic(col) * a);
     }
   `,
 });
@@ -1213,7 +1213,7 @@ export const portalBordaMaterial = make('portal-orla', {
       // guirlanda em volta de uma tela de cinema só distrai.
       float a = suave * damp(0.72 + 0.28 * sin(uTime * 0.7 + vSeed * 12.0), 0.86)
               * mix(1.0, 0.35, uAberto);
-      gl_FragColor = vec4(filmic(col) * a, a);
+      gl_FragColor = aditivo(filmic(col) * a * a);
     }
   `,
 });
@@ -1247,7 +1247,7 @@ export const trailMaterial = make('rastro', {
       if (d > 0.25) discard;
       float suave = pow(1.0 - d * 4.0, 2.0);
       vec3 col = palette(0.15 + vSeed * 0.4 + uTime * 0.05);
-      gl_FragColor = vec4(col * suave * vFade * vFade * 2.4, 1.0);
+      gl_FragColor = aditivo(col * suave * vFade * vFade * 2.4);
     }
   `,
 });
@@ -1338,7 +1338,7 @@ export const scanMaterial = make('varredura', {
       if (a <= 0.004) discard;
 
       vec3 col = palette(vWorld.y * 0.2 + uTime * 0.12);
-      gl_FragColor = vec4(trippy(col) * (0.8 + band * 2.2), a);
+      gl_FragColor = aditivo(trippy(col) * (0.8 + band * 2.2) * a);
     }
   `,
 });
@@ -1373,7 +1373,7 @@ export const fireflyMaterial = make('vagalumes', {
       float pisca = damp(osc, 0.78);
 
       vec3 col = palette(0.12 + vSeed * 0.1 + uTime * 0.02);
-      gl_FragColor = vec4(trippy(col) * core * pisca * 1.7 * vFade, 1.0);
+      gl_FragColor = aditivo(trippy(col) * core * pisca * 1.7 * vFade);
     }
   `,
 });
@@ -1442,7 +1442,7 @@ export const highlightMaterial = make('realce', {
       vec3 V = normalize(cameraPosition - vWorld);
       float rim = pow(1.0 - abs(dot(N, V)), 1.6);
       vec3 col = palette(uTime * 0.25 + 0.5);
-      gl_FragColor = vec4(trippy(col) * rim * 1.8, 1.0);
+      gl_FragColor = aditivo(trippy(col) * rim * 1.8);
     }
   `,
 });
@@ -1474,7 +1474,7 @@ export const reticleMaterial = make('reticulo', {
       float halo = smoothstep(0.16, 0.0, r) * 0.35;
       float alpha = ring * (0.35 + 0.65 * dashes) + halo;
       if (alpha <= 0.004) discard;
-      gl_FragColor = vec4(palette(uTime * 0.2) * 1.6, alpha);
+      gl_FragColor = aditivo(palette(uTime * 0.2) * 1.6 * alpha);
     }
   `,
 });
@@ -1645,7 +1645,7 @@ export const wallMaterial = make('paredes', {
 
       float a = borda * uShell;
       if (a <= 0.004) discard;
-      gl_FragColor = vec4(filmic(col), a);
+      gl_FragColor = aditivo(filmic(col) * a);
     }
   `,
 });
@@ -1798,7 +1798,7 @@ export const meteorMaterial = make('meteoros', {
 
       // A cabeça é quase branca; o rastro pega a cor viva do cenário.
       vec3 col = mix(bioHue(vSeed), vec3(1.0), pow(1.0 - vCauda, 3.0) * 0.85);
-      gl_FragColor = vec4(col * a * 2.4, a);
+      gl_FragColor = aditivo(col * a * a * 2.4);
     }
   `,
 });
@@ -1943,7 +1943,7 @@ export const fireflyFieldMaterial = make('campo-de-vagalumes', {
       if (brilho <= 0.004) discard;
 
       vec3 col = bioHue(vSeed * 0.7) * (halo * 0.50 + nucleo * 1.7);
-      gl_FragColor = vec4(col * brilho * (0.55 + uGlow), 1.0);
+      gl_FragColor = aditivo(col * brilho * (0.55 + uGlow));
     }
   `,
 });
@@ -1983,7 +1983,7 @@ export const starPointMaterial = make('estrelas-da-constelacao', {
       float luz = pow(k, 7.0) * 1.8 + pow(k, 1.4) * 0.35;
       // Cintila devagar, cada uma no seu tempo, e amortecida.
       float cintila = damp(0.72 + 0.28 * sin(uTime * 0.22 + vSeed * 31.0), 0.80);
-      gl_FragColor = vec4(bioHue(0.08 + vSeed * 0.2) * luz * cintila, 1.0);
+      gl_FragColor = aditivo(bioHue(0.08 + vSeed * 0.2) * luz * cintila);
     }
   `,
 });
@@ -2091,7 +2091,7 @@ export const nuvemMaterial = make('nuvem', {
 
       float a = perfil * vFade * (0.55 + 0.45 * vPonto);
       if (a <= 0.004) discard;
-      gl_FragColor = vec4(filmic(col) * a, a);
+      gl_FragColor = aditivo(filmic(col) * a * a);
     }
   `,
 });
@@ -2223,7 +2223,7 @@ export const butterflyCloudMaterial = make('borboleta-nuvem', {
       if (a <= 0.004) discard;
       // Sem ganho extra: em aditivo, o ganho de cada ponto se soma ao de
       // todos os que caem no mesmo pixel, e é assim que laranja vira branco.
-      gl_FragColor = vec4(filmic(col) * a, a);
+      gl_FragColor = aditivo(filmic(col) * a * a);
     }
   `,
 });

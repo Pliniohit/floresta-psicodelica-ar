@@ -5,7 +5,7 @@
 // erro de sintaxe apontando para um lugar que parece não ter nada de errado.
 // Já aconteceu duas vezes; por isso virou teste.
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const DIR = 'src/shaders';
 let falhas = 0;
@@ -90,6 +90,42 @@ try {
   falhas++;
   console.log(` FALHA os shaders não carregam: ${e.message}`);
 }
+
+  // --- TODO MATERIAL ADITIVO ESCREVE ALFA HONESTO -------------------------
+  //
+  // Em passthrough o compositor usa o alfa da nossa camada para decidir quanto
+  // da câmera passa por baixo. Um material aditivo que termina em
+  // "vec4(luz, 1.0)" grava alfa 1 no sprite inteiro — inclusive na borda, onde
+  // não há luz nenhuma. O resultado é um disco PRETO OPACO tapando a sala em
+  // volta de cada partícula, e os raios das mãos viram um cordão de contas
+  // pretas.
+  //
+  // Nada disso aparece na prévia do navegador, porque lá o fundo já é preto.
+  // Só o headset mostra, e só depois de publicado. Por isso a regra vira teste:
+  // material aditivo sai por "aditivo()", que divide a luz pelo próprio pico e
+  // grava como alfa quanta luz foi de fato somada.
+  {
+    const fonte = readFileSync(resolve(import.meta.dirname, 'src/shaders/materials.js'), 'utf8');
+    const blocos = [...fonte.matchAll(/^export const (\w+) = make\(/gm)];
+    const maus = [];
+    for (let i = 0; i < blocos.length; i++) {
+      const corpo = fonte.slice(blocos[i].index,
+        i + 1 < blocos.length ? blocos[i + 1].index : fonte.length);
+      if (!/AdditiveBlending/.test(corpo)) continue;
+      for (const saida of corpo.matchAll(/gl_FragColor\s*=\s*([^;]+);/g)) {
+        if (!saida[1].trim().startsWith('aditivo(')) {
+          maus.push(`${blocos[i][1]}: ${saida[1].replace(/\s+/g, ' ').trim().slice(0, 52)}`);
+        }
+      }
+    }
+    if (maus.length) {
+      falhas++;
+      console.log(' FALHA material aditivo gravando alfa cru (vira preto em passthrough):');
+      for (const p of maus) console.log(`        ${p}`);
+    } else {
+      console.log('  ok   todo material aditivo sai por aditivo()');
+    }
+  }
 
 console.log(falhas === 0 ? '\nShaders íntegros.' : `\n${falhas} problema(s) nos shaders.`);
 process.exit(falhas ? 1 : 0);
