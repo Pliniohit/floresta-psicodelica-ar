@@ -1,6 +1,6 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Vector2, Vector3,
-  Raycaster, Plane, Clock, MathUtils, Matrix4, Quaternion,
+  Raycaster, Plane, Clock, MathUtils, Matrix4,
 } from '../vendor/three/three.module.min.js';
 import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
@@ -22,6 +22,7 @@ import { Constellation } from './constellation.js';
 import { Seeds } from './seeds.js';
 import { Space, Emergence, ENTER_SCALE } from './space.js';
 import { Portal } from './portal.js';
+import { ArvoreMae } from './arvoremae.js';
 import { BlackHoles } from './blackholes.js';
 import { Shell, Tide, wallsFromFootprint } from './shell.js';
 import { CENAS, cenaPor, proxima, I_COSMOS, N_CENAS } from './cenas.js';
@@ -130,12 +131,23 @@ const space = new Space();
  * pinçar abre; pinçar de novo devolve à parede.
  */
 const portal = new Portal();
+
+/**
+ * A ÁRVORE-MÃE, uma só, no meio do cômodo. É dela que o casulo pende, e é o
+ * único objeto da cena vindo de um modelo do mundo real.
+ */
+const arvoreMae = new ArvoreMae();
 scene.add(space);
 space.onTravessia = () => { audio.chime(-12, 0.22); ping(0.45); };
 
 const buracos = new BlackHoles();
 scene.add(buracos);
 scene.add(portal);
+// A árvore entra DENTRO da floresta, e não na cena: assim ela herda a
+// posição, a escala e o giro do cômodo mapeado, e o galho de onde o casulo
+// pende já sai em coordenadas locais da floresta — que é justamente onde os
+// casulos moram.
+forest.add(arvoreMae);
 
 // A casca do cômodo: as paredes reais vestidas pelo mundo em que você está.
 // Fica FORA da floresta de propósito — a floresta encolhe e dissolve na
@@ -363,6 +375,11 @@ function updateScanPanel() {
 // ---------------------------------------------------------------------------
 // Ações
 // ---------------------------------------------------------------------------
+/** Pé-direito lido, com uma saída para o cômodo sem teto marcado. */
+function alturaDoTeto() {
+  return room.ceilingY != null ? room.ceilingY - room.floorY : 2.6;
+}
+
 function ping(strength = 1) {
   shared.uPulse.value = Math.min(1, shared.uPulse.value + strength);
 }
@@ -383,9 +400,7 @@ function portalSobMira(controller) {
  * lugar dela — e ao fechar, o contrário.
  */
 function abrirPortal() {
-  camera.getWorldPosition(_head);
-  camera.getWorldQuaternion(_qCabeca);
-  const abriu = portal.alternar(_head, _qCabeca);
+  const abriu = portal.alternar();
   audio.setVideo(portal.video, abriu);
   audio.chime(abriu ? 16 : 9, 0.16);
   ping(0.5);
@@ -425,7 +440,7 @@ function commitRoom() {
 
   // Paredes e lâmina compartilham a origem do cômodo, mas não a escala nem o
   // afundamento da floresta: a sala fica onde está.
-  const alturaTeto = room.ceilingY != null ? room.ceilingY - room.floorY : 2.6;
+  const alturaTeto = alturaDoTeto();
   shell.applyWalls(paredes, alturaTeto);
   // Os dois buracos viram o par de portais dos planetas: quem entra num sai
   // pelo outro. Sem dois, ninguém atravessa nada.
@@ -435,7 +450,7 @@ function commitRoom() {
   // dividir parede com um buraco negro faria os dois brigarem pelo mesmo
   // olhar, e o portal é o que se quer que seja notado.
   portal.position.copy(forest.position);
-  portal.applyWalls(paredes, buracos.portais().map((b) => b.pos));
+  portal.applyWalls(paredes, buracos.portais().map((b) => b.pos), alturaTeto);
   portal.setEnabled(true);
   shell.position.copy(forest.position);
   tide.applyFootprint(forest.footprint);
@@ -553,8 +568,10 @@ function montarCena(i) {
   state.seed = (state.seed * 1103515245 + 12345) >>> 0;
   forest.setDensidade(c.populacao);
   forest.seed(state.seed);
-  // A saída daqui não pode depender de sorteio.
-  forest.garantirCasulo();
+  // A árvore-mãe nasce antes do casulo, porque é o galho dela que diz onde o
+  // casulo vai. A saída daqui não pode depender de sorteio.
+  const galho = arvoreMae.plantar(forest.footprint, alturaDoTeto());
+  forest.garantirCasulo(Math.random, galho);
   forest.visible = true;
   state.intro = 0;
 
@@ -1436,7 +1453,6 @@ function syncTouchUI() {
 // ---------------------------------------------------------------------------
 const clock = new Clock();
 const _head = new Vector3();
-const _qCabeca = new Quaternion();
 
 /**
  * Trilha de pisadas.
@@ -1749,7 +1765,7 @@ detect().then((res) => {
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
 window.floresta = {
   // cena
-  forest, room, roomMesh, sky, constelacao, space, portal, emergence, buracos, shell, tide,
+  forest, arvoreMae, room, roomMesh, sky, constelacao, space, portal, emergence, buracos, shell, tide,
   pirilampos, cardume,
   butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds,
   hands, wristMenu, magic,
@@ -1772,6 +1788,7 @@ window.addEventListener('beforeunload', () => {
   bodyGrowth.dispose();
   seeds.dispose();
   space.dispose();
+  arvoreMae.dispose();
   portal.dispose();
   emergence.dispose();
   shell.dispose();

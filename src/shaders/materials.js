@@ -376,24 +376,54 @@ export const cocoonMaterial = make('casulo', {
     uniform float uReady;
     void main(){
       ${FRAG_FADE}
-      float aneis = sin(vLocal.y * 22.0) * 0.5 + 0.5;
-      vec3 seda = mix(vec3(0.62, 0.55, 0.38), vec3(0.80, 0.74, 0.56), aneis);
+
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float faceando = abs(dot(N, V));
+      float aro = pow(1.0 - faceando, 2.0);
+
+      // A QUITINA. Não são anéis pintados: é a casca, com o veio fino da seda
+      // por cima e uma mancha mais escura onde a asa dobrada empurra por
+      // dentro. O ruído é amostrado em espaço de OBJETO, então o desenho fica
+      // preso ao casulo e balança junto com ele.
+      float veio = fbm3(vLocal * 46.0);
+      float seg = sin(vLocal.y * 52.0 + veio * 2.2) * 0.5 + 0.5;
+      float asa = smoothstep(0.35, 0.75, fbm2(vLocal * 9.0 + 3.1));
+      vec3 casca = mix(vec3(0.40, 0.33, 0.19), vec3(0.74, 0.66, 0.44),
+                       seg * 0.55 + veio * 0.45);
+      casca = mix(casca, casca * 0.62, asa * 0.7);
 
       // Batimento interno: duas senóides, acelerando conforme uReady sobe.
       float bat = 0.62 + 0.26 * sin(uTime * (0.8 + uReady * 1.2) + vSeed * 12.0);
       bat *= 0.75 + 0.25 * sin(uTime * 0.45 + vSeed * 5.0);
       float vida = damp(bat, 0.55);
 
-      vec3 N = normalize(vNormalW);
-      vec3 V = normalize(cameraPosition - vWorld);
-      float aro = pow(1.0 - abs(dot(N, V)), 2.0);
-
       float t = vSeed + uTime * 0.03;
-      vec3 col = enchant(seda, t, 0.3) * (0.5 + 0.5 * wrapLight(vNormalW));
-      // Aceso por dentro: é o único objeto da cena que PRECISA ser achado,
-      // então ele é o mais luminoso, com folga.
-      col += palette(t + 0.3) * (0.9 + vida * 0.7 + uReady * 1.4);
-      col += vec3(1.0, 0.92, 0.72) * aro * (0.7 + vida * 0.5);
+      vec3 col = enchant(casca, t, 0.22) * (0.42 + 0.62 * wrapLight(N));
+
+      // TRANSLUCIDEZ. O que faz uma crisálida não parecer pedra é a luz
+      // atravessando a casca: ela vaza mais onde a casca é fina, que é
+      // justamente onde a silhueta vira de perfil. Somada por DENTRO, ela
+      // acende o contorno sem lavar o meio.
+      float atravessa = pow(1.0 - faceando, 1.4) * (0.55 + vida * 0.45);
+      col += palette(t + 0.3) * atravessa * (0.42 + uReady * 1.5);
+      // E um resto de luz interna no corpo todo, para ele ser achado do outro
+      // lado do cômodo: é a única porta de saída do cenário.
+      //
+      // Fraco. A primeira versão somava luz suficiente para estourar em
+      // branco: o casulo era encontrável e ilegível ao mesmo tempo — de longe
+      // uma lâmpada, de perto uma mancha lisa sem casca nem costela. Quem
+      // resolve o "ser achado" é o halo, que é outro objeto e existe só para
+      // isso; aqui a luz interna só precisa dizer que tem vida dentro.
+      col += palette(t + 0.3) * (0.07 + vida * 0.10 + uReady * 0.45);
+
+      // O verniz: crisálida é encerada, e o realce especular estreito é o que
+      // diz isso. Sem ele a superfície lê como barro.
+      vec3 L = normalize(vec3(0.45, 0.7, 0.35));
+      float brilho = pow(max(dot(reflect(-L, N), V), 0.0), 42.0);
+      col += vec3(1.0, 0.96, 0.86) * brilho * 0.85;
+      col += vec3(1.0, 0.92, 0.72) * aro * (0.35 + vida * 0.3);
+
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -858,10 +888,17 @@ export const planetMaterial = make('planetas', {
       float luz = dot(N, dirLuz(vWorld));
       float dia = smoothstep(-0.35, 0.55, luz);
 
-      // Ambiente generoso de propósito: um planeta realista fica invisível no
-      // lado escuro, e aqui ele precisa ser encontrado, lido como sólido e
-      // pego. No espaço não há mais nada iluminando.
-      vec3 col = base * (0.46 + dia * 0.90);
+      // AMBIENTE BAIXO, agora que existe um sol de verdade.
+      //
+      // Era generoso — 0,46 — porque a luz vinha de uma direção fixa e sem
+      // fonte visível: sem isso o lado escuro sumia e não havia como achar o
+      // planeta para pegá-lo. Com a estrela lá em cima, de onde a luz sai é
+      // visível, e a sombra vira informação em vez de buraco: dá para ver o
+      // terminador atravessar cada planeta e saber que horas são nele.
+      //
+      // Não vai a zero. Um resto de luz do céu mantém o lado escuro
+      // encontrável, que continua sendo o requisito.
+      vec3 col = base * (0.17 + dia * 1.20);
       // Atmosfera na borda do lado iluminado.
       vec3 V = normalize(cameraPosition - vWorld);
       float aro = pow(1.0 - abs(dot(N, V)), 3.0);
@@ -2092,6 +2129,148 @@ export const nuvemMaterial = make('nuvem', {
       float a = perfil * vFade * (0.55 + 0.45 * vPonto);
       if (a <= 0.004) discard;
       gl_FragColor = aditivo(filmic(col) * a * a);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// A ÁRVORE-MÃE — a única coisa da cena que veio do mundo real.
+//
+// A TEXTURA ORIGINAL DO MODELO É A COR. A nuvem carrega, por ponto, o pixel
+// que a textura tinha ali — é a casca fotografada, com o nó, a fenda e a
+// vinha no lugar exato onde estão na árvore de verdade. Nada de repintar por
+// paleta: é justamente essa cor que faz a árvore ser a única coisa da cena
+// vinda do mundo real, e trocá-la pela paleta a devolveria ao desenho.
+//
+// Ela precisa de LEVANTE, e só isso. O albedo foi capturado à sombra e a média
+// medida dos quarenta e seis mil pontos dá luminância 0,22: fiel, e escuro
+// demais para um cômodo à noite. O ganho abre a faixa sem mexer no matiz.
+//
+// A cena ainda alcança a árvore, mas de leve e por outro caminho: a luz viva
+// e o encanto entram POR CIMA da cor fotografada, em vez de substituí-la.
+//
+// E a textura ANIMADA volta aqui. Antes da conversão para partículas, cada
+// superfície tinha ruído correndo por cima; a nuvem perdeu isso porque um
+// ponto não tem superfície onde correr. A solução é amostrar o ruído na
+// posição do ponto em espaço de OBJETO e deixá-lo derivar no tempo: a
+// textura não está pintada no ponto, está atravessando a árvore, e cada ponto
+// mostra o pedaço dela que passa por ele agora. Fica ancorada no objeto, e não
+// na tela — o que importa em estéreo, porque textura presa à tela é
+// interpretada pelos dois olhos como coisas diferentes e embrulha.
+//
+// NÃO BALANÇA: não há "sway" nenhum neste vertex.
+// ---------------------------------------------------------------------------
+export const arvoreMaeMaterial = make('arvore-mae', {
+  // OPACA, e é o que a faz existir.
+  //
+  // Toda a vegetação daqui é aditiva, e funciona porque é rala: um capim tem
+  // catorze pontos. Esta árvore tem quarenta e seis mil, e somar quarenta e
+  // seis mil pontos dá branco — a primeira versão era uma mancha luminosa com
+  // formato de nuvem, sem tronco, sem galho, sem sólido.
+  //
+  // Sem mistura e ESCREVENDO PROFUNDIDADE, o ponto da frente tapa o de trás.
+  // É isso, e só isso, que faz um monte de pontos ler como um corpo: o tronco
+  // esconde a copa que está atrás dele, e a silhueta aparece. De quebra, em
+  // passthrough a árvore ocupa o lugar dela de verdade, como um objeto sólido
+  // deve ocupar.
+  transparent: false,
+  depthWrite: true,
+  uniforms: { uTamanho: { value: 13.0 } },
+  vert: /* glsl */ `
+    attribute vec3 iPos;
+    attribute vec4 iQuat;
+    attribute vec3 iEsc;
+    attribute float iSemente;
+    attribute float aPonto;
+    attribute vec3 aCor;
+    uniform float uTamanho;
+    varying float vPonto;
+    varying vec3 vCor;
+    varying vec3 vObj;
+
+    vec3 rotQ(vec4 q, vec3 v){
+      return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+    }
+
+    void main(){
+      vSeed = iSemente;
+      vPonto = aPonto;
+      vCor = aCor;
+      // A posição em espaço de OBJETO, antes de qualquer transformação: é
+      // nela que o ruído da textura é amostrado, para o desenho ficar preso à
+      // árvore mesmo quando o cômodo inteiro é reposicionado.
+      vObj = position;
+
+      vec3 local = rotQ(iQuat, position * iEsc) + iPos;
+      vec4 mundo = modelMatrix * vec4(local, 1.0);
+      vWorld = mundo.xyz;
+      vLocal = local;
+      vNormalW = normalize(mat3(modelMatrix)
+        * normalize(position + vec3(0.0, 0.001, 0.0)));
+
+      vec4 mv = viewMatrix * mundo;
+      vFade = clamp(1.0 - (-mv.z - 6.0) / 10.0, 0.0, 1.0);
+      // Teto no tamanho do ponto. Sem ele, encostar o rosto no tronco enche a
+      // vista de bolas de trinta centímetros: o tamanho cresce com o inverso
+      // da distância, e de perto isso não tem fim. Com teto, chegar perto
+      // revela a granulação em vez de destruí-la.
+      gl_PointSize = clamp(
+        uTamanho * (0.6 + aPonto * 0.7) * max(iEsc.y, 0.05) / max(-mv.z, 0.3),
+        1.1, 34.0);
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  frag: /* glsl */ `
+    varying float vPonto;
+    varying vec3 vCor;
+    varying vec3 vObj;
+
+    void main(){
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      if (d > 0.25) discard;
+      // Corte redondo e duro: o ponto é uma pastilha, não um halo. Halo em
+      // material opaco vira quadrado escuro na borda, porque não há mistura
+      // para dissolvê-lo.
+      if (d > 0.22) discard;
+
+      float copa = smoothstep(0.28, 0.60, vObj.y);
+      float s = vSeed + vPonto * 0.5;
+
+      // A COR FOTOGRAFADA, levantada e com o matiz devolvido.
+      //
+      // Só multiplicar clareia e lava: a captura à sombra comprimiu os três
+      // canais para perto uns dos outros, e a média medida (0,236 · 0,228 ·
+      // 0,163) é um marrom fraco que, aberto, vira cinza. Afastar cada canal
+      // da própria luminância antes de abrir devolve o pardo da casca sem
+      // inventar cor nenhuma: o matiz é o que a fotografia já tinha, só que
+      // audível.
+      vec3 crua = max(vCor, vec3(0.0));
+      float lum = dot(crua, vec3(0.2126, 0.7152, 0.0722));
+      vec3 col = mix(vec3(lum), crua, 1.9) * 2.3;
+
+      // A TEXTURA ANIMADA, por cima e de leve. Duas escalas de ruído
+      // atravessando a árvore em sentidos diferentes, devagar. É deslocamento
+      // do desenho, não variação de brilho: nada aqui pisca. E ela modula o
+      // que a fotografia já traz, em vez de inventar um desenho concorrente.
+      float fibra = fbm3(vObj * 9.0 + vec3(0.0, uTime * 0.035, uTime * 0.02));
+      float veio  = fbm2(vObj * 22.0 - vec3(uTime * 0.028, 0.0, 0.0));
+      col *= 0.86 + 0.20 * fibra + 0.10 * veio;
+
+      // O encanto entra fraco: a graça desta árvore é ser a coisa real.
+      col = enchant(col, s + uTime * 0.03, 0.12);
+      col *= 0.62 + 0.55 * wrapLight(vNormalW);
+      col = nightBody(col);
+
+      // A vida acesa: a copa mais que o tronco, e a presença de alguém
+      // acendendo o que está perto.
+      col += bio(copa * 0.55 + 0.12, s + 0.3, 0.85);
+      col += bio(presenca(vWorld), s + 0.15, 1.5);
+
+      // Uma sombra de leve na borda da pastilha. Mais que isso e cada ponto
+      // vira uma bolinha com brilho próprio, e a casca lê como espuma.
+      col *= 1.0 - d * 0.9;
+      gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
 });

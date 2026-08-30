@@ -1,0 +1,19 @@
+{
+  "name": "Universo Encantado",
+  "short_name": "Universo",
+  "description": "Sete cenários em nuvens de partículas dentro do seu espaço real, encadeados pela borboleta que sai do casulo.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07030f",
+  "theme_color": "#07030f",
+  "icons": [
+    {
+      "src": "./icone.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

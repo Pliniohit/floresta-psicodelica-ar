@@ -76,7 +76,28 @@ const CENTRO_Y = 1.25;
  * `GM` está calibrado para o raio médio do enxame: a 1,5 m a volta completa
  * leva meio minuto, devagar o bastante para acompanhar com os olhos.
  */
-const R_SOL = 0.18;       // raio da estrela
+/**
+ * A ESTRELA MORA LÁ EM CIMA, e não no meio do enxame.
+ *
+ * Ela nasceu no centro do sistema, que é o certo — mas o centro do sistema
+ * fica na altura do peito, dentro da sala, e ali uma estrela com coroa ocupa
+ * o lugar por onde você anda e por onde os planetas passam. Era a coisa mais
+ * volumosa da cena justamente onde há menos espaço.
+ *
+ * Subindo para acima do teto ela vira o que uma estrela deve ser: distante,
+ * pequena no céu, e a FONTE DA LUZ. É de lá que vem o dia e a noite de cada
+ * planeta, e é por isso que agora dá para ver a sombra atravessando cada um
+ * deles — a linha do terminador some por baixo, onde o sol não alcança.
+ *
+ * O preço, dito na cara: o centro de gravidade continua onde estava, no meio
+ * do enxame, e não coincide mais com a estrela. Os planetas orbitam o
+ * baricentro do sistema; a estrela ilumina de cima. É uma licença, e é o que
+ * cabe num cômodo — a alternativa honesta seria pôr os planetas a trinta
+ * metros de altura, e aí não haveria nada para pegar com a mão.
+ */
+const SOL_ALTURA = 3.6;   // acima do teto lido, dentro do céu virtual
+const SOL_LADO = 1.4;     // deslocado do eixo: sol a pino não faz sombra
+const R_SOL = 0.30;       // maior, porque agora está longe
 const COROA = 2.8;        // a coroa vai até quase três raios solares
 const GM = 0.145;         // parâmetro gravitacional: v² = GM/r na órbita circular
 const R_MIN = 0.62;       // ninguém chega mais perto que isto do sol
@@ -256,7 +277,7 @@ export class Space extends Group {
     // corpo visível ali, os planetas orbitavam um ponto vazio — e o olho lia
     // isso como sete coisas girando à toa.
     this.sol = new Group();
-    this.sol.position.set(0, CENTRO_Y, 0);
+    this.sol.position.set(SOL_LADO, SOL_ALTURA, -SOL_LADO * 0.7);
     const corpoSol = new Mesh(new SphereGeometry(R_SOL, 24, 16), solMaterial);
     corpoSol.frustumCulled = false;
     this.sol.add(corpoSol);

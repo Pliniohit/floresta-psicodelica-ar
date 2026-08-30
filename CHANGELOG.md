@@ -15,6 +15,130 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.25.0 — A árvore-mãe, e o app cabendo no headset
+
+### A árvore no meio da sala
+
+Uma árvore só, no centro do cômodo mapeado, e é dela que o casulo pende. Ela
+vem de um modelo fotogramétrico de **2,1 milhões de triângulos e 97 MB** — e o
+que viaja são **539 kB**: 46.000 pontos amostrados na superfície ponderando por
+área, com a cor que a textura tinha em cada um. `scripts/assar-nuvem.mjs`
+ganhou `--cor` para isso, e decodifica o JPEG chamando o ffmpeg, porque o Node
+não decodifica e o projeto não tem dependência.
+
+**A textura original é a cor**, como pedido. Ela precisa de levante — o albedo
+foi capturado à sombra e a média medida dos 46.000 pontos dá luminância 0,22 —
+mas só multiplicar lava: os três canais estão comprimidos perto uns dos outros
+e abrir assim dá cinza. Afastar cada canal da própria luminância antes de abrir
+devolve o pardo da casca sem inventar cor nenhuma.
+
+**E ela é OPACA.** Toda a vegetação daqui é aditiva, e funciona porque é rala:
+um capim tem catorze pontos. Somar 46.000 dá branco — a primeira versão era uma
+mancha luminosa com formato de nuvem, sem tronco e sem galho. Sem mistura e
+escrevendo profundidade, o ponto da frente tapa o de trás, e é isso que faz um
+monte de pontos ler como um corpo.
+
+### O que se mexe, e o que não
+
+Tronco, copa e fruto passaram a ter rigidez zero: **árvore não balança**. Uma
+que oscila inteira, do pé à copa, na mesma fase do capim, desfaz a escala dela
+num segundo. O vento ficou com quem de fato cede a ele — capim, samambaia,
+junco, arbusto e flor.
+
+### A textura animada voltou
+
+A conversão para partículas tinha perdido o ruído correndo pelas superfícies,
+porque um ponto não tem superfície onde correr. A solução é amostrar o ruído na
+posição do ponto em espaço de **objeto** e deixá-lo derivar no tempo: a textura
+não está pintada no ponto, está atravessando a árvore, e cada ponto mostra o
+pedaço dela que passa por ali agora. Fica ancorada no objeto e não na tela —
+que é o que importa em estéreo.
+
+### O casulo
+
+Era um icosaedro esticado: quarenta faces de pedra rolada num fio. Como é o
+objeto que a pessoa procura, aponta e toca — a única porta de saída do cenário
+— era o que menos podia ser um provisório.
+
+Agora a forma é **revolucionada a partir de um perfil**, que é como uma
+crisálida se descreve: o cremaster fino onde se prende ao galho, o abdome que
+engorda logo abaixo, a maior largura no terço superior onde ficam as asas
+dobradas, e a ponta afilando. Mais as costelas do abdome, a seção achatada de
+lado, e normais **suaves** — a única coisa da cena que não é facetada de
+propósito, porque casulo é liso e encerado. 1.052 triângulos.
+
+O material ganhou translucidez de verdade: a luz atravessa mais onde a casca é
+fina, que é onde a silhueta vira de perfil. A luz interna caiu muito — a versão
+anterior estourava em branco e o casulo ficava encontrável e ilegível ao mesmo
+tempo. Quem resolve o "ser achado" é o halo, que existe só para isso.
+
+E o **halo passou a usar o casulo sem o fio**. Ele infla a malha empurrando cada
+vértice cinco centímetros pela normal, e num fio de dois milímetros de raio isso
+não é um halo: é uma trombeta maior que o próprio casulo, saindo do topo.
+
+### O portal parava fora da sala
+
+Ele plantava a tela dois metros e meio à frente da cabeça, e num cômodo comum
+isso é do lado de fora: nascia atravessada na parede, metade dela fora do espaço
+mapeado. Agora **abre na própria parede**, crescendo onde já estava, com o
+tamanho vindo da parede que a segura e do pé-direito lido. Não tem como sair do
+cômodo porque nasce colada num limite dele — e a leitura melhora: o que se abre
+é a parede, que é o que um portal faz.
+
+### O sol subiu
+
+Ele nasceu no centro do sistema, que é o certo — mas o centro fica na altura do
+peito, dentro da sala, e ali uma estrela com coroa ocupava justamente o lugar
+por onde se anda e por onde os planetas passam. Agora ela mora acima do teto,
+deslocada do eixo, e é de lá que vem o dia e a noite de cada planeta: dá para
+ver **a sombra atravessando cada um deles**. O ambiente caiu de 0,46 para 0,17,
+que é o que faz a sombra virar informação em vez de buraco.
+
+O preço, dito na cara: o centro de gravidade continua no meio do enxame e não
+coincide mais com a estrela. É uma licença, e é o que cabe num cômodo — a
+alternativa honesta seria pôr os planetas a trinta metros de altura, e aí não
+haveria nada para pegar com a mão.
+
+### Os feixes das mãos saíram
+
+Cada controle desenhava um cordão de 130 pontos saindo da mão, quatro metros
+adiante. Ele não decidia nada — quem confirma a mira é o retículo no chão e o
+realce no objeto — e atravessava a cena na altura dos olhos, tapando justamente
+o que a pessoa está tentando mirar.
+
+### Offline
+
+Um service worker guarda o app inteiro no aparelho: código, biblioteca, trilha
+e os 40 MB da animação. Depois da primeira visita ela abre **sem rede** — e, o
+que importa mais na prática, abre rápido e não trava no meio porque o wi-fi
+oscilou.
+
+A estratégia é cache primeiro. Aqui não há conteúdo que envelhece: o que existe
+é uma versão inteira, que muda quando eu publico. A troca é **atômica** — o
+nome do cache é a versão, e a nova só substitui a antiga depois de baixada
+inteira. Nunca existe um momento em que metade do app é de uma versão e metade
+de outra, que num projeto cujos módulos se importam por nome apareceria como
+tela preta.
+
+**Não foi verificado no aparelho.** O navegador embutido que uso para conferir
+bloqueia service workers — nem um de uma linha registra — então o que dá para
+garantir daqui é o que virou teste: que a lista de arquivos cobre todo módulo
+de `src/`, e que tudo o que ela pede existe no repositório.
+
+### Testes
+
+`test-modulos.mjs` ganhou duas verificações, as duas nascidas de erros desta
+versão:
+
+**Constante usada e nunca declarada.** Um `L_ABERTA` sobreviveu a uma
+refatoração: a constante saiu do topo de `portal.js` e uma referência a ela
+ficou dentro do construtor. `node --check` não vê, porque é sintaxe válida, e o
+import estava certo. A página quebrava só ao construir o objeto.
+
+**O service worker conhece todos os módulos.** Uma lista escrita à mão apodrece:
+um módulo novo entra, ninguém acrescenta lá, e o app funciona na bancada e
+quebra offline — que é o único lugar onde ninguém testa.
+
 ## v0.24.1 — O contorno preto em volta de tudo que brilha
 
 Partículas com anel escuro, e os raios das mãos virando um cordão de contas

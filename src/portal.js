@@ -17,10 +17,16 @@ import {
  *
  * DUAS DECISÕES QUE VALEM SER DITAS.
  *
- * A tela aberta é fixada NO MUNDO, e não presa à cabeça. Uma tela que segue o
- * olhar é impossível de olhar: ela nunca sai do canto do olho e não dá para
- * se aproximar nem se afastar dela. Ao abrir, ela é plantada uma vez à frente
- * de onde você estava, e dali em diante quem se move é você.
+ * ELA ABRE NA PRÓPRIA PAREDE, crescendo onde já estava. A primeira versão
+ * plantava a tela dois metros e meio à frente da cabeça, e num cômodo comum
+ * isso é do lado de fora: a tela nascia atravessada na parede, metade dela
+ * fora do espaço mapeado, e quem estivesse encostado num canto via só o
+ * verso. Crescendo na parede ela não tem como sair do cômodo — a parede é o
+ * limite do cômodo — e a leitura melhora: o que se abre é a PAREDE, que é
+ * exatamente o que um portal faz.
+ *
+ * O tamanho aberto vem da parede que a segura: nunca mais larga que ela, nem
+ * mais alta que o pé-direito.
  *
  * E a borda não é uma borda: é um rasgo. Um retângulo nítido no meio da sala
  * lê como televisão, e televisão é o oposto de portal. As margens se
@@ -42,11 +48,10 @@ const FRENTE = new Vector3(0, 0, 1);
 /** Proporção do arquivo: 1280 x 714. */
 const PROPORCAO = 1280 / 714;
 
-/** Meia largura pousada na parede, e aberta à frente. */
+/** Meia largura pousada na parede. */
 const L_PAREDE = 0.46;
-const L_ABERTA = 1.75;
-/** A que distância dos olhos a tela aberta é plantada. */
-const DIST_ABERTA = 2.5;
+/** Teto da meia largura aberta, para não virar outdoor num salão. */
+const L_MAX = 1.9;
 /** Segundos para abrir ou fechar. */
 const DURACAO = 0.9;
 
@@ -125,7 +130,9 @@ export class Portal extends Group {
 
     // As duas poses. `alvo` é para onde ele está indo; `abertura` é onde está.
     this.pousado = { pos: new Vector3(), quat: new Quaternion(), meia: L_PAREDE };
-    this.aberto = { pos: new Vector3(), quat: new Quaternion(), meia: L_ABERTA };
+    // A pose aberta é decidida em applyWalls, a partir da parede e do
+    // pé-direito lidos. Este valor só existe para o objeto nascer coerente.
+    this.aberto = { pos: new Vector3(), quat: new Quaternion(), meia: L_MAX };
     this.abertura = 0;
     this.destino = 0;
     this.temParede = false;
@@ -134,10 +141,11 @@ export class Portal extends Group {
   /**
    * Pendura o portal na parede mais longa que ainda não tem buraco negro.
    *
-   * @param {Array} wallBases  pé de cada parede, em coordenadas locais
-   * @param {Array} ocupadas   posições de mundo já usadas por outra coisa
+   * @param {Array} wallBases   pé de cada parede, em coordenadas locais
+   * @param {Array} ocupadas    posições de mundo já usadas por outra coisa
+   * @param {number} alturaTeto pé-direito lido, em metros
    */
-  applyWalls(wallBases, ocupadas = []) {
+  applyWalls(wallBases, ocupadas = [], alturaTeto = 2.6) {
     this.temParede = false;
     if (!wallBases?.length) return this;
 
@@ -171,6 +179,22 @@ export class Portal extends Group {
 
     this.pousado.pos.set(meioX, w.y + 1.45, meioZ).addScaledVector(_n, 0.04);
     this.pousado.quat.setFromUnitVectors(FRENTE, _n);
+
+    // ABERTA: mesma parede, mesma direção, só maior — e um palmo mais para
+    // dentro do cômodo, para não brigar em profundidade com a alvenaria.
+    //
+    // A largura é a da parede com uma folga de 10% em cada ponta, limitada
+    // também pelo pé-direito: uma tela mais alta que o teto ficaria com a
+    // cabeça enterrada no gesso.
+    const meiaPorLargura = comp * 0.5 * 0.80;
+    const meiaPorAltura = (alturaTeto * 0.42) * PROPORCAO;
+    const meia = Math.max(L_PAREDE * 1.4,
+      Math.min(L_MAX, meiaPorLargura, meiaPorAltura));
+    this.aberto.meia = meia;
+    this.aberto.quat.copy(this.pousado.quat);
+    this.aberto.pos.set(meioX, w.y + Math.max(1.35, meia / PROPORCAO + 0.45), meioZ)
+      .addScaledVector(_n, 0.10);
+
     this.temParede = true;
     this.#aplicarPose();
     return this;
@@ -185,29 +209,15 @@ export class Portal extends Group {
   }
 
   /**
-   * Planta a tela grande à frente de quem está olhando, e abre.
+   * Abre a tela na parede onde ela já está.
    *
-   * A pose é calculada UMA vez, no instante da abertura. Recalculá-la a cada
-   * quadro faria a tela perseguir a cabeça — e uma tela que persegue não pode
-   * ser olhada nem contornada.
+   * Não recebe mais a pose da cabeça, e é isso que conserta o problema: a
+   * pose aberta foi decidida em `applyWalls`, a partir da parede e do
+   * pé-direito lidos. Ela não pode cair fora do cômodo porque nasce colada
+   * num limite dele.
    */
-  abrir(cabecaPos, cabecaQuat) {
+  abrir() {
     if (!this.visible) return false;
-    _n.set(0, 0, -1).applyQuaternion(cabecaQuat);
-    // Só o rumo horizontal: herdar a inclinação do pescoço plantaria a tela
-    // torta, e ela ficaria torta para sempre.
-    _n.y = 0;
-    if (_n.lengthSq() < 1e-4) _n.set(0, 0, -1);
-    _n.normalize();
-
-    _p.copy(cabecaPos).addScaledVector(_n, DIST_ABERTA);
-    // Um pouco abaixo da linha dos olhos: o centro de uma tela grande fica
-    // mais confortável logo abaixo do horizonte do olhar.
-    _p.y = cabecaPos.y - 0.18;
-    this.worldToLocal(_p);
-    this.aberto.pos.copy(_p);
-    this.aberto.quat.setFromUnitVectors(FRENTE, _n.negate());
-
     this.destino = 1;
     this.#tocar();
     return true;
@@ -215,9 +225,9 @@ export class Portal extends Group {
 
   fechar() { this.destino = 0; }
 
-  alternar(cabecaPos, cabecaQuat) {
+  alternar() {
     if (this.destino > 0.5) { this.fechar(); return false; }
-    return this.abrir(cabecaPos, cabecaQuat);
+    return this.abrir();
   }
 
   get abertoDeVez() { return this.abertura > 0.5; }

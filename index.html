@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#07030f">
 <title>Universo Encantado — Meta Quest 3</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🦋</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
 <style>
   :root{
     --ink:#f3e9ff;
@@ -159,14 +160,14 @@
     <div class="mark">🦋</div>
     <h1>Universo Encantado</h1>
     <p class="sub">Realidade aumentada &middot; nuvens de partículas &middot; tudo desenhado por shader</p>
-    <p class="sub" style="margin-top:-20px">Sete cenários dentro do <b style="color:#c07bff;font-weight:500">seu espaço real</b>, encadeados pela borboleta que sai do casulo. Funciona no Quest 3 e em celular Android com ARCore.</p>
+    <p class="sub" style="margin-top:-20px">Sete cenários dentro do <b style="color:#c07bff;font-weight:500">seu espaço real</b>, encadeados pela borboleta que sai do casulo. Funciona no Quest 3 e em celular Android com ARCore, e depois da primeira visita abre <b style="color:#9fd8e8;font-weight:500">sem internet</b>.</p>
     <p class="sub" style="margin-top:-20px;font-size:13px">Toda oscilação de brilho fica abaixo de 1&nbsp;Hz. O botão <b style="color:#9fd8e8;font-weight:500">🌙 Sem brilho</b> zera até isso — e quem pede <i>menos movimento</i> no sistema já entra assim.</p>
 
     <button id="enter" disabled>Procurando headset…</button>
     <button id="camera" hidden>Abrir com a câmera</button>
     <button id="preview">Ver prévia no navegador (sem AR)</button>
     <p id="status"></p>
-    <p class="versao"><span id="versao">v0.24.1</span></p>
+    <p class="versao"><span id="versao">v0.25.0</span></p>
 
     <div class="keys">
       <kbd>Gatilho</kbd><span>Confirmar o espaço mapeado &nbsp;·&nbsp; depois, plantar onde você aponta</span>
@@ -176,7 +177,7 @@
       <kbd>Analógico ↕</kbd><span>Escalar &nbsp;·&nbsp; <b>↔</b> girar o cenário</span>
       <kbd>Mão aberta</kbd><span>Semente brota na sua mão &nbsp;·&nbsp; pince e mire o chão para plantar</span>
       <kbd>Pinçar mirando</kbd><span>Alcança de longe: casulo, planta, planeta &nbsp;·&nbsp; tudo funciona sentado ou deitado</span>
-      <kbd>Mirar o quadro</kbd><span>A animação está pendurada numa parede &nbsp;·&nbsp; pince para abrir a tela, pince de novo para fechar</span>
+      <kbd>Mirar o quadro</kbd><span>A animação está pendurada numa parede &nbsp;·&nbsp; pince para a parede abrir, pince de novo para fechar</span>
       <kbd>Apontar fora</kbd><span>Deixa vaga-lumes onde você aponta (mire em alguém)</span>
       <kbd>Menu de pulso</kbd><span>Vire a palma esquerda para cima &nbsp;·&nbsp; o último orbe regula a bioluminescência</span>
       <kbd>Caminhar</kbd><span>O micélio acende por onde você passa, e apaga sozinho</span>
@@ -223,6 +224,24 @@
       (e.message || 'script não carregou') +
       '<br>Atualize o navegador do aparelho e tente de novo.';
   }, true);
+
+  /*
+   * GUARDAR O APP NO APARELHO.
+   *
+   * Registrado DEPOIS do carregamento, e nunca antes: a instalação baixa
+   * quarenta e cinco megabytes, e disputar banda com os módulos que a página
+   * está tentando abrir agora só faria a primeira visita demorar mais.
+   *
+   * Falhar aqui não é problema: sem service worker o app funciona igual, só
+   * que sempre pela rede. Por isso o erro é engolido em silêncio — avisar a
+   * pessoa sobre um recurso que ela não pediu e não perdeu seria ruído.
+   */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js', { scope: './' })
+        .catch(() => { /* segue pela rede */ });
+    });
+  }
 </script>
 </body>
 </html>

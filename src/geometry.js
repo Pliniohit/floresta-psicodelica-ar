@@ -307,17 +307,130 @@ export function flower(height = 0.30) {
 }
 
 /**
- * Casulo pendurado: gota alongada com anéis, presa por um fio.
- * A origem fica no PONTO DE SUSPENSÃO, no alto — assim a instância é colocada
- * no galho e o casulo pende para baixo sozinho.
+ * O CASULO — uma crisálida, e não uma pedrinha pendurada.
+ *
+ * A versão anterior era um icosaedro de subdivisão 1 esticado: quarenta faces
+ * de pedra rolada num fio. Como é o objeto que a pessoa procura, aponta e
+ * toca — a única porta de saída do cenário — ele é o que menos podia ser um
+ * placeholder.
+ *
+ * Agora a forma é REVOLUCIONADA a partir de um perfil, que é como uma
+ * crisálida se descreve de verdade: o cremaster fino onde ela se prende ao
+ * galho, o abdome que engorda logo abaixo, a maior largura no terço superior
+ * (onde ficam as asas dobradas) e a ponta afilando embaixo. O perfil é uma
+ * função da altura, então mudar a silhueta é mudar uma linha.
+ *
+ * Dois detalhes que fazem a leitura:
+ *
+ * As COSTELAS. Um leve ondular ao longo da altura, na frequência dos
+ * segmentos do abdome. Sem elas a forma é lisa e lê como gota; com elas, lê
+ * como bicho.
+ *
+ * A SEÇÃO NÃO É CIRCULAR. Uma crisálida é achatada de lado, com uma quina
+ * suave na frente. Aqui isso entra como uma modulação da largura em torno do
+ * eixo — barato, e é o que tira a aparência de pião torneado.
+ *
+ * As normais saem SUAVES, e é a única coisa da cena que não é facetada de
+ * propósito: casulo é liso e encerado, e a faceta destruía justamente a
+ * sensação de superfície tensa que o objeto precisa ter.
  */
-export function cocoon(length = 0.20) {
-  const corpo = new IcosahedronGeometry(0.055, 1);
-  const fio = new CylinderGeometry(0.0035, 0.0035, 0.05, 4, 1, true);
-  return weld([
-    place(fio, { y: -0.025 }),
-    place(corpo, { y: -0.05 - length * 0.5, sy: length / 0.11, sx: 0.82, sz: 0.82 }),
-  ]);
+export function cocoon(length = 0.20, comFio = true) {
+  const ANEIS = 26;      // ao longo da altura
+  const LADOS = 20;      // em volta do eixo
+
+  const R = length * 0.30;   // maior raio, em fração do comprimento
+
+  /** Raio do perfil na altura t (0 no topo, 1 na ponta de baixo). */
+  const perfil = (t) => {
+    // Ombro cheio no terço de cima, afilando até a ponta: as duas potências
+    // diferentes é que dão a assimetria — crisálida não é um elipsoide.
+    const corpo = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.72)), 0.78);
+    // Costelas do abdome, só na metade de baixo e cada vez mais fundas.
+    const costela = 1 + Math.sin(t * Math.PI * 9.0) * 0.045 * smooth(t, 0.42, 0.95);
+    return corpo * costela;
+  };
+
+  const pos = [];
+  const empurra = (t, i) => {
+    const ang = (i / LADOS) * Math.PI * 2;
+    // Achatamento lateral e uma quina suave na frente.
+    const oval = 1 - 0.22 * Math.abs(Math.sin(ang));
+    const quina = 1 + 0.05 * Math.cos(ang * 2);
+    const r = perfil(t) * R * oval * quina;
+    return [Math.cos(ang) * r, -t * length, Math.sin(ang) * r];
+  };
+
+  for (let a = 0; a < ANEIS; a++) {
+    const t0 = a / ANEIS, t1 = (a + 1) / ANEIS;
+    for (let i = 0; i < LADOS; i++) {
+      const p00 = empurra(t0, i), p01 = empurra(t0, i + 1);
+      const p10 = empurra(t1, i), p11 = empurra(t1, i + 1);
+      pos.push(...p00, ...p10, ...p11);
+      pos.push(...p00, ...p11, ...p01);
+    }
+  }
+
+  const corpo = new BufferGeometry();
+  corpo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  // Normais SUAVES: um casulo é liso e encerado. Aqui a faceta, que é o
+  // visual de todo o resto, trabalharia contra a leitura do objeto.
+  corpo.computeVertexNormals();
+  suavizarNormais(corpo);
+
+  if (!comFio) {
+    const so = weld([corpo]);
+    suavizarNormais(so);
+    return so;
+  }
+
+  // O CREMASTER: o fio de seda curto que prende ao galho. Fino e cônico, e é
+  // ele que diz que a coisa está PENDURADA em vez de flutuando.
+  //
+  // O HALO pede este mesmo casulo SEM o fio. Ele infla a malha empurrando cada
+  // vértice cinco centímetros ao longo da normal, e num fio de dois
+  // milímetros de raio isso não é um halo: é uma trombeta de cinco
+  // centímetros saindo do topo, maior que o próprio casulo.
+  const fio = place(new CylinderGeometry(0.0022, 0.006, 0.055, 6, 1, true),
+    { y: 0.026 });
+
+  const g = weld([fio, corpo]);
+  suavizarNormais(g);
+  return g;
+}
+
+/** Suavização em degrau, para as costelas nascerem no meio do corpo. */
+function smooth(x, a, b) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Média as normais dos vértices que ocupam a mesma posição.
+ *
+ * `weld` deixa tudo facetado de propósito — é o visual da floresta inteira.
+ * O casulo é a exceção, e como ele não tem índice, a única forma de suavizar
+ * é achar os vértices coincidentes e somar as normais deles.
+ */
+function suavizarNormais(geo) {
+  const p = geo.attributes.position.array;
+  const n = geo.attributes.normal.array;
+  const mapa = new Map();
+  const chave = (i) => `${Math.round(p[i] * 1e4)},${Math.round(p[i + 1] * 1e4)},${Math.round(p[i + 2] * 1e4)}`;
+  for (let i = 0; i < p.length; i += 3) {
+    const k = chave(i);
+    let acc = mapa.get(k);
+    if (!acc) { acc = [0, 0, 0, []]; mapa.set(k, acc); }
+    acc[0] += n[i]; acc[1] += n[i + 1]; acc[2] += n[i + 2];
+    acc[3].push(i);
+  }
+  for (const [, acc] of mapa) {
+    const c = Math.hypot(acc[0], acc[1], acc[2]) || 1;
+    for (const i of acc[3]) {
+      n[i] = acc[0] / c; n[i + 1] = acc[1] / c; n[i + 2] = acc[2] / c;
+    }
+  }
+  geo.attributes.normal.needsUpdate = true;
+  return geo;
 }
 
 /** Anel plano usado como retículo de posicionamento. */

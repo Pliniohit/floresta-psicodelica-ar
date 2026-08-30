@@ -19,6 +19,11 @@
  * de partículas deixou escrita — "amostrar os pontos uma vez e salvar só as
  * coordenadas resolveria, dispensando o modelo".
  *
+ * COM --cor, cada ponto também leva a cor que a textura do modelo tem ali.
+ * A amostragem acontece na bancada, então o JPEG de cinco megabytes não viaja:
+ * o que sobra é um byte por canal por ponto. É assim que um modelo fotogramé-
+ * trico de dois milhões de triângulos vira uma nuvem que abre no headset.
+ *
  * As coordenadas saem QUANTIZADAS em 16 bits dentro da caixa do modelo. A
  * precisão que sobra é da ordem de centésimos de milímetro numa borboleta de
  * dez centímetros — muito além do que um ponto de luz de três pixels pede — e
@@ -26,9 +31,13 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
-const [, , caminho, nome, quantosArg] = process.argv;
+const argv = process.argv.filter((a) => a !== '--cor');
+const COM_COR = process.argv.includes('--cor');
+const [, , caminho, nome, quantosArg] = argv;
 if (!caminho || !nome) {
   console.error('uso: node scripts/assar-nuvem.mjs <arquivo.glb> <nome> [quantos]');
   process.exit(1);
@@ -125,6 +134,7 @@ function aplicar(m, x, y, z) {
 
 // --- 4. juntar todos os triângulos, já no espaço da cena ----------------
 const tris = [];
+const uvs = [];
 let malhas = 0;
 
 function visitar(indice, pai) {
@@ -136,13 +146,17 @@ function visitar(indice, pai) {
       if (prim.attributes.POSITION === undefined) continue;
       malhas++;
       const pos = lerAcessor(prim.attributes.POSITION);
+      const uv = COM_COR && prim.attributes.TEXCOORD_0 !== undefined
+        ? lerAcessor(prim.attributes.TEXCOORD_0) : null;
       const idx = prim.indices !== undefined
         ? lerAcessor(prim.indices)
         : Float64Array.from({ length: pos.length / 3 }, (_, i) => i);
       for (let t = 0; t + 2 < idx.length; t += 3) {
         for (let k = 0; k < 3; k++) {
-          const v = idx[t + k] * 3;
-          tris.push(...aplicar(m, pos[v], pos[v + 1], pos[v + 2]));
+          const v = idx[t + k];
+          tris.push(...aplicar(m, pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]));
+          if (uv) uvs.push(uv[v * 2], uv[v * 2 + 1]);
+          else if (COM_COR) uvs.push(0, 0);
         }
       }
     }
@@ -153,6 +167,38 @@ function visitar(indice, pai) {
 const cena = json.scenes[json.scene ?? 0];
 for (const raiz of cena.nodes) visitar(raiz, ident());
 if (!tris.length) throw new Error('nenhum triângulo encontrado no modelo');
+
+// --- 4b. a textura de cor base, decodificada na bancada -----------------
+//
+// Node não decodifica JPEG, e o projeto não tem dependência nenhuma. O ffmpeg
+// resolve: ele converte para bytes crus RGB, que é justamente o formato em que
+// amostrar um texel é uma conta de índice.
+let textura = null;
+if (COM_COR) {
+  const mat = json.materials?.[0];
+  // A cor base, e só ela. Este modelo também traz um mapa emissivo, que num
+  // exportador de fotogrametria às vezes é o albedo de verdade — aqui não é:
+  // medido, ele sai preto em 100% dos pontos.
+  const iTex = mat?.pbrMetallicRoughness?.baseColorTexture?.index;
+  const iImg = iTex !== undefined ? json.textures[iTex].source : undefined;
+  if (iImg === undefined) {
+    console.warn('sem textura de cor base: a nuvem sai sem cor');
+  } else {
+    const bv = json.bufferViews[json.images[iImg].bufferView];
+    const jpg = bin.subarray(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + bv.byteLength);
+    const tmpJ = resolve(tmpdir(), `assar-${process.pid}.jpg`);
+    const tmpR = resolve(tmpdir(), `assar-${process.pid}.raw`);
+    writeFileSync(tmpJ, jpg);
+    // Reduzida de propósito: a nuvem tem dezenas de milhares de pontos, não
+    // milhões de pixels. Mais resolução aqui só acrescentaria ruído de textura
+    // a pontos que já são do tamanho de um pixel.
+    const LADO = 1024;
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', tmpJ,
+      '-vf', `scale=${LADO}:${LADO}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', tmpR]);
+    textura = { w: LADO, h: LADO, dados: readFileSync(tmpR) };
+    console.log(`textura de cor base lida: ${LADO}x${LADO}`);
+  }
+}
 
 // --- 5. amostrar ponderando por área ------------------------------------
 // A ponderação por área é o que faz a nuvem ter a silhueta do bicho em vez de
@@ -176,6 +222,7 @@ const r = () => {
 };
 
 const pts = new Float64Array(QUANTOS * 3);
+const cores = textura ? new Uint8Array(QUANTOS * 3) : null;
 for (let i = 0; i < QUANTOS; i++) {
   const alvo = r() * total;
   let lo = 0, hi = nTri - 1;
@@ -185,6 +232,22 @@ for (let i = 0; i < QUANTOS; i++) {
   const u = 1 - s, v = s * (1 - t2), w = s * t2;
   for (let k = 0; k < 3; k++) {
     pts[i * 3 + k] = tris[o + k] * u + tris[o + 3 + k] * v + tris[o + 6 + k] * w;
+  }
+  if (textura) {
+    // A mesma combinação baricêntrica que posicionou o ponto posiciona a
+    // coordenada de textura dele: é o que garante que a cor venha de onde o
+    // ponto está, e não de onde o vértice mais próximo estava.
+    const q = lo * 6;
+    let su = uvs[q] * u + uvs[q + 2] * v + uvs[q + 4] * w;
+    let sv = uvs[q + 1] * u + uvs[q + 3] * v + uvs[q + 5] * w;
+    su -= Math.floor(su); sv -= Math.floor(sv);
+    // glTF põe a origem da textura no alto; a imagem crua, embaixo.
+    const px = Math.min(textura.w - 1, Math.floor(su * textura.w));
+    const py = Math.min(textura.h - 1, Math.floor((1 - sv) * textura.h));
+    const d = (py * textura.w + px) * 3;
+    cores[i * 3] = textura.dados[d];
+    cores[i * 3 + 1] = textura.dados[d + 1];
+    cores[i * 3 + 2] = textura.dados[d + 2];
   }
 }
 
@@ -210,6 +273,7 @@ for (let i = 0; i < QUANTOS; i++) {
 }
 
 const b64 = Buffer.from(q.buffer, q.byteOffset, q.byteLength).toString('base64');
+const b64c = cores ? Buffer.from(cores.buffer, cores.byteOffset, cores.byteLength).toString('base64') : null;
 const destino = resolve(`src/nuvens/${nome}.js`);
 mkdirSync(dirname(destino), { recursive: true });
 writeFileSync(destino, `// GERADO POR scripts/assar-nuvem.mjs — não editar à mão.
@@ -230,10 +294,21 @@ export function nuvem() {
   for (let i = 0; i < q.length; i++) out[i] = q[i] / 32767;
   return out;
 }
-`);
+${b64c ? `
+const C = '${b64c}';
+
+/** A cor que a textura do modelo tinha em cada ponto, de 0 a 1. */
+export function cores() {
+  const bytes = Uint8Array.from(atob(C), (c) => c.charCodeAt(0));
+  const out = new Float32Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] / 255;
+  return out;
+}
+` : ''}`);
 
 const kb = (n) => `${(n / 1024).toFixed(1)} kB`;
 console.log(`${malhas} malha(s), ${nTri} triângulos`);
 console.log(`caixa: ${(max[0] - min[0]).toFixed(3)} x ${(max[1] - min[1]).toFixed(3)} x ${(max[2] - min[2]).toFixed(3)}`);
 console.log(`${QUANTOS} pontos -> src/nuvens/${nome}.js`);
-console.log(`${kb(buf.length)} de modelo viraram ${kb(b64.length)} de coordenadas`);
+console.log(`${kb(buf.length)} de modelo viraram ${kb(b64.length + (b64c?.length ?? 0))}`
+  + (b64c ? ' de coordenadas e cor' : ' de coordenadas'));

@@ -51,9 +51,14 @@ export class NuvemDePontos extends Points {
     geo.setAttribute('position', new BufferAttribute(amostra, 3));
 
     // Atributos extras por PONTO, quando quem chama tem algo a dizer sobre
-    // cada um deles — o lado e a envergadura da asa, por exemplo.
+    // cada um deles — o lado e a envergadura da asa, a cor que a textura do
+    // modelo tinha ali.
+    //
+    // O tamanho do item é DEDUZIDO do próprio arranjo. Fixá-lo em 1 obrigava
+    // quem quisesse passar cor a inventar três atributos separados.
     for (const [nome, arr] of Object.entries(extras ?? {})) {
-      geo.setAttribute(nome, new BufferAttribute(arr, 1));
+      const itens = Math.round(arr.length / pontos);
+      geo.setAttribute(nome, new BufferAttribute(arr, itens));
     }
 
     // Uma semente por PONTO, para variar cor e brilho dentro da mesma planta

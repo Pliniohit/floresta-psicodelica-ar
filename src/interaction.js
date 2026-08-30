@@ -1,8 +1,6 @@
-import {
-  Mesh, Points, BufferGeometry, BufferAttribute, Vector3, Quaternion, Matrix4,
-} from '../vendor/three/three.module.min.js';
+import { Mesh, Vector3, Quaternion } from '../vendor/three/three.module.min.js';
 import * as G from './geometry.js';
-import { reticleMaterial, starPointMaterial } from './shaders/materials.js';
+import { reticleMaterial } from './shaders/materials.js';
 
 const _origin = new Vector3();
 const _dir = new Vector3();
@@ -33,20 +31,13 @@ export class Interaction {
     this.controllers = [0, 1].map((i) => {
       const c = renderer.xr.getController(i);
       c.userData.index = i;
-      const beam = this.#beam();
-      c.add(beam);
-      c.userData.beam = beam;
       c.addEventListener('selectstart', () => this.#select(c));
       c.addEventListener('selectend', () => this.on.onSelectEnd?.(c));
       c.addEventListener('squeezestart', () => this.enabled && this.on.onPalette?.());
       c.addEventListener('connected', (e) => {
         c.userData.source = e.data;
         c.visible = true;
-        // Numa entrada de tela o raio nasce na câmera: desenhar um feixe saindo
-        // do olho do usuário fica estranho e atrapalha a leitura da cena.
-        const screen = e.data?.targetRayMode === 'screen';
-        beam.visible = !screen;
-        if (screen) this.touchMode = true;
+        if (e.data?.targetRayMode === 'screen') this.touchMode = true;
       });
       c.addEventListener('disconnected', () => { c.userData.source = null; c.visible = false; });
       scene.add(c);
@@ -61,37 +52,16 @@ export class Interaction {
     scene.add(this.marker);
   }
 
-  /** Feixe fino apontando para -Z, aditivo para brilhar sobre o passthrough. */
-  #beam() {
-    // Feixe em PONTOS, não em cilindro.
-    //
-    // Um cilindro fino a quatro metros vira uma agulha sólida atravessando a
-    // sala — geometria dura no meio de uma cena que agora é toda partícula.
-    // Em pontos ele lê como energia, e ainda rarefaz com a distância: a
-    // densidade cai ao longo do raio, então a origem é firme na mão e a ponta
-    // se dissolve, que é o que diz "aponta para lá" sem cravar uma linha.
-    const N = 130;
-    const pos = new Float32Array(N * 3);
-    const sem = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      // Distribuição enviesada para perto: raiz empurra a densidade para a
-      // origem, que é onde o feixe precisa ser lido como saindo da mão.
-      const t = Math.sqrt(i / N);
-      const ang = i * 2.39996;                       // ângulo áureo: sem faixas
-      const raio = 0.0035 + t * 0.010;
-      pos[i * 3] = Math.cos(ang) * raio;
-      pos[i * 3 + 1] = Math.sin(ang) * raio;
-      pos[i * 3 + 2] = -t * 4.0;
-      sem[i] = (i * 0.6180339887) % 1;
-    }
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(pos, 3));
-    g.setAttribute('aSeed', new BufferAttribute(sem, 1));
-    const m = new Points(g, starPointMaterial);
-    m.frustumCulled = false;
-    m.renderOrder = 9;
-    return m;
-  }
+  // O FEIXE SAIU.
+  //
+  // Cada controle desenhava um cordão de cento e trinta pontos saindo da mão,
+  // quatro metros adiante. Ele não decidia nada: quem confirma a mira é o
+  // retículo no chão e o realce no objeto sob ela, e os dois continuam aqui.
+  // O que o feixe fazia era atravessar a cena inteira na altura dos olhos,
+  // tapando justamente o que a pessoa está tentando mirar.
+  //
+  // Mira sem feixe não é mira às cegas: é mira com a confirmação no ALVO em
+  // vez de no caminho.
 
   /** Interseção de um raio qualquer com o plano do chão. */
   #castToGround(origin, dir) {

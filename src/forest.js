@@ -143,9 +143,14 @@ export class Forest extends Group {
         this.geo.trunk ??= sp.trunk;
         return {
           set: new InstanceSet([
-            nuvem(sp.trunk, CAPACITY.tree, 900, 0, 1.0, 20, 101 + k),
-            nuvem(sp.canopy, CAPACITY.tree, 2200, 1, 1.0, 22, 211 + k),
-            nuvem(sp.fruit, CAPACITY.tree, 260, 4, 1.0, 26, 331 + k),
+            // RIGIDEZ ZERO NA ÁRVORE. Tronco, copa e fruto não cedem ao
+            // vento — árvore de verdade tem inércia, e uma que oscila
+            // inteira, do pé à copa, na mesma fase do capim, lê como cenário
+            // de papel. O balanço fica com quem de fato balança: capim,
+            // samambaia, junco, arbusto e flor.
+            nuvem(sp.trunk, CAPACITY.tree, 900, 0, 0.0, 20, 101 + k),
+            nuvem(sp.canopy, CAPACITY.tree, 2200, 1, 0.0, 22, 211 + k),
+            nuvem(sp.fruit, CAPACITY.tree, 260, 4, 0.0, 26, 331 + k),
           ], CAPACITY.tree),
         };
       });
@@ -181,7 +186,9 @@ export class Forest extends Group {
     this.geo.cocoon = cocoonGeo;
     const cocoonMesh = new InstancedMesh(cocoonGeo, M.cocoonMaterial, CAPACITY.cocoon);
     cocoonMesh.renderOrder = 5;
-    const haloMesh = new InstancedMesh(cocoonGeo, M.cocoonGlowMaterial, CAPACITY.cocoon);
+    // O halo usa o casulo SEM o fio: ver o comentário em G.cocoon.
+    this.geo.cocoonHalo = G.cocoon(0.20, false);
+    const haloMesh = new InstancedMesh(this.geo.cocoonHalo, M.cocoonGlowMaterial, CAPACITY.cocoon);
     haloMesh.renderOrder = 8;
     this.add(cocoonMesh, haloMesh);
     // Uma lista só de transformações para os dois: o halo nunca desencontra.
@@ -615,14 +622,18 @@ export class Forest extends Group {
    * Quando falta, este método pendura um no ar mesmo, sem galho: é o primeiro
    * plano da animação, um casulo suspenso no escuro por um fio.
    */
-  garantirCasulo(r = Math.random) {
+  garantirCasulo(r = Math.random, galho = null) {
     const abertos = this.cocoonSpots.filter((c) => !c.aberto).length;
     if (abertos > 0 || !this.footprint) return abertos;
     if (this.cocoons.count >= CAPACITY.cocoon) return 0;
 
-    // Um ponto caminhável, longe da parede e de qualquer móvel, e não bem em
-    // cima de quem está entrando: 1,2 m do centro dá para vê-lo inteiro.
-    let alvo = null;
+    // O GALHO DA ÁRVORE-MÃE, quando existe.
+    //
+    // Antes o casulo era pendurado num ponto qualquer do ar, longe dos
+    // troncos — o que fazia dele um objeto flutuando sem por quê. Agora ele
+    // pende de onde deve pender: de um galho. O sorteio abaixo é só a saída
+    // para um cômodo sem árvore-mãe.
+    let alvo = galho ? new Vector3(galho.x, 0, galho.z) : null;
     for (let t = 0; t < 240 && !alvo; t++) {
       const a = r() * Math.PI * 2;
       const d = 0.7 + r() * 1.6;
@@ -632,7 +643,9 @@ export class Forest extends Group {
     if (!alvo) alvo = new Vector3(0, 0, 0);
 
     const cs = 1.7 + r() * 0.4;
-    const cp = new Vector3(alvo.x, 1.95 + r() * 0.2, alvo.z);
+    const cp = galho
+      ? new Vector3(galho.x, galho.y, galho.z)
+      : new Vector3(alvo.x, 1.95 + r() * 0.2, alvo.z);
     const ci = this.cocoons.add(cp, _q.identity(), _s.setScalar(cs));
     this.cocoons.flush();
     if (ci >= 0) this.cocoonSpots.push({ pos: cp.clone(), escala: cs, aberto: false });
