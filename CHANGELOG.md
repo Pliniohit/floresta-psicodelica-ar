@@ -15,6 +15,66 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.27.0 — A árvore de volta ao código, e sumindo no espaço
+
+### Procedural, e simplificada
+
+A árvore-mãe deixou de ser o modelo fotogramétrico. Ele custava um megabyte e
+meio de malha, oitocentos kilobytes de textura e uma **licença de terceiro por
+resolver** — e, depois de reduzido, entregava uma silhueta emaranhada demais
+para se ler num cômodo pequeno, cheia das costuras que qualquer redução
+automática deixa.
+
+Agora ela é gerada por código, como todo o resto do projeto: **846 triângulos,
+zero bytes de arquivo**. Muda de cor com o cenário, porque a cor vem da paleta.
+E a silhueta é **escolhida** em vez de herdada — o que significa que cada
+decisão de forma responde a alguma coisa:
+
+- O **tronco curva**. Um cilindro reto de sete metros lê como coluna; a curva,
+  mesmo pequena, é o que diz que aquilo cresceu.
+- Existem **três galhos abaixo de dois metros**. Uma árvore que só tem copa lá
+  em cima, vista de dentro da sala, é um poste: não há nada na altura dos olhos
+  que a leia como árvore. É de um desses galhos que o casulo pende.
+- A copa continua **fora**, acima do forro, onde o céu é virtual.
+
+`barkMaterial` e `canopyMaterial` voltaram a ser usados — estavam mortos desde
+a conversão da vegetação para partículas. Eles já traziam a textura animada que
+a conversão tinha custado: a fibra torcida e a **seiva subindo pelo tronco**, e
+as manchas de ruído da folhagem com a nervura acesa. Como agora só a árvore-mãe
+os usa, o vento saiu dos dois: árvore adulta não oscila inteira na fase do
+capim. A copa ficou só respirando, que é inchar e murchar em torno do próprio
+centro.
+
+**Dois ajustes de cor, com a mesma causa.** As cores de cenário chegam
+convertidas para linear e por isso são escuras — a casca de "A Dançarina",
+medida, é (0,06 · 0,05 · 0,10). Sobrando tão pouco depois de `nightBody`, o que
+pintava o tronco não era madeira: era a paleta mágica somada por cima, e a
+árvore saía cinza-azulada em todos os cenários. Ganho de 3 na casca e 2,8 na
+folha devolvem a superfície; e a bioluminescência, que mascarava a seiva
+inteira com força 0,95, ficou restrita à fenda com força 0,40. É a terceira vez
+que o mesmo erro aparece nesta série — luz somada por cima de uma cor escura
+sempre ganha, e o que se vê passa a ser a luz.
+
+### Ela some no espaço
+
+Nos dois pólos — o Olho e o Núcleo — não existe árvore, e não existe casulo. A
+saída de lá é **escolher um corpo** e atravessar para o mundo dele, não abrir
+uma porta. Deixá-la em pé no meio do enxame de planetas diria que ainda há uma
+porta ali, e o casulo ficaria pendurado no meio do espaço prometendo uma saída
+que não é a daquele lugar.
+
+Verificado: nos mundos, árvore visível, um casulo e a raiz; no Olho e no
+Núcleo, árvore invisível e **zero casulos**.
+
+### O que saiu junto
+
+`scripts/assar-malha.mjs`, `src/malhas/` e `assets/arvoremae.jpg`. O decimador
+por agrupamento em grade era um trabalho bom — e sem nada que o use, era código
+morto esperando apodrecer. Fica no histórico, em v0.26.0, com o cabeçalho que
+explica o método e os três defeitos que ele revelou.
+
+`scripts/assar-nuvem.mjs` continua: é ele que produz a borboleta.
+
 ## v0.26.0 — Raízes Cósmicas: o eixo, e a árvore como ela é
 
 ### O nome e o conceito

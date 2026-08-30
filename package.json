@@ -1,6 +1,6 @@
 {
   "name": "floresta-psicodelica-ar",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Raízes Cósmicas: do magma ao universo profundo, cenários em nuvens de partículas ligados por duas portas — uma para dentro, uma para fora. Realidade aumentada para Meta Quest 3 (WebXR).",
   "type": "module",
   "private": true,

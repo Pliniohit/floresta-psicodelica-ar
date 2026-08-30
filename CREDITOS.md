@@ -3,27 +3,15 @@
 Quase tudo neste projeto é gerado por código: não há textura baixada, não há
 CDN, não há dependência. As exceções estão todas aqui.
 
-## Árvore-mãe — malha reduzida e textura
+## Árvore-mãe
 
-`src/malhas/arvoremae.js` e `assets/arvoremae.jpg` são
-`tree wit vine 3.glb` ("old tree with vine — 3d model free"), um modelo
-fotogramétrico de 2,1 milhões de triângulos e 97 MB fornecido pelo autor do
-projeto, reduzido a 54 mil triângulos por `scripts/assar-malha.mjs` e com a
-textura de cor base reescalada para 2048 px. O arquivo original **não** faz
-parte do repositório.
+Gerada por código, em `G.arvoreMae`. **Nenhum arquivo, nenhum terceiro.**
 
-> **PENDENTE — origem e licença.** O nome da pasta diz "free", e o formato
-> (pasta `source/` + pasta `textures/`) é o de um download do **Sketchfab**.
-> A licença livre mais comum lá é **CC Attribution**, que exige creditar o
-> autor pelo nome, com título e endereço — e uma nuvem de pontos extraída do
-> modelo continua sendo **obra derivada**, então a exigência a acompanha.
->
-> Aqui a exigência é mais forte que no caso da borboleta: não é só a forma
-> reduzida, é a **textura fotografada** viajando junto, no repositório.
->
-> Preencher: autor, título, endereço e licença. Se o modelo for "somente uso
-> pessoal" ou proibir derivados, ele precisa sair — e a árvore volta a ser
-> gerada por código, como o resto da vegetação.
+Ela já foi um modelo fotogramétrico de 2,1 milhões de triângulos ("old tree
+with vine — 3d model free"), reduzido a 54 mil e com a textura fotografada
+viajando no repositório — e com uma licença de terceiro por resolver, que era
+o registro que ficava aqui. Ao virar procedural, a pendência desapareceu junto
+com o megabyte e meio de malha.
 
 ## Borboleta — nuvem de pontos
 

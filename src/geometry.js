@@ -515,6 +515,132 @@ export function raiz(raio = 0.26) {
   return weld([bulbo, ...bracos]);
 }
 
+/**
+ * A ÁRVORE-MÃE — uma só, no meio do cômodo, gerada por código.
+ *
+ * Ela já foi um modelo fotogramétrico de dois milhões de triângulos, reduzido
+ * e com a textura fotografada junto. Era bonito e era caro: um megabyte e meio
+ * de malha, oitocentos kilobytes de textura, uma licença de terceiro por
+ * resolver — e, na prática, uma silhueta emaranhada demais para se ler num
+ * cômodo pequeno, cheia das costuras que qualquer redução automática deixa.
+ *
+ * Aqui ela volta a ser o que todo o resto do projeto é: forma gerada. Custa
+ * dois mil triângulos e zero bytes de arquivo, muda de cor com o cenário
+ * porque a cor vem da paleta, e a silhueta é ESCOLHIDA em vez de herdada.
+ *
+ * O QUE A FORMA PRECISA DIZER, e por que ela é assim:
+ *
+ * Ela atravessa o teto. Sete metros num cômodo de dois e meio, então o tronco
+ * e uns poucos galhos ficam aqui dentro e a copa inteira fica lá fora, acima
+ * do forro, onde o céu é virtual e portanto visível. É isso que faz o cômodo
+ * virar um lugar dentro de algo maior.
+ *
+ * Os GALHOS BAIXOS existem por causa disso. Uma árvore que só tem copa lá em
+ * cima, vista de dentro da sala, é um poste — não há nada na altura dos olhos
+ * que a leia como árvore. Os dois galhos abaixo de dois metros são o que
+ * resolve, e um deles é de onde o casulo pende.
+ *
+ * O tronco CURVA. Um cilindro reto de sete metros lê como coluna; a curva,
+ * mesmo pequena, é o que diz que aquilo cresceu.
+ */
+export function arvoreMae() {
+  const ALTURA = 7.0;
+
+  // --- o tronco, em segmentos que se deslocam ----------------------------
+  // Cada anel sobe um pouco e desvia um pouco. O desvio segue um arco suave e
+  // não um sorteio: tronco que zigueizagueia lê como raio, não como árvore.
+  const N = 9;
+  const tronco = [];
+  let px = 0, pz = 0;
+  for (let i = 0; i < N; i++) {
+    const t0 = i / N, t1 = (i + 1) / N;
+    const y0 = t0 * ALTURA * 0.62, y1 = t1 * ALTURA * 0.62;
+    // Afina de baixo para cima, com a base alargando num pé de elefante.
+    const r0 = 0.40 * Math.pow(1 - t0, 1.35) + 0.085;
+    const r1 = 0.40 * Math.pow(1 - t1, 1.35) + 0.085;
+    const dx0 = Math.sin(t0 * 2.1) * 0.30, dz0 = Math.sin(t0 * 1.4 + 1.1) * 0.22;
+    const dx1 = Math.sin(t1 * 2.1) * 0.30, dz1 = Math.sin(t1 * 1.4 + 1.1) * 0.22;
+    const seg = new CylinderGeometry(r1, r0, y1 - y0, 7, 1, true);
+    place(seg, { y: (y0 + y1) / 2, x: (dx0 + dx1) / 2, z: (dz0 + dz1) / 2 });
+    tronco.push(seg);
+    px = dx1; pz = dz1;
+  }
+
+  /**
+   * Um galho: cone deitado da base à ponta, e devolve onde a ponta caiu.
+   *
+   * Tombar em Z e depois girar em Y é a ordem que a Euler 'XYZ' do three
+   * aplica de dentro para fora — tombar primeiro, apontar depois. Fazendo o
+   * contrário, todos os galhos caem para o mesmo lado.
+   */
+  const galho = (y, az, incl, comp, base, ponta) => {
+    const g = new CylinderGeometry(ponta, base, comp, 5, 1, true);
+    place(g, { y: comp / 2 });
+    place(g, { rz: -incl, ry: -az, y, x: px * (y / (ALTURA * 0.62)), z: pz * (y / (ALTURA * 0.62)) });
+    tronco.push(g);
+    // Para onde (0,1,0) foi parar depois das duas rotações.
+    const sx = Math.sin(incl) * Math.cos(az);
+    const sz = -Math.sin(incl) * Math.sin(az);
+    const sy = Math.cos(incl);
+    return {
+      x: sx * comp, y: y + sy * comp, z: sz * comp,
+      dx: sx, dy: sy, dz: sz,
+    };
+  };
+
+  const copa = [];
+
+  // --- os galhos BAIXOS, dentro do cômodo --------------------------------
+  // Longos e quase horizontais: é a horizontal que se lê como galho quando
+  // você está embaixo dele.
+  const baixos = [
+    { y: 1.62, az: 0.55, incl: 1.15, comp: 1.35, folha: 0.34 },
+    { y: 1.95, az: 3.40, incl: 1.02, comp: 1.15, folha: 0.30 },
+    { y: 2.28, az: 5.05, incl: 1.20, comp: 1.00, folha: 0.26 },
+  ];
+  const pontas = [];
+  for (const b of baixos) {
+    const p = galho(b.y, b.az, b.incl, b.comp, 0.075, 0.026);
+    pontas.push(p);
+    copa.push(place(new IcosahedronGeometry(b.folha, 0), {
+      x: p.x + p.dx * 0.10, y: p.y, z: p.z + p.dz * 0.10, sy: 0.72, ry: b.az,
+    }));
+  }
+
+  // --- os galhos ALTOS, já fora da sala ----------------------------------
+  const altos = [
+    { y: 3.30, az: 1.20, incl: 0.95, comp: 2.30, folha: 1.15 },
+    { y: 3.70, az: 2.90, incl: 0.80, comp: 2.60, folha: 1.30 },
+    { y: 3.55, az: 4.60, incl: 1.05, comp: 2.10, folha: 1.05 },
+    { y: 4.05, az: 6.00, incl: 0.72, comp: 2.40, folha: 1.20 },
+    { y: 4.30, az: 0.30, incl: 0.55, comp: 1.90, folha: 1.00 },
+  ];
+  for (const a of altos) {
+    const p = galho(a.y, a.az, a.incl, a.comp, 0.13, 0.035);
+    // Duas massas por galho, uma na ponta e uma no meio: uma bola só por
+    // galho lê como pirulito.
+    copa.push(place(new IcosahedronGeometry(a.folha, 1), {
+      x: p.x + p.dx * 0.25, y: p.y + 0.10, z: p.z + p.dz * 0.25,
+      sy: 0.70, ry: a.az,
+    }));
+    copa.push(place(new IcosahedronGeometry(a.folha * 0.62, 0), {
+      x: p.x * 0.55, y: a.y + (p.y - a.y) * 0.55 + 0.18, z: p.z * 0.55,
+      sy: 0.74, ry: a.az + 1.0,
+    }));
+  }
+
+  // A coroa, fechando o alto.
+  copa.push(place(new IcosahedronGeometry(1.45, 1), { y: ALTURA * 0.74, sy: 0.66 }));
+
+  // `weld` já facetada e já guarda a normal lisa em `aSmoothN`, que é o que
+  // os materiais de casca e copa esperam.
+  const g = { tronco: weld(tronco), copa: weld(copa) };
+  // De onde o casulo pende: a ponta do galho mais baixo, um palmo abaixo dela.
+  const p0 = pontas[0];
+  g.galho = { x: p0.x * 0.88, y: p0.y - 0.16, z: p0.z * 0.88 };
+  return g;
+}
+
 /** Anel plano usado como retículo de posicionamento. */
 export function reticleRing(radius = 0.2) {
   const g = new BufferGeometry();

@@ -609,10 +609,19 @@ function montarCena(i) {
   state.seed = (state.seed * 1103515245 + 12345) >>> 0;
   forest.setDensidade(c.populacao);
   forest.seed(state.seed);
-  // A árvore-mãe nasce antes do casulo, porque é o galho dela que diz onde o
-  // casulo vai. A saída daqui não pode depender de sorteio.
-  const galho = arvoreMae.plantar(forest.footprint, alturaDoTeto());
-  forest.garantirCasulo(Math.random, galho);
+  // A ÁRVORE SÓ EXISTE NOS MUNDOS, nunca nos pólos.
+  //
+  // No Olho e no Núcleo a saída é escolher um corpo e atravessar para o mundo
+  // dele — não abrir uma porta. Uma árvore em pé no meio do enxame de planetas
+  // diria que ainda há uma porta ali, e o casulo dela ficaria pendurado no meio
+  // do espaço prometendo uma saída que não é a daquele lugar.
+  //
+  // Ela nasce antes do casulo, porque é o galho dela que diz onde o casulo vai.
+  // A saída daqui não pode depender de sorteio.
+  const ehHub = !!(c.cosmos || c.nucleo);
+  arvoreMae.setEnabled(!ehHub);
+  const galho = ehHub ? null : arvoreMae.plantar(forest.footprint, alturaDoTeto());
+  if (!ehHub) forest.garantirCasulo(Math.random, galho);
   forest.visible = true;
   state.intro = 0;
 

@@ -106,9 +106,14 @@ export const barkMaterial = make('casca', {
     attribute vec3 aSmoothN;   // a normal lisa, guardada ao lado da facetada
     void main(){
       ${ROOT_AND_SEED}
+      // SEM VENTO. Estes dois materiais são só da árvore-mãe agora — a
+      // vegetação toda virou nuvem de pontos — e árvore adulta não oscila
+      // inteira. Vê-la ondular na fase do capim desfaz a escala dela num
+      // segundo, e a escala dela é o que faz o cômodo parecer pequeno.
+      //
       // A normal derrete conforme o pincel entra: mesma malha, outro
       // sombreamento. É o que separa facetado de pintado, e não o triângulo.
-      emit(sway(position, root, 1.0), mix(normal, aSmoothN, uPaint * 0.22));
+      emit(trample(position, root), mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `
@@ -123,13 +128,27 @@ export const barkMaterial = make('casca', {
       float up = fract(h * 0.20 - uTime * 0.07 + vSeed);
       float sap = pow(1.0 - abs(up * 2.0 - 1.0), 6.0);
 
-      vec3 casca = barkColor(vSeed * 3.1 + twist * 0.25);
+      // A CASCA PRECISA TER CORPO, e é aqui que ela ganha.
+      //
+      // As cores de cenário chegam já convertidas para linear, e por isso são
+      // escuras — a casca de "A Dançarina", medida, é (0,06 · 0,05 · 0,10).
+      // Sobrando tão pouco depois de "nightBody", o que pintava o tronco não
+      // era madeira nenhuma: era a paleta mágica somada por cima, e a árvore
+      // saía cinza-azulada, de pedra, em todos os cenários.
+      //
+      // O ganho de 3 devolve a madeira à faixa em que ela é uma superfície,
+      // sem transformá-la na coisa mais saturada do cômodo.
+      // Isso vale para a árvore-mãe e para nada mais: ela é o objeto que
+      // ancora o cômodo, e um poste pálido no meio da sala não ancora nada.
+      vec3 casca = barkColor(vSeed * 3.1 + twist * 0.25) * 3.0;
       casca = mix(casca * 0.55, casca * 1.15, fiber);   // fibra escurece o sulco
 
       float t = h * 0.10 + twist * 0.34 + uTime * 0.035 + vSeed;
-      vec3 col = enchant(nightBody(casca), t, 0.45);
-      // A seiva continua vindo da paleta: é o elemento mágico do tronco.
-      col += palette(t + 0.35) * damp(sap, 0.35) * (0.34 + uTrip * 0.7 + uPulse * 0.5);
+      // Encanto contido pelo mesmo motivo: ele some a madeira.
+      vec3 col = enchant(nightBody(casca), t, 0.20);
+      // A seiva continua vindo da paleta: é o elemento mágico do tronco, e
+      // agora é ele que aparece contra a casca em vez de virar a casca.
+      col += palette(t + 0.35) * damp(sap, 0.35) * (0.22 + uTrip * 0.5 + uPulse * 0.4);
       col *= 0.45 + 0.75 * wrapLight(vNormalW);
       col = aquarela(col, vNormalW, vLocal);
       col = tinta(col, vNormalW, uCasca[0] * 0.10, 1.7);
@@ -137,8 +156,14 @@ export const barkMaterial = make('casca', {
       // Luz no fundo do sulco, não na crista: a fibra que sobressai fica
       // escura e a fenda entre elas acende. É o que dá relevo ao tronco em
       // vez de pintá-lo de neon.
+      // A MÁSCARA É SÓ A FENDA, e a força é baixa.
+      //
+      // Ela somava a seiva também, com força 0,95: mascarada assim a
+      // bioluminescência cobria o tronco inteiro, e a árvore saía cinza-azul
+      // em qualquer cenário. A casca é escura por natureza — qualquer ciano
+      // somado nela ganha, e o que se vê passa a ser o ciano.
       float fenda = 1.0 - smoothstep(0.0, 0.11, abs(twist - 0.5));
-      col += bio(fenda * 0.62 + sap * 0.85, t + 0.35, 0.95);
+      col += bio(fenda * 0.55, t + 0.35, 0.40);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -194,9 +219,11 @@ export const canopyMaterial = make('copa', {
     attribute vec3 aSmoothN;   // a normal lisa, guardada ao lado da facetada
     void main(){
       ${ROOT_AND_SEED}
-      // a copa respira além de balançar
+      // A copa RESPIRA, e é só isso que ela faz: inchar e murchar devagar em
+      // torno do próprio centro. Balançar é do capim; a copa de uma árvore de
+      // sete metros que oscila lateralmente lê como cenário de papel.
       float breathe = 1.0 + sin(uTime * 0.35 + root.x + root.z) * 0.030 * (0.4 + uTrip);
-      emit(sway(position * breathe, root, 1.0), mix(normal, aSmoothN, uPaint * 0.22));
+      emit(position * breathe, mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `
@@ -216,10 +243,12 @@ export const canopyMaterial = make('copa', {
         leafColor(vSeed * 2.7),
         leafColor(vSeed * 2.7 + 0.22),
         cells);
-      folha *= 0.72 + 0.5 * n;
+      // O mesmo ganho da casca, pelo mesmo motivo: a folhagem de cenário
+      // chega em linear e escura demais para ser superfície. Ver barkMaterial.
+      folha *= (0.72 + 0.5 * n) * 2.8;
 
       float t = n * 0.85 + vSeed * 0.4 + uTime * 0.045;
-      vec3 col = enchant(nightBody(folha), t, 0.55);
+      vec3 col = enchant(nightBody(folha), t, 0.24);
       col += palette(t + 0.5) * rim * (0.22 + uTrip * 0.55 + uPulse * 0.4);
       col *= 0.5 + 0.65 * wrapLight(vNormalW);
       col = aquarela(col, vNormalW, vLocal);
@@ -230,10 +259,12 @@ export const canopyMaterial = make('copa', {
       // resto da folha escuro é o que lê como folha viva; acender a folha
       // inteira leria como placa retroiluminada.
       float nervura = 1.0 - smoothstep(0.0, 0.055, abs(n - 0.52));
-      col += bio(nervura, t + 0.12, 1.05);
-      col += bio(nervura * presenca(vWorld), t + 0.30, 1.6);
+      col += bio(nervura, t + 0.12, 0.50);
+      // Chegar perto acende: aqui a força alta é bem-vinda, porque é resposta
+      // à presença e não brilho de fundo.
+      col += bio(nervura * presenca(vWorld), t + 0.30, 1.20);
       // E a borda da massa, onde a folhagem é fina e a luz atravessa.
-      col += bio(rim * 0.7, t + 0.42, 0.60);
+      col += bio(rim * 0.55, t + 0.42, 0.28);
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,
@@ -2252,102 +2283,6 @@ export const nuvemMaterial = make('nuvem', {
   `,
 });
 
-// ---------------------------------------------------------------------------
-// A ÁRVORE-MÃE — malha, e não nuvem de pontos.
-//
-// Ela já foi nuvem, e a nuvem estava errada para ela. A estética de pontos é
-// certa para a vegetação gerada por código: são milhares de plantas pequenas,
-// e ponto é a forma mais barata de sugerir volume. Mas a dois metros do olho,
-// uma árvore de quarenta e seis mil pontos vira um monte de BOLINHAS — a
-// distância entre pontos vizinhos passa a ser maior que o detalhe que eles
-// deveriam descrever, e o objeto se desfaz justamente onde deveria convencer.
-//
-// Então aqui é o objeto como ele é: a malha reduzida de dois milhões para
-// cinquenta e nove mil triângulos (ver scripts/assar-malha.mjs) e a textura
-// fotográfica dele. Nada de repintar por paleta — é essa superfície que faz a
-// árvore ser a coisa real no meio de um mundo desenhado.
-//
-// O que a cena faz por ela entra POR CIMA e de leve: a luz viva, a noite, e um
-// ruído lento atravessando a casca — a textura animada que a conversão para
-// partículas tinha custado. Ela modula o que a fotografia já traz, em vez de
-// inventar um desenho concorrente.
-//
-// NÃO BALANÇA: não há "sway" neste vertex.
-// ---------------------------------------------------------------------------
-export const arvoreMaeMaterial = make('arvore-mae', {
-  side: DoubleSide,   // folha e vinha são superfícies de um lado só no modelo
-  uniforms: {
-    uMapa: { value: null },
-    uTemMapa: { value: 0 },   // 0 até a textura chegar; evita o preto inicial
-  },
-  vert: /* glsl */ `
-    varying vec2 vUv;
-    varying vec3 vObj;
-    void main(){
-      vSeed = 0.37;
-      vUv = uv;
-      vObj = position;
-      emit(position, normal);
-    }
-  `,
-  frag: /* glsl */ `
-    uniform sampler2D uMapa;
-    uniform float uTemMapa;
-    varying vec2 vUv;
-    varying vec3 vObj;
-
-    void main(){
-      ${FRAG_FADE}
-
-      // A cor fotografada. Enquanto a textura não chegou, uma casca neutra —
-      // sem isto a árvore aparece PRETA no primeiro segundo, que é o pior
-      // primeiro segundo possível para o objeto central da cena.
-      vec3 crua = mix(vec3(0.24, 0.22, 0.16), texture2D(uMapa, vUv).rgb, uTemMapa);
-
-      // Levante com o matiz devolvido. O albedo foi capturado à sombra e a
-      // média medida dá luminância 0,22: fiel, e escuro demais para um cômodo
-      // à noite. Só multiplicar clareia e LAVA, porque os três canais estão
-      // comprimidos perto uns dos outros. Afastar cada canal da própria
-      // luminância antes de abrir devolve o pardo da casca sem inventar cor.
-      float lum = dot(crua, vec3(0.2126, 0.7152, 0.0722));
-      vec3 col = mix(vec3(lum), crua, 1.55) * 1.9;
-
-      // A TEXTURA ANIMADA, por cima. Duas escalas de ruído atravessando a
-      // árvore em sentidos diferentes, devagar, amostradas em espaço de
-      // OBJETO — assim o desenho fica preso à árvore e não à tela, que é o
-      // que importa em estéreo.
-      float fibra = fbm3(vObj * 7.0 + vec3(0.0, uTime * 0.030, uTime * 0.018));
-      float veio  = fbm2(vObj * 19.0 - vec3(uTime * 0.024, 0.0, 0.0));
-      col *= 0.90 + 0.14 * fibra + 0.07 * veio;
-
-      vec3 N = normalize(vNormalW);
-      // Dupla face: a folha vista por trás tem a normal invertida, e sem isto
-      // metade da copa fica preta.
-      if (!gl_FrontFacing) N = -N;
-
-      col = enchant(col, 0.37 + uTime * 0.03, 0.10);
-      col *= 0.55 + 0.60 * wrapLight(N);
-      col = nightBody(col);
-
-      // A VIDA ACESA, muito de leve — e esta contenção é o ponto.
-      //
-      // A primeira versão somava bioluminescência como soma na vegetação
-      // gerada, e a árvore inteira ficou AZUL: a casca fotografada
-      // desaparecia debaixo do ciano e o objeto voltava a parecer desenhado.
-      // Medido com "uGlow" em zero, o mesmo enquadramento fica marrom-oliva,
-      // que é a cor que a fotografia de fato tem.
-      //
-      // A luz viva não some — ela é o vocabulário da cena e a árvore não pode
-      // ficar de fora dele. Mas aqui ela é um véu na ponta dos galhos, e não
-      // uma tinta.
-      float copa = smoothstep(0.20, 0.70, vObj.y);
-      col += bio(copa * 0.16, 0.37, 0.30);
-      col += bio(presenca(vWorld) * 0.45, 0.52, 0.45);
-
-      gl_FragColor = vec4(filmic(col), 1.0);
-    }
-  `,
-});
 
 // ---------------------------------------------------------------------------
 // BORBOLETA EM NUVEM DE PONTOS.
