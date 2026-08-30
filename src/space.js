@@ -97,6 +97,22 @@ const CENTRO_Y = 1.25;
  */
 const SOL_ALTURA = 3.6;   // acima do teto lido, dentro do céu virtual
 const SOL_LADO = 1.4;     // deslocado do eixo: sol a pino não faz sombra
+
+/**
+ * OS DOIS PÓLOS.
+ *
+ * Este mesmo sistema serve ao Olho e ao Núcleo, e não por economia: é o
+ * argumento de Raízes Cósmicas escrito em código. Em cima uma estrela e
+ * planetas; embaixo o magma e sementes. Um corpo quente no centro, coisas
+ * girando em volta ao alcance do braço, e a mesma pinça de duas mãos para
+ * ampliar e entrar. Se as duas pontas do eixo são a mesma coisa vista de
+ * lados opostos, elas têm de ser o mesmo código com o sinal trocado — e são.
+ *
+ * Descendo, a fonte fica ABAIXO do piso. A luz passa a vir de baixo, e é isso
+ * que muda tudo na leitura: sombra subindo em vez de descendo é a assinatura
+ * de estar por cima de uma coisa acesa.
+ */
+const NUCLEO_FUNDO = -1.9;   // abaixo do piso do cômodo
 const R_SOL = 0.30;       // maior, porque agora está longe
 const COROA = 2.8;        // a coroa vai até quase três raios solares
 const GM = 0.145;         // parâmetro gravitacional: v² = GM/r na órbita circular
@@ -263,6 +279,11 @@ export class Space extends Group {
       vel.y = (r() - 0.5) * 0.05;
 
       grupo.userData = {
+        // O elemento e a cor de nascença, guardados: no Núcleo os dois são
+        // trocados por magma, e ao voltar para o Olho eles precisam existir
+        // para serem devolvidos. Sem isto o enxame ia para o fogo e não
+        // voltava mais.
+        elemento: i % 3, tintaOlho: arCor.clone(), tintaCorpo: cena.folha[1].clone(),
         corpo, ar, raio, mat, mats: [mat, matAr], vel, preso: false,
         alvo: null, bioma: cena.id,
         massa: raio * raio * raio,     // massa vai com o volume, como convém
@@ -277,7 +298,8 @@ export class Space extends Group {
     // corpo visível ali, os planetas orbitavam um ponto vazio — e o olho lia
     // isso como sete coisas girando à toa.
     this.sol = new Group();
-    this.sol.position.set(SOL_LADO, SOL_ALTURA, -SOL_LADO * 0.7);
+    this.polo = 1;
+    this.#porSol();
     const corpoSol = new Mesh(new SphereGeometry(R_SOL, 24, 16), solMaterial);
     corpoSol.frustumCulled = false;
     this.sol.add(corpoSol);
@@ -308,6 +330,52 @@ export class Space extends Group {
     // distante serrilham a cada movimento de cabeça, e era isso que fazia o
     // espaço piscar. As estrelas do espaço vêm do shader do céu, onde nascem
     // no centro de uma célula e somem suavemente na borda.
+  }
+
+  /**
+   * Troca o pólo: +1 é o Olho (estrela em cima, planetas), -1 é o Núcleo
+   * (magma embaixo, sementes).
+   *
+   * Só a FONTE muda de lugar e de cor. As órbitas, o contato, a separação, os
+   * buracos e o pegar com a mão continuam exatamente os mesmos — e é essa
+   * indiferença que faz o sistema dizer o que a experiência quer dizer.
+   */
+  setPolo(p) {
+    const novo = p < 0 ? -1 : 1;
+    if (novo === this.polo) return this.polo;
+    this.polo = novo;
+    this.#porSol();
+    solMaterial.uniforms.uNucleo.value = novo < 0 ? 1 : 0;
+    this.matCoroa.uniforms.uTint.value.set(
+      ...(novo < 0 ? [1.00, 0.36, 0.10] : [1.00, 0.74, 0.38]));
+
+    // OS CORPOS TAMBÉM VIRAM. Lá em cima são planetas — terra, fogo, água. Cá
+    // embaixo são sementes incandescentes, e todas do mesmo elemento, porque
+    // no magma não há três: há uma temperatura só. O que distingue uma da
+    // outra continua sendo a semente de cada uma, que não muda nunca — e é
+    // ela que garante que a semente que guarda A Gota seja sempre a mesma.
+    for (const g of this.planets) {
+      const u = g.userData;
+      u.mat.uniforms.uElement.value = novo < 0 ? 1 : u.elemento;
+      if (novo < 0) {
+        u.mat.uniforms.uTint.value.set(1.00, 0.40, 0.12);
+        u.mats[1].uniforms.uTint.value.set(1.00, 0.46, 0.16);
+      } else {
+        u.mat.uniforms.uTint.value.copy(u.tintaCorpo);
+        u.mats[1].uniforms.uTint.value.copy(u.tintaOlho);
+      }
+    }
+    return this.polo;
+  }
+
+  #porSol() {
+    if (this.polo > 0) {
+      this.sol.position.set(SOL_LADO, SOL_ALTURA, -SOL_LADO * 0.7);
+    } else {
+      // Quase no eixo: o magma é o fundo do poço, e um fundo de poço
+      // deslocado não lê como fundo.
+      this.sol.position.set(SOL_LADO * 0.25, NUCLEO_FUNDO, -SOL_LADO * 0.2);
+    }
   }
 
   /** 0 esconde tudo, 1 mostra por inteiro. */
@@ -731,7 +799,16 @@ export class Space extends Group {
 }
 
 /**
- * A borboleta que sai do casulo e sobe, deixando rastro de luz.
+ * A TRAVESSIA — o que leva o mundo embora, nos dois sentidos.
+ *
+ * Para FORA: a borboleta sai do casulo e sobe, deixando rastro de luz.
+ * Para DENTRO: a semente desce pela raiz, e o rastro é o que ela abre na
+ * terra.
+ *
+ * Uma classe só para os dois porque a mecânica é literalmente a mesma — um
+ * ponto viajando por uma curva, emitindo rastro, e um relógio de oito
+ * segundos que o resto da cena consulta para dissolver o mundo. O que muda é
+ * o sinal, a curva e se a borboleta vai junto.
  *
  * O rastro é um anel de posições reaproveitado: o índice mais velho é
  * sobrescrito a cada emissão, então o buffer nunca cresce e não há alocação
@@ -768,14 +845,25 @@ export class Emergence extends Group {
 
     this.cursor = 0;
     this.t = 0;
-    this.duration = 8.0;   // a subida da borboleta É a transição; sem pressa
+    this.duration = 8.0;   // a travessia É a transição; sem pressa
     this.from = new Vector3();
+    this.sentido = 1;      // +1 para fora, -1 para dentro
     this.active = false;
   }
 
-  /** Dispara a subida a partir de `origem` (mundo). */
-  launch(origem) {
+  /**
+   * Dispara a travessia a partir de `origem` (mundo).
+   *
+   * @param {THREE.Vector3} origem
+   * @param {number} sentido  +1 sobe com a borboleta, -1 desce pela raiz
+   */
+  launch(origem, sentido = 1) {
     this.from.copy(origem);
+    this.sentido = sentido < 0 ? -1 : 1;
+    // Descendo, a borboleta não vai junto: quem desce é a semente, e ela é o
+    // próprio rastro. Levar a borboleta para dentro da terra seria a imagem
+    // errada — ela é o que sai, não o que entra.
+    this.mesh.visible = this.sentido > 0;
     this.t = 0;
     this.active = true;
     this.visible = true;
@@ -792,15 +880,24 @@ export class Emergence extends Group {
     if (!this.active) return 0;
     this.t = Math.min(1, this.t + dt / this.duration);
 
-    // Sobe acelerando devagar, em espiral que abre com a altura. O expoente
-    // 2,4 no lugar de 2 deixa o início mais demorado — ela hesita ao sair.
-    const k = Math.pow(this.t, 2.4);
-    const altura = k * 16;
-    const giro = this.t * 5.5;
-    const abre = 0.18 + this.t * 0.9;
+    // A CURVA DOS DOIS SENTIDOS.
+    //
+    // Subindo, a borboleta acelera devagar e abre a espiral com a altura: o
+    // expoente 2,4 deixa o começo demorado, e é isso que se lê como hesitação
+    // ao sair do casulo.
+    //
+    // Descendo é o contrário em tudo, e de propósito. A semente CAI: começa
+    // rápido, porque nada a segura, e a espiral FECHA conforme desce — como
+    // uma raiz procurando o eixo em vez de abrir para o céu. O expoente menor
+    // que 1 é o que produz essa pressa inicial.
+    const desce = this.sentido < 0;
+    const k = Math.pow(this.t, desce ? 0.75 : 2.4);
+    const alcance = desce ? 9 : 16;
+    const giro = this.t * (desce ? -6.5 : 5.5);
+    const abre = desce ? 1.05 - this.t * 0.92 : 0.18 + this.t * 0.9;
     _p.set(
       this.from.x + Math.cos(giro) * abre,
-      this.from.y + altura,
+      this.from.y + k * alcance * this.sentido,
       this.from.z + Math.sin(giro) * abre,
     );
     // A nuvem não tem position/rotation: ela tem uma lista de instâncias, e

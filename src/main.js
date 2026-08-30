@@ -25,7 +25,7 @@ import { Portal } from './portal.js';
 import { ArvoreMae } from './arvoremae.js';
 import { BlackHoles } from './blackholes.js';
 import { Shell, Tide, wallsFromFootprint } from './shell.js';
-import { CENAS, cenaPor, proxima, I_COSMOS, N_CENAS } from './cenas.js';
+import { CENAS, cenaPor, destino, N_CENAS } from './cenas.js';
 import { Ambience } from './audio.js';
 import { shared, disposeMaterials } from './shaders/materials.js';
 import { palettes } from './palettes.js';
@@ -182,7 +182,10 @@ const state = {
   world: 'floresta',  // floresta | espaco
   warp: 0,            // 0 floresta .. 1 espaço
   cena: 0,            // índice em cenas.js — onde da jornada você está
-  subindo: false,     // a borboleta está levando este mundo embora
+  subindo: false,     // uma travessia está levando este mundo embora
+  // +1 para fora (casulo, até o Olho), -1 para dentro (raiz, até o Núcleo).
+  // É este sinal que a chegada consulta para saber em que pólo desembarcar.
+  sentido: 1,
   calm: 0.45,         // amortecedor de cintilação, 0..1
   glowStep: 2,        // índice em GLOW
   paint: 0,           // 0 facetado .. 1 aquarela
@@ -275,11 +278,21 @@ function aplicarCena(indice, { imediato = false } = {}) {
 }
 
 /**
- * Estamos no cenário do cosmos? É o único com planetas ao alcance da mão e
- * buracos abertos nas paredes — vários trechos precisam saber disso, e
- * perguntar à cena é mais honesto do que guardar um segundo estado paralelo.
+ * Estamos num dos dois PÓLOS — o Olho ou o Núcleo?
+ *
+ * Os dois têm corpos ao alcance da mão e buracos abertos nas paredes, e é a
+ * mesma mecânica nos dois: pinçar para pegar, duas mãos para ampliar,
+ * atravessar para o mundo que aquele corpo guarda. Vários trechos precisam
+ * saber disso, e perguntar à cena é mais honesto do que guardar um segundo
+ * estado paralelo.
+ *
+ * O nome mudou de `noCosmos` porque o cosmos deixou de ser o único: agora há
+ * um pólo em cada ponta do eixo.
  */
-function noCosmos() { return !!cenaPor(state.cena).cosmos; }
+function noHub() { const c = cenaPor(state.cena); return !!(c.cosmos || c.nucleo); }
+
+/** +1 no Olho, -1 no Núcleo. É o sinal que o hub usa para se vestir. */
+function poloDaCena() { return cenaPor(state.cena).nucleo ? -1 : 1; }
 
 /** Persegue os alvos. Chamado a cada quadro. */
 function seguirCena(dt) {
@@ -392,19 +405,20 @@ function portalSobMira(controller) {
 }
 
 /**
- * Abre ou fecha a tela, e mexe no som junto.
+ * Liga e desliga a atenção na tela da animação.
  *
- * O som É metade do gesto. Uma tela que cresce em silêncio, com a trilha
- * seguindo por cima como se nada tivesse acontecido, não convence ninguém de
- * que aquilo virou o centro da cena. Aqui a trilha recua e a animação toma o
- * lugar dela — e ao fechar, o contrário.
+ * O som É o gesto inteiro agora que a tela não cresce mais. A trilha recua e
+ * a animação toma o lugar dela; ao desligar, o contrário. Uma janela do
+ * tamanho de um quadro com som já é uma janela — inchada até ocupar a parede
+ * ela virava televisão, que compete com o cômodo em vez de abrir um buraco
+ * nele.
  */
 function abrirPortal() {
   const abriu = portal.alternar();
   audio.setVideo(portal.video, abriu);
   audio.chime(abriu ? 16 : 9, 0.16);
   ping(0.5);
-  if (abriu) toast('Pince de novo para fechar');
+  if (abriu) toast('Som da animação ligado — pince de novo para desligar');
 }
 
 /** Fecha o mapeamento e faz a floresta brotar dentro do cômodo lido. */
@@ -450,7 +464,7 @@ function commitRoom() {
   // dividir parede com um buraco negro faria os dois brigarem pelo mesmo
   // olhar, e o portal é o que se quer que seja notado.
   portal.position.copy(forest.position);
-  portal.applyWalls(paredes, buracos.portais().map((b) => b.pos), alturaTeto);
+  portal.applyWalls(paredes, buracos.portais().map((b) => b.pos));
   portal.setEnabled(true);
   shell.position.copy(forest.position);
   tide.applyFootprint(forest.footprint);
@@ -535,25 +549,52 @@ function bless(worldPoint) {
 }
 
 /**
- * Tocar no casulo. A borboleta sai, sobe deixando rastro, e o mundo vira
- * espaço enquanto ela sobe — a viagem dela É a transição, e é por isso que a
- * duração da subida e a do warp são a mesma.
+ * ATRAVESSAR — o mesmo mecanismo nos dois sentidos.
+ *
+ * Para fora, a borboleta sai do casulo e sobe. Para dentro, a semente desce
+ * pela raiz. Em ambos, a viagem dela É a transição: a duração do voo e a da
+ * dissolução são a mesma, e por isso o mundo acaba exatamente quando ela
+ * chega. Escrever os dois como uma função só não é economia — é o que
+ * garante que ir para dentro custe o mesmo que ir para fora, que é o
+ * argumento inteiro.
+ *
+ * @param {THREE.Vector3} mundo  de onde a travessia parte
+ * @param {number} sentido       +1 casulo/para fora, -1 raiz/para dentro
  */
+function atravessar(mundo, sentido) {
+  emergence.launch(mundo, sentido);
+  virouLuz = false;
+  state.subindo = true;
+  state.sentido = sentido;
+  // O hub nasce em volta de onde você está AGORA e fica parado ali: é o que
+  // permite dar a volta nos corpos caminhando quando ele chegar.
+  space.position.set(_head.x, forest.position.y, _head.z);
+  ping(1);
+
+  // Subindo, o acorde abre; descendo, ele fecha. É a mesma informação que a
+  // curva do voo dá, dita de novo pelo ouvido — e o ouvido percebe direção
+  // antes de os olhos entenderem o que está acontecendo.
+  const fora = sentido > 0;
+  audio.chime(fora ? 24 : 12, 0.3);
+  setTimeout(() => audio.chime(fora ? 31 : 5, 0.2), 400);
+  toast(fora ? 'Ela nasceu — siga com o olhar'
+             : 'A raiz abriu — siga para baixo',
+    cenaPor(state.cena).swatch);
+}
+
+/** Tocar no casulo: para fora, até o universo profundo. */
 function hatch(indice) {
   const saidaLocal = forest.openCocoon(indice);
   if (!saidaLocal) return;
-  const mundo = forest.localToWorld(saidaLocal.clone());
+  atravessar(forest.localToWorld(saidaLocal.clone()), 1);
+}
 
-  emergence.launch(mundo);
-  virouLuz = false;
-  state.subindo = true;
-  // Os planetas nascem em volta de onde você está AGORA e ficam parados ali:
-  // é o que permite dar a volta neles caminhando quando o Olho chegar.
-  space.position.set(_head.x, forest.position.y, _head.z);
-  ping(1);
-  audio.chime(24, 0.3);
-  setTimeout(() => audio.chime(31, 0.2), 400);
-  toast('Ela nasceu — siga com o olhar', cenaPor(state.cena).swatch);
+/** Tocar na raiz: para dentro, até o magma. */
+function enraizar() {
+  const mundo = arvoreMae.abrirRaiz();
+  if (!mundo) return false;
+  atravessar(mundo, -1);
+  return true;
 }
 
 /**
@@ -594,14 +635,13 @@ function montarCena(i) {
  * até ver um planeta. Não era o que a experiência promete, e apagava a
  * escolha, que é o que faz de cada planeta um elemento diferente.
  *
- * Agora a jornada é uma roda com eixo: o casulo devolve ao espaço, e é lá,
- * ampliando um planeta, que se decide qual mundo vem a seguir. Só de dentro
- * do próprio cosmos é que ele avança um elo — para o caso de o espaço ainda
- * ter um casulo, e para nunca ser um beco.
+ * Agora a jornada é um EIXO com dois pólos: o casulo devolve ao Olho, a raiz
+ * devolve ao Núcleo, e é lá, ampliando um corpo, que se decide qual mundo vem
+ * a seguir. Só de dentro do próprio pólo é que a porta avança um elo — para
+ * nunca ser um beco.
  */
 function trocarCena() {
-  const destino = state.cena === I_COSMOS ? proxima(state.cena) : I_COSMOS;
-  return montarCena(destino);
+  return montarCena(destino(state.cena, state.sentido));
 }
 
 /**
@@ -794,19 +834,25 @@ const interaction = new Interaction(renderer, scene, camera, {
       interaction.pulse(controller, 0.8, 60);
     } else if (state.phase === 'growing' && portalSobMira(controller)) {
       abrirPortal();
-    } else if (state.phase === 'growing' && noCosmos()) {
+    } else if (state.phase === 'growing' && noHub()) {
       const planeta = space.pick(aimPoint ?? camera.position);
       if (planeta) { space.lift(planeta); space.drop(planeta); }
       else backToForest();
-    } else if (state.phase === 'growing' && !noCosmos() && controller) {
+    } else if (state.phase === 'growing' && !noHub() && controller) {
       interaction.ray(controller, _origem, _direcao);
 
-      // O CASULO VEM PRIMEIRO, como já vinha para a mão. O gatilho não tinha
-      // caminho nenhum até ele: apontar para o casulo com o controle
-      // agarrava a planta atrás dele, ou plantava no chão — e a única porta
-      // de saída do cenário só existia para quem usa rastreamento de mão.
+      // AS PORTAS VÊM PRIMEIRO, como já vinham para a mão. O gatilho não
+      // tinha caminho nenhum até elas: apontar para o casulo com o controle
+      // agarrava a planta atrás dele, ou plantava no chão.
       raioLocal(_origem, _direcao);
       const casulo = forest.pickCocoonAlongRay(_rOrigL, _rDirL);
+      const dCas = casulo >= 0 ? forest.distanciaCasulo(casulo, _rOrigL) : Infinity;
+      const dRz = arvoreMae.pickRaizAlongRay(_origem, _direcao) ?? Infinity;
+      if (dRz < dCas) {
+        interaction.pulse(controller, 0.8, 60);
+        enraizar();
+        return;
+      }
       if (casulo >= 0) {
         interaction.pulse(controller, 0.8, 60);
         hatch(casulo);
@@ -1236,7 +1282,7 @@ const hands = new Hands(renderer, {
     // No espaço a pinça só serve para pegar planeta — encostado nele, ou sob
     // a mira, que é o que vale quando você está sentado e a órbita passa
     // longe do braço.
-    if (noCosmos()) {
+    if (noHub()) {
       const planeta = space.pick(hand.pinch) ?? space.pickAlongRay(_rOrig, _rDir);
       if (planeta) {
         const d = planeta.getWorldPosition(_pMao).distanceTo(_rOrig);
@@ -1276,8 +1322,15 @@ const hands = new Hands(renderer, {
     // por isso que existe. Pinçar mirando é o gesto único da experiência.
     raioLocal(_rOrig, _rDir);
 
-    // Casulo sob a mira: é a porta para o espaço, então vem antes de tudo.
+    // AS DUAS PORTAS vêm antes de tudo, e disputam entre si por distância.
+    //
+    // Quem estiver mais perto ao longo da mira ganha. Testar numa ordem fixa
+    // faria a de cima sempre vencer quando as duas caíssem no corredor, e as
+    // duas ficam na mesma árvore — de muitos ângulos o raio atravessa as duas.
     const ci = forest.pickCocoonAlongRay(_rOrigL, _rDirL);
+    const dCasulo = ci >= 0 ? forest.distanciaCasulo(ci, _rOrigL) : Infinity;
+    const dRaiz = arvoreMae.pickRaizAlongRay(_rOrig, _rDir) ?? Infinity;
+    if (dRaiz < dCasulo) { enraizar(); return; }
     if (ci >= 0) { hatch(ci); return; }
 
     const distante = forest.pickAlongRay(_rOrigL, _rDirL);
@@ -1359,7 +1412,7 @@ function updateHands(dt) {
   // Duas mãos no mesmo planeta = escala. Afastar as mãos aumenta; passando do
   // limiar, o planeta se abre e você atravessa para o mundo dele.
   const seguro = [...grabbed.entries()].find(([, h]) => h.espaco);
-  if (seguro && noCosmos()) {
+  if (seguro && noHub()) {
     const [maoQueSegura, alca] = seguro;
     const outra = hands.states.find((st) => st !== maoQueSegura && st.tracked && st.pinching);
     if (outra) {
@@ -1388,7 +1441,7 @@ function updateHands(dt) {
     // esbarra nos planetas e os afasta. É o que faz o enxame reagir à
     // presença mesmo sem gesto nenhum — passar a mão no meio dele abre
     // caminho, e isso vale sentado, deitado, com uma mão só.
-    if (noCosmos() && !handle) {
+    if (noHub() && !handle) {
       if (space.empurrar(st.index, st.pinch, 0.075, dt)) ping(0.03);
     } else {
       space.soltarMao(st.index);
@@ -1409,7 +1462,7 @@ function updateHands(dt) {
       // Realça o que está ao alcance; se não há nada, o que está sob a mira.
       // O realce é a única confirmação de que o raio achou alguma coisa.
       hover = forest.pick(toLocal(st.pinch));
-      if (!hover && !noCosmos()) {
+      if (!hover && !noHub()) {
         handRay(st, _rOrig, _rDir);
         raioLocal(_rOrig, _rDir);
         hover = forest.pickAlongRay(_rOrigL, _rDirL);
@@ -1420,9 +1473,12 @@ function updateHands(dt) {
 
   // Tocar no casulo com a ponta do indicador — sem precisar pinçar, porque
   // encostar é o gesto que a cena pede.
-  if (!noCosmos()) {
+  if (!noHub()) {
     for (const st of hands.states) {
       if (!st.tracked) continue;
+      // A raiz fica no chão: quem se agacha e encosta nela merece entrar sem
+      // ter de mirar.
+      if (arvoreMae.pickRaiz(st.indexTip)) { enraizar(); break; }
       const i = forest.pickCocoon(toLocal(st.indexTip));
       if (i >= 0) { hatch(i); break; }
     }
@@ -1584,9 +1640,10 @@ function frame(time, xrFrame) {
 
     // Planetas e buracos só existem no cenário do cosmos, e recuam junto com
     // a travessia como todo o resto.
-    const cosmos = noCosmos() ? 1 : 0;
-    space.setProgress(cosmos * (1 - w));
-    buracos.setProgress(cosmos * (1 - w));
+    const hub = noHub() ? 1 : 0;
+    if (hub) space.setPolo(poloDaCena());
+    space.setProgress(hub * (1 - w));
+    buracos.setProgress(hub * (1 - w));
 
     const subida = emergence.update(dt, clock.elapsedTime);
 

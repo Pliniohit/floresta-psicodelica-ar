@@ -15,6 +15,90 @@ git diff v0.11.0 v0.12.0 --stat
 
 ---
 
+## v0.26.0 — Raízes Cósmicas: o eixo, e a árvore como ela é
+
+### O nome e o conceito
+
+O projeto virou **Raízes Cósmicas**. A ideia é que tudo no universo está
+ligado, e que a ligação é um **eixo vertical**: o magma embaixo, o universo
+profundo em cima, nós no meio. Descer o suficiente e subir o suficiente chegam
+ao mesmo lugar — a matéria de que tudo é feito.
+
+Por isso **todo cenário tem duas portas, e as duas ficam na mesma árvore**:
+
+- A **raiz**, no pé, leva para dentro — até **O Núcleo**, cenário novo, onde
+  sementes incandescentes orbitam o magma ao alcance da mão.
+- O **casulo**, na copa, leva para fora — até **O Olho**, onde os planetas
+  orbitam a estrela.
+
+Os dois pólos são o **mesmo sistema visto de lados opostos**, e isso está
+escrito no código, não só na ficção: `Space` ganhou `setPolo(±1)`, e só a fonte
+muda de lugar e de temperatura. Órbitas, contato, separação, buracos negros e o
+pegar com a mão são literalmente os mesmos. Essa indiferença é o argumento.
+
+A travessia também virou uma função só nos dois sentidos. Subindo, a borboleta
+acelera devagar e a espiral abre — hesitação ao sair do casulo. Descendo, a
+semente **cai**: começa rápido, porque nada a segura, e a espiral **fecha**,
+como raiz procurando o eixo. O acorde abre subindo e fecha descendo, porque o
+ouvido percebe direção antes de os olhos entenderem.
+
+### A árvore deixou de ser bolinhas
+
+Ela era nuvem de pontos, e a nuvem estava errada para ela. Ponto é certo para
+milhares de plantas pequenas; a dois metros do olho, 46 mil pontos numa árvore
+viram **um monte de bolinhas** — a distância entre pontos vizinhos passa a ser
+maior que o detalhe que eles deveriam descrever.
+
+Agora é o objeto como ele é. `scripts/assar-malha.mjs` reduz os 2,1 milhões de
+triângulos do modelo para **54 mil**, por agrupamento em grade, mantendo
+normais, coordenadas de textura e a textura fotográfica. O **capim** voltou a
+ser malha pelo mesmo motivo, e mais grave: uma lâmina tem três triângulos, e
+amostrada em catorze pontos ela não vira capim sugerido — vira catorze
+bolinhas soltas, porque não há superfície nenhuma entre elas para o olho
+completar.
+
+**Três defeitos no caminho da redução**, todos com a mesma assinatura na tela —
+lâminas grandes e chapadas atravessando a copa:
+
+1. **Coordenada de textura mediada.** Posição e normal podem ser mediadas
+   porque o espaço é contínuo. O atlas **não é**: é um mosaico, e a média entre
+   duas ilhas cai no vão entre elas. Agora a coordenada é **escolhida**, a de
+   quem está mais perto do centro da célula — sempre uma coordenada verdadeira.
+   Separar as ilhas na chave de agrupamento também resolveria, e foi tentado:
+   custou 35 mil → **256 mil** vértices, porque quase nada se fundia.
+2. **Triângulos esticados**, que costuram superfícies que nunca foram vizinhas
+   — folha na frente de folha, vinha rente ao tronco. Descartados por teto de
+   aresta, no espaço e no atlas.
+3. **O azul.** Depois de tudo isso a árvore continuava pálida e azulada, e a
+   causa não era a malha: era a **bioluminescência**, somada como na vegetação
+   gerada. Medido com `uGlow` em zero, o mesmo enquadramento fica marrom-oliva
+   — a cor que a fotografia de fato tem. A luz viva virou um véu na ponta dos
+   galhos em vez de tinta.
+
+### A árvore atravessa o cômodo
+
+Sete metros de altura numa sala de dois e meio. O tronco e os galhos mais
+baixos ficam aqui dentro; a copa inteira fica **lá fora**, acima do teto, onde
+o céu é virtual e portanto visível. É o que faz o cômodo virar um lugar dentro
+de algo maior — e é de um dos poucos galhos de dentro que o casulo pende.
+
+### A tela não cresce mais
+
+Ela virava tela de cinema, e antes disso chegou a ser plantada 2,5 m à frente
+da cabeça, o que num cômodo comum é do lado de fora. Mas o tamanho não era o
+que faltava: uma janela do tamanho de um quadro, com som, já é uma janela;
+inchada até ocupar a parede ela vira televisão, que compete com o cômodo em vez
+de abrir um buraco nele. O que sobrou do gesto é o que ele sempre foi de fato:
+prestar atenção — o som entra e a trilha recua.
+
+### Um teste novo, e um erro que ele pegou
+
+`test-modulos.mjs` passou a conferir **constante de módulo usada e nunca
+declarada**. Nasceu de um `L_ABERTA` que sobreviveu a uma refatoração: a
+constante saiu do topo de `portal.js` e uma referência a ela ficou dentro do
+construtor. `node --check` não vê, porque é sintaxe válida, e o import estava
+certo — a página quebrava só ao construir o objeto.
+
 ## v0.25.0 — A árvore-mãe, e o app cabendo no headset
 
 ### A árvore no meio da sala

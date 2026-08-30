@@ -1,15 +1,31 @@
 import { Vector3 } from '../vendor/three/three.module.min.js';
 
 /**
- * A JORNADA — os cenários da animação, em cadeia.
+ * A JORNADA — os cenários, e o eixo que os atravessa.
+ *
+ * RAÍZES CÓSMICAS. A ideia é que tudo no universo está ligado, e que a ligação
+ * é um EIXO VERTICAL: o magma embaixo, o universo profundo em cima, e nós no
+ * meio. Descer o suficiente e subir o suficiente chegam ao mesmo lugar — a
+ * matéria de que tudo é feito.
+ *
+ * Por isso todo cenário tem DUAS PORTAS, e as duas ficam na mesma árvore:
+ *
+ *   A RAIZ, no pé dela, leva PARA DENTRO. Você desce, e o mundo se dissolve
+ *   por baixo, até o Núcleo — onde as sementes incandescentes orbitam o
+ *   magma ao alcance da mão.
+ *
+ *   O CASULO, na copa, leva PARA FORA. A borboleta sobe levando o mundo, e
+ *   você chega ao Olho — onde os planetas orbitam a estrela.
+ *
+ * Os dois pólos são o MESMO sistema visto de lados opostos: um corpo quente
+ * no centro e coisas girando em volta, ao alcance do braço. Escolher uma
+ * delas e ampliá-la é entrar no mundo que ela guarda. É a mesma mecânica nos
+ * dois, e essa coincidência é o argumento: em cima e embaixo são a mesma
+ * coisa, e o que muda é de que lado você está olhando.
  *
  * A animação de referência não tem um único corte duro em três minutos: tudo
  * é metamorfose, uma coisa virando a próxima. A cadeia aqui é a tradução disso
  * para um lugar habitado — você não assiste à passagem, você atravessa.
- *
- * O contrato é sempre o mesmo, e é ele que faz a coisa andar: TODO cenário tem
- * um casulo. Tocar nele solta a borboleta, ela sobe levando o mundo embora, e
- * quando a luz baixa você está no próximo. O último devolve ao primeiro.
  *
  * As cores não foram inventadas: saíram da própria animação, amostrando os
  * quadros de cada ato e agrupando por matiz. Por isso os azuis são de tinta e
@@ -207,6 +223,35 @@ export const cenas = [
     ambience: { hz: 65.41, filtro: 440 },
     palco: true,
   },
+  {
+    id: 7,
+    nome: 'O Núcleo',
+    palette: 2,
+    swatch: '#e2662a',
+    saudacao: 'Você desceu até o magma. As sementes estão ao alcance da mão.',
+    // O PÓLO DE DENTRO — o espelho de O Olho.
+    //
+    // Aqui a estrela está EMBAIXO, sob o chão do cômodo, e o que orbita não
+    // são planetas: são sementes incandescentes, cada uma guardando um mundo,
+    // exatamente como lá em cima. Mesma física, mesma pinça de duas mãos para
+    // ampliar, mesmos buracos nas paredes.
+    //
+    // As cores vêm dos quadros de magma da animação: o vermelho de óxido, o
+    // laranja de brasa e o amarelo de fusão, com a rocha escura em volta.
+    folha: ['#8c2f14', '#e2662a', '#5a1c0c'],
+    casca: ['#3a1408', '#7a2a10', '#1d0a05'],
+    chapeu: ['#f2a24a', '#e2662a', '#ffd28a'],
+    petala: ['#ffb659', '#c23a12', '#e2662a'],
+    fruta: ['#ffdf7a', '#f2a24a', '#c23a12'],
+    bio: ['#ff8a3c', '#ffcf5c', '#ff5a2a'],
+    parede: { padrao: PADRAO.BRASA, cor: '#ff7a34', forca: 1.25 },
+    lamina: { altura: 0.05, cor: '#5a1c0c', forca: 1.0 },
+    ceu: { baixo: '#1a0a06', alto: '#4a1608', estrelas: 0.35, nebulosa: 0.9 },
+    populacao: { arvore: 0.25, cogumelo: 0.25, cristal: 0.9, capim: 0.25,
+                 samambaia: 0.15, arbusto: 0.2, flor: 0.3, junco: 0.1, orbe: 1.6 },
+    ambience: { hz: 55.0, filtro: 380 },
+    nucleo: true,
+  },
 ];
 
 /** Converte os campos de cor de uma cena para Vector3, uma vez só. */
@@ -242,5 +287,29 @@ export const proxima = (i) => (i + 1) % N_CENAS;
  * elementos diferentes.
  */
 export const I_COSMOS = CENAS.findIndex((c) => c.cosmos);
+
+/**
+ * O ÍNDICE DO NÚCLEO — para onde a raiz leva.
+ *
+ * O espelho de I_COSMOS. Ir para dentro e ir para fora são a mesma viagem em
+ * direções opostas, e chegam a lugares que funcionam igual: um corpo quente no
+ * centro e coisas girando em volta, ao alcance da mão.
+ */
+export const I_NUCLEO = CENAS.findIndex((c) => c.nucleo);
+
+/**
+ * PARA ONDE UMA PORTA LEVA, a partir de onde você está.
+ *
+ * A regra é uma só: a porta te leva ao pólo dela. Estando já no pólo, ela
+ * avança um elo — senão a porta do Olho, dentro do Olho, não levaria a lugar
+ * nenhum, e o cenário viraria um beco.
+ *
+ * @param {number} cena    índice de onde você está
+ * @param {number} sentido +1 para fora (casulo), -1 para dentro (raiz)
+ */
+export function destino(cena, sentido) {
+  const polo = sentido > 0 ? I_COSMOS : I_NUCLEO;
+  return cena === polo ? proxima(cena) : polo;
+}
 
 export const cenaPor = (i) => CENAS[((i % N_CENAS) + N_CENAS) % N_CENAS];

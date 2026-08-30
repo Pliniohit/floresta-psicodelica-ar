@@ -1,4 +1,4 @@
-# 🦋 Universo Encantado
+# 🌌 Raízes Cósmicas
 
 Sete cenários em nuvens de partículas, em **realidade aumentada com
 passthrough** para **Meta Quest 3**, feitos em WebXR + Three.js. Abre direto no

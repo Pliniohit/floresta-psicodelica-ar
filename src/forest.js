@@ -168,12 +168,21 @@ export class Forest extends Group {
       nuvem(crystalGeo, CAPACITY.crystal, 300, 5, 0.4, 20, 503),
     ], CAPACITY.crystal);
 
-    // Capim: poucos pontos por lâmina, porque são milhares de lâminas. Dez
-    // pontos bastam para a lâmina ler como lâmina, e dez mil lâminas ainda
-    // cabem numa chamada de desenho.
-    this.grass = new InstanceSet([
-      nuvem(G.blade(), CAPACITY.grass, 14, 1, 5.0, 15, 601),
-    ], CAPACITY.grass);
+    // CAPIM EM MALHA, e não em nuvem.
+    //
+    // Uma lâmina de capim tem três triângulos. Amostrada em catorze pontos,
+    // ela não vira "capim sugerido por partículas": vira catorze bolinhas
+    // soltas no ar, porque não há superfície nenhuma entre elas para o olho
+    // completar. A nuvem só funciona quando os pontos são densos o bastante
+    // para a lacuna entre vizinhos ser menor que o detalhe — e numa lâmina de
+    // quatro centímetros de largura nunca são.
+    //
+    // Em malha, cada lâmina é uma lâmina, e dez mil delas continuam cabendo
+    // numa chamada de desenho só.
+    const grassMesh = new InstancedMesh(G.blade(), M.grassMaterial, CAPACITY.grass);
+    grassMesh.renderOrder = 3;
+    this.add(grassMesh);
+    this.grass = new InstanceSet([grassMesh], CAPACITY.grass);
 
     // Sub-bosque: samambaia, junco, arbusto e flor.
     this.ferns = new InstanceSet([nuvem(G.fern(), CAPACITY.fern, 150, 1, 5.0, 16, 701)], CAPACITY.fern);
@@ -678,6 +687,25 @@ export class Forest extends Group {
       if (t < melhorT) { melhorT = t; melhor = i; }
     }
     return melhor;
+  }
+
+  /**
+   * A que distância um casulo está de um ponto, em coordenadas LOCAIS.
+   *
+   * Existe porque as duas portas da árvore — casulo em cima, raiz embaixo —
+   * disputam a mesma mira, e quem estiver mais perto ao longo do raio deve
+   * ganhar. Sem uma distância comparável, a ordem em que elas são testadas
+   * decidia, e a de cima vencia sempre.
+   *
+   * O resultado sai em METROS, e não em unidades locais: a raiz é medida no
+   * mundo, e comparar as duas em escalas diferentes daria a vitória à floresta
+   * sempre que ela estivesse encolhida.
+   */
+  distanciaCasulo(index, local) {
+    const c = this.cocoonSpots[index];
+    if (!c) return Infinity;
+    _p.copy(c.pos); _p.y -= 0.11 * c.escala;
+    return _p.distanceTo(local) * (this.scale.x || 1);
   }
 
   /** Abre o casulo: some da cena e não pode ser tocado de novo. */

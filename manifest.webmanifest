@@ -1,7 +1,7 @@
 {
-  "name": "Universo Encantado",
-  "short_name": "Universo",
-  "description": "Sete cenários em nuvens de partículas dentro do seu espaço real, encadeados pela borboleta que sai do casulo.",
+  "name": "Raízes Cósmicas",
+  "short_name": "Raízes",
+  "description": "Do magma ao universo profundo. Cada cenário tem duas portas: a raiz leva para dentro, o casulo leva para fora.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

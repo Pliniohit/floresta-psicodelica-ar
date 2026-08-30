@@ -3,14 +3,14 @@
 Quase tudo neste projeto é gerado por código: não há textura baixada, não há
 CDN, não há dependência. As exceções estão todas aqui.
 
-## Árvore-mãe — nuvem de pontos com cor
+## Árvore-mãe — malha reduzida e textura
 
-`src/nuvens/arvoremae.js` guarda 46.000 coordenadas **e a cor** amostradas na
-superfície de `tree wit vine 3.glb` ("old tree with vine — 3d model free"), um
-modelo fotogramétrico de 2,1 milhões de triângulos e 97 MB fornecido pelo autor
-do projeto. O arquivo original **não** faz parte do repositório: o que viaja
-são as coordenadas e um byte por canal por ponto, assados por
-`scripts/assar-nuvem.mjs --cor`.
+`src/malhas/arvoremae.js` e `assets/arvoremae.jpg` são
+`tree wit vine 3.glb` ("old tree with vine — 3d model free"), um modelo
+fotogramétrico de 2,1 milhões de triângulos e 97 MB fornecido pelo autor do
+projeto, reduzido a 54 mil triângulos por `scripts/assar-malha.mjs` e com a
+textura de cor base reescalada para 2048 px. O arquivo original **não** faz
+parte do repositório.
 
 > **PENDENTE — origem e licença.** O nome da pasta diz "free", e o formato
 > (pasta `source/` + pasta `textures/`) é o de um download do **Sketchfab**.
@@ -18,8 +18,8 @@ são as coordenadas e um byte por canal por ponto, assados por
 > autor pelo nome, com título e endereço — e uma nuvem de pontos extraída do
 > modelo continua sendo **obra derivada**, então a exigência a acompanha.
 >
-> A cor baixada da textura torna isso mais forte que no caso da borboleta:
-> aqui não é só a forma, é a superfície fotografada.
+> Aqui a exigência é mais forte que no caso da borboleta: não é só a forma
+> reduzida, é a **textura fotografada** viajando junto, no repositório.
 >
 > Preencher: autor, título, endereço e licença. Se o modelo for "somente uso
 > pessoal" ou proibir derivados, ele precisa sair — e a árvore volta a ser

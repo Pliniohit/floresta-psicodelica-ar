@@ -11,27 +11,22 @@ import {
  * O PORTAL — a animação passando dentro do cômodo.
  *
  * Ela fica pousada numa parede, do tamanho de um quadro, rodando em silêncio:
- * uma janela para o lugar de onde tudo isto veio. Apontar e pinçar abre ela —
- * o retângulo cresce até virar tela de cinema à sua frente, o som entra e a
- * trilha recua para debaixo dele. Pinçar de novo devolve a janela à parede.
+ * uma janela para o lugar de onde tudo isto veio. Apontar e pinçar LIGA O SOM
+ * — a trilha recua para debaixo dele. Pinçar de novo devolve o silêncio.
  *
- * DUAS DECISÕES QUE VALEM SER DITAS.
+ * ELA NÃO CRESCE. Já cresceu: virava tela de cinema, e antes disso chegou a
+ * ser plantada dois metros e meio à frente da cabeça, o que num cômodo comum
+ * é do lado de fora. Mas o tamanho não era o que faltava. Uma janela do
+ * tamanho de um quadro, com som, já é uma janela; inchada até ocupar a parede
+ * ela vira televisão, e televisão é o oposto de portal — passa a competir com
+ * o cômodo em vez de abrir um buraco nele.
  *
- * ELA ABRE NA PRÓPRIA PAREDE, crescendo onde já estava. A primeira versão
- * plantava a tela dois metros e meio à frente da cabeça, e num cômodo comum
- * isso é do lado de fora: a tela nascia atravessada na parede, metade dela
- * fora do espaço mapeado, e quem estivesse encostado num canto via só o
- * verso. Crescendo na parede ela não tem como sair do cômodo — a parede é o
- * limite do cômodo — e a leitura melhora: o que se abre é a PAREDE, que é
- * exatamente o que um portal faz.
+ * O que sobrou do gesto é o que ele sempre foi de fato: prestar atenção. O
+ * som entra, a orla acende, e a animação deixa de ser papel de parede.
  *
- * O tamanho aberto vem da parede que a segura: nunca mais larga que ela, nem
- * mais alta que o pé-direito.
- *
- * E a borda não é uma borda: é um rasgo. Um retângulo nítido no meio da sala
- * lê como televisão, e televisão é o oposto de portal. As margens se
- * desmancham em ruído e num anel de partículas, que é o mesmo vocabulário do
- * resto da cena.
+ * E a borda não é uma borda: é um rasgo. Um retângulo nítido lê como quadro
+ * pendurado. As margens se desmancham em ruído e num anel de partículas, que
+ * é o mesmo vocabulário do resto da cena.
  */
 
 const _p = new Vector3();
@@ -48,11 +43,9 @@ const FRENTE = new Vector3(0, 0, 1);
 /** Proporção do arquivo: 1280 x 714. */
 const PROPORCAO = 1280 / 714;
 
-/** Meia largura pousada na parede. */
+/** Meia largura na parede. Um quadro, e é sempre este tamanho. */
 const L_PAREDE = 0.46;
-/** Teto da meia largura aberta, para não virar outdoor num salão. */
-const L_MAX = 1.9;
-/** Segundos para abrir ou fechar. */
+/** Segundos da transição de atenção — som entrando, orla acendendo. */
 const DURACAO = 0.9;
 
 /** Partículas do anel que contorna o rasgo. */
@@ -128,11 +121,10 @@ export class Portal extends Group {
     this.borda.renderOrder = 8;
     this.add(this.borda);
 
-    // As duas poses. `alvo` é para onde ele está indo; `abertura` é onde está.
+    // A pose é uma só: a da parede. `abertura` deixou de mexer no tamanho e
+    // passou a ser só atenção — 0 é papel de parede em silêncio, 1 é a
+    // animação com som e a orla acesa.
     this.pousado = { pos: new Vector3(), quat: new Quaternion(), meia: L_PAREDE };
-    // A pose aberta é decidida em applyWalls, a partir da parede e do
-    // pé-direito lidos. Este valor só existe para o objeto nascer coerente.
-    this.aberto = { pos: new Vector3(), quat: new Quaternion(), meia: L_MAX };
     this.abertura = 0;
     this.destino = 0;
     this.temParede = false;
@@ -143,9 +135,8 @@ export class Portal extends Group {
    *
    * @param {Array} wallBases   pé de cada parede, em coordenadas locais
    * @param {Array} ocupadas    posições de mundo já usadas por outra coisa
-   * @param {number} alturaTeto pé-direito lido, em metros
    */
-  applyWalls(wallBases, ocupadas = [], alturaTeto = 2.6) {
+  applyWalls(wallBases, ocupadas = []) {
     this.temParede = false;
     if (!wallBases?.length) return this;
 
@@ -180,21 +171,6 @@ export class Portal extends Group {
     this.pousado.pos.set(meioX, w.y + 1.45, meioZ).addScaledVector(_n, 0.04);
     this.pousado.quat.setFromUnitVectors(FRENTE, _n);
 
-    // ABERTA: mesma parede, mesma direção, só maior — e um palmo mais para
-    // dentro do cômodo, para não brigar em profundidade com a alvenaria.
-    //
-    // A largura é a da parede com uma folga de 10% em cada ponta, limitada
-    // também pelo pé-direito: uma tela mais alta que o teto ficaria com a
-    // cabeça enterrada no gesso.
-    const meiaPorLargura = comp * 0.5 * 0.80;
-    const meiaPorAltura = (alturaTeto * 0.42) * PROPORCAO;
-    const meia = Math.max(L_PAREDE * 1.4,
-      Math.min(L_MAX, meiaPorLargura, meiaPorAltura));
-    this.aberto.meia = meia;
-    this.aberto.quat.copy(this.pousado.quat);
-    this.aberto.pos.set(meioX, w.y + Math.max(1.35, meia / PROPORCAO + 0.45), meioZ)
-      .addScaledVector(_n, 0.10);
-
     this.temParede = true;
     this.#aplicarPose();
     return this;
@@ -208,14 +184,7 @@ export class Portal extends Group {
     return this.visible;
   }
 
-  /**
-   * Abre a tela na parede onde ela já está.
-   *
-   * Não recebe mais a pose da cabeça, e é isso que conserta o problema: a
-   * pose aberta foi decidida em `applyWalls`, a partir da parede e do
-   * pé-direito lidos. Ela não pode cair fora do cômodo porque nasce colada
-   * num limite dele.
-   */
+  /** Liga o som e acende a orla. A tela não muda de tamanho nem de lugar. */
   abrir() {
     if (!this.visible) return false;
     this.destino = 1;
@@ -256,7 +225,7 @@ export class Portal extends Group {
     // Para coordenada local da tela: o plano tem 2x2, então |u| e |v| <= 1
     // caem dentro dela.
     _hit.applyMatrix4(_m.invert());
-    const folga = this.abertoDeVez ? 1.0 : 1.35;
+    const folga = 1.35;   // alvo generoso: mira de mão treme
     if (Math.abs(_hit.x) > folga || Math.abs(_hit.y) > folga) return null;
     return t;
   }
@@ -270,7 +239,6 @@ export class Portal extends Group {
       this.abertura = this.destino > this.abertura
         ? Math.min(this.destino, this.abertura + passo)
         : Math.max(this.destino, this.abertura - passo);
-      this.#aplicarPose();
     }
 
     this.mat.uniforms.uAberto.value = this.abertura;
@@ -278,17 +246,11 @@ export class Portal extends Group {
     return this.abertura;
   }
 
-  /**
-   * Interpola as duas poses. A curva é suave nas duas pontas: abrir de
-   * arranque, num objeto que cresce até ocupar metade do campo de visão,
-   * é desconfortável mesmo quando é rápido.
-   */
+  /** Põe a tela na parede. Chamado uma vez, quando a parede é escolhida. */
   #aplicarPose() {
-    const k = this.abertura;
-    const s = k * k * (3 - 2 * k);
-    this.tela.position.lerpVectors(this.pousado.pos, this.aberto.pos, s);
-    this.tela.quaternion.copy(this.pousado.quat).slerp(this.aberto.quat, s);
-    const meia = this.pousado.meia + (this.aberto.meia - this.pousado.meia) * s;
+    const meia = this.pousado.meia;
+    this.tela.position.copy(this.pousado.pos);
+    this.tela.quaternion.copy(this.pousado.quat);
     this.tela.scale.set(meia, meia / PROPORCAO, 1);
 
     this.borda.position.copy(this.tela.position);

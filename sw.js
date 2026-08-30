@@ -23,7 +23,7 @@
  * importam por nome ele aparece como tela preta.
  */
 
-const VERSAO = 'universo-encantado-v0.25.0';
+const VERSAO = 'raizes-cosmicas-v0.26.0';
 
 /**
  * O que é BAIXADO NA INSTALAÇÃO, sem esperar ninguém pedir.
@@ -41,6 +41,7 @@ const ESSENCIAL = [
   './vendor/three/three.module.min.js',
   './assets/trilha.ogg',
   './assets/animacao.mp4',
+  './assets/arvoremae.jpg',
 ];
 
 /**
@@ -56,7 +57,7 @@ const MODULOS = [
   'palettes', 'biomes', 'magicwindow',
 ].map((n) => `./src/${n}.js`)
   .concat(['./src/shaders/lib.js', './src/shaders/materials.js'])
-  .concat(['./src/nuvens/borboleta.js', './src/nuvens/arvoremae.js']);
+  .concat(['./src/nuvens/borboleta.js', './src/malhas/arvoremae.js']);
 
 const TUDO = [...ESSENCIAL, ...MODULOS];
 

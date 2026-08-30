@@ -430,6 +430,112 @@ export const cocoonMaterial = make('casulo', {
 });
 
 // ---------------------------------------------------------------------------
+// A RAIZ — a porta que leva para dentro.
+//
+// O casulo é o espelho dela, e os dois materiais foram escritos como par: um
+// corpo escuro com luz VINDO DE DENTRO, e a luz sobe pela abertura em vez de
+// atravessar a casca. Onde o casulo é cera translúcida com vida batendo lá
+// dentro, esta é madeira e pedra com magma respirando embaixo.
+//
+// A luz aumenta com a PROFUNDIDADE dentro do funil, não com a silhueta: é o
+// oposto exato do casulo, onde ela acende no contorno. Aqui o miolo é o que
+// brilha, porque é o buraco, e é o buraco que precisa ser lido como passagem.
+// ---------------------------------------------------------------------------
+export const raizMaterial = make('raiz', {
+  uniforms: { uReady: { value: 0 } },
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      emit(position, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    uniform float uReady;
+    void main(){
+      ${FRAG_FADE}
+
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+
+      // A madeira: veio grosso ao longo do braço, e uma casca mais escura nas
+      // costas de cada gomo.
+      float veio = fbm3(vLocal * 26.0);
+      float gomo = fbm2(vLocal * 7.0 + 1.7);
+      vec3 lenho = mix(vec3(0.16, 0.10, 0.06), vec3(0.40, 0.27, 0.16),
+                       veio * 0.6 + gomo * 0.4);
+      lenho = barkColor(vSeed) * 0.35 + lenho * 0.8;
+
+      // O MAGMA, subindo PELA BOCA — e só por ela.
+      //
+      // A primeira faixa começava quase no chão, e com isso o bulbo inteiro
+      // acendia: a raiz virava um ovo laranja liso, sem lenho e sem buraco.
+      // Concentrada no último terço, a luz passa a marcar a ABERTURA, que é o
+      // que precisa ser lido como passagem — o resto é madeira.
+      float boca = smoothstep(0.19, 0.30, vLocal.y);
+      // Pulso lento, bem abaixo de 1 Hz e amortecido: é respiração de coisa
+      // grande, não cintilação.
+      float pulso = damp(0.70 + 0.30 * sin(uTime * 0.42 + vSeed * 6.0), 0.72);
+      float calor = boca * (0.55 + 0.45 * pulso) * (1.0 + uReady * 2.2);
+
+      // As fendas por onde a brasa aparece na madeira, perto da boca.
+      float fenda = pow(max(0.0, 1.0 - abs(gomo - 0.5) * 2.6), 6.0);
+
+      vec3 col = lenho * (0.46 + 0.74 * wrapLight(N));
+      col = nightBody(col);
+      col += vec3(1.00, 0.42, 0.10) * calor * 1.5;
+      col += vec3(1.00, 0.76, 0.30) * calor * calor * 1.6;
+
+      // As fendas onde a brasa aparece na madeira. Elas descem BEM MAIS que a
+      // boca: é por elas que se entende que o calor não está só no buraco, e
+      // sim embaixo de tudo.
+      float rachadura = smoothstep(-0.02, 0.24, vLocal.y);
+      col += vec3(1.00, 0.30, 0.06) * fenda * rachadura * 0.9 * pulso;
+
+      // Um resto de brasa no lenho todo, para a raiz ser achada de longe: ela
+      // é a única porta para dentro, e o casulo tem um halo inteiro para ser
+      // achado — esta tem só isto.
+      col += vec3(0.9, 0.30, 0.08) * (0.06 + uReady * 0.45);
+
+      gl_FragColor = vec4(filmic(col), 1.0);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
+// O HALO DA RAIZ — a coluna de calor que sobe da boca.
+//
+// O halo do casulo é uma casca em volta do corpo inteiro; este é diferente de
+// propósito. Calor não envolve a coisa: ele SOBE dela. Por isso a malha é a
+// mesma raiz inflada, mas o brilho é cortado pela altura e some rápido nos
+// braços — o que se vê é uma respiração saindo do buraco, não um contorno.
+// ---------------------------------------------------------------------------
+export const raizGlowMaterial = make('halo-da-raiz', {
+  transparent: true,
+  depthWrite: false,
+  side: DoubleSide,
+  blending: AdditiveBlending,
+  vert: /* glsl */ `
+    void main(){
+      ${ROOT_AND_SEED}
+      vec3 p = position;
+      p += normal * (0.045 + 0.010 * sin(uTime * 0.33 + vSeed * 5.0));
+      emit(p, normal);
+    }
+  `,
+  frag: /* glsl */ `
+    void main(){
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float aro = pow(1.0 - abs(dot(N, V)), 1.5);
+      float sobe = smoothstep(-0.02, 0.26, vLocal.y);
+      float respira = damp(0.70 + 0.30 * sin(uTime * 0.33 + vSeed * 5.0), 0.72);
+      vec3 col = mix(vec3(1.0, 0.45, 0.12), vec3(1.0, 0.80, 0.35), sobe * 0.6);
+      gl_FragColor = aditivo(col * aro * sobe * respira * 1.6);
+    }
+  `,
+});
+
+// ---------------------------------------------------------------------------
 // HALO DO CASULO — casca luminosa em volta, visível do outro lado do cômodo.
 // Sem ela o casulo se perde entre as folhas, e ele é o objeto que abre o
 // próximo mundo: não pode depender de sorte para ser encontrado.
@@ -928,12 +1034,16 @@ export const planetMaterial = make('planetas', {
 // sol que cintila é desconforto garantido.
 // ---------------------------------------------------------------------------
 export const solMaterial = make('sol', {
-  uniforms: { uWarp: { value: 0 } },
+  // 0 é a estrela do Olho, 1 é o magma do Núcleo. A mesma superfície em
+  // convecção nos dois — o que muda é a temperatura, e temperatura em corpo
+  // incandescente é só onde a rampa de cor começa e termina.
+  uniforms: { uWarp: { value: 0 }, uNucleo: { value: 0 } },
   vert: /* glsl */ `
     void main(){ vSeed = 0.5; emit(position, normal); }
   `,
   frag: /* glsl */ `
     uniform float uWarp;
+    uniform float uNucleo;
     void main(){
       vec3 P = normalize(vLocal);
       vec3 N = normalize(vNormalW);
@@ -945,11 +1055,17 @@ export const solMaterial = make('sol', {
       float f = fbm2(P * 15.0 + vec3(0.0, uTime * 0.05, uTime * 0.03));
       float grao = g * 0.65 + f * 0.35;
 
-      // Do fundo laranja ao branco do topo do grânulo. O branco domina: uma
-      // estrela vista de perto é branca com raias quentes, não uma laranja.
-      vec3 col = mix(vec3(1.00, 0.42, 0.08), vec3(1.00, 0.84, 0.42),
-                     smoothstep(0.26, 0.56, grao));
-      col = mix(col, vec3(1.0, 0.99, 0.95), smoothstep(0.48, 0.72, grao));
+      // Do fundo escuro ao topo aceso do grânulo.
+      //
+      // Na ESTRELA o branco domina: vista de perto ela é branca com raias
+      // quentes, não uma laranja. No MAGMA a rampa inteira desce um degrau de
+      // temperatura — crosta quase preta embaixo, laranja no meio, amarelo
+      // fusão só nas rachaduras. É a mesma convecção, mais fria.
+      vec3 frio = mix(vec3(1.00, 0.42, 0.08), vec3(0.16, 0.05, 0.03), uNucleo);
+      vec3 meio = mix(vec3(1.00, 0.84, 0.42), vec3(0.95, 0.32, 0.05), uNucleo);
+      vec3 topo = mix(vec3(1.00, 0.99, 0.95), vec3(1.00, 0.78, 0.26), uNucleo);
+      vec3 col = mix(frio, meio, smoothstep(0.26, 0.56, grao));
+      col = mix(col, topo, smoothstep(0.48, 0.72, grao));
 
       // Escurecimento de limbo: no centro do disco a linha de visão entra
       // fundo, onde é mais quente; de raspão ela só arranha as camadas altas.
@@ -959,7 +1075,10 @@ export const solMaterial = make('sol', {
       // A saída satura de propósito. Filmic comprime tudo para baixo de 1, e
       // uma estrela que não estoura no branco não lê como fonte de luz: lê
       // como bola amarela. Aqui o objetivo é o estouro.
-      gl_FragColor = vec4(mix(filmic(col * 2.6), vec3(1.0), 0.35) * uWarp, 1.0);
+      // A estrela estoura no branco de propósito; o magma não estoura, porque
+      // o que ele precisa passar é MASSA quente, não fonte de luz ofuscante.
+      gl_FragColor = vec4(
+        mix(filmic(col * 2.6), vec3(1.0), 0.35 * (1.0 - uNucleo)) * uWarp, 1.0);
     }
   `,
 });
@@ -2134,142 +2253,97 @@ export const nuvemMaterial = make('nuvem', {
 });
 
 // ---------------------------------------------------------------------------
-// A ÁRVORE-MÃE — a única coisa da cena que veio do mundo real.
+// A ÁRVORE-MÃE — malha, e não nuvem de pontos.
 //
-// A TEXTURA ORIGINAL DO MODELO É A COR. A nuvem carrega, por ponto, o pixel
-// que a textura tinha ali — é a casca fotografada, com o nó, a fenda e a
-// vinha no lugar exato onde estão na árvore de verdade. Nada de repintar por
-// paleta: é justamente essa cor que faz a árvore ser a única coisa da cena
-// vinda do mundo real, e trocá-la pela paleta a devolveria ao desenho.
+// Ela já foi nuvem, e a nuvem estava errada para ela. A estética de pontos é
+// certa para a vegetação gerada por código: são milhares de plantas pequenas,
+// e ponto é a forma mais barata de sugerir volume. Mas a dois metros do olho,
+// uma árvore de quarenta e seis mil pontos vira um monte de BOLINHAS — a
+// distância entre pontos vizinhos passa a ser maior que o detalhe que eles
+// deveriam descrever, e o objeto se desfaz justamente onde deveria convencer.
 //
-// Ela precisa de LEVANTE, e só isso. O albedo foi capturado à sombra e a média
-// medida dos quarenta e seis mil pontos dá luminância 0,22: fiel, e escuro
-// demais para um cômodo à noite. O ganho abre a faixa sem mexer no matiz.
+// Então aqui é o objeto como ele é: a malha reduzida de dois milhões para
+// cinquenta e nove mil triângulos (ver scripts/assar-malha.mjs) e a textura
+// fotográfica dele. Nada de repintar por paleta — é essa superfície que faz a
+// árvore ser a coisa real no meio de um mundo desenhado.
 //
-// A cena ainda alcança a árvore, mas de leve e por outro caminho: a luz viva
-// e o encanto entram POR CIMA da cor fotografada, em vez de substituí-la.
+// O que a cena faz por ela entra POR CIMA e de leve: a luz viva, a noite, e um
+// ruído lento atravessando a casca — a textura animada que a conversão para
+// partículas tinha custado. Ela modula o que a fotografia já traz, em vez de
+// inventar um desenho concorrente.
 //
-// E a textura ANIMADA volta aqui. Antes da conversão para partículas, cada
-// superfície tinha ruído correndo por cima; a nuvem perdeu isso porque um
-// ponto não tem superfície onde correr. A solução é amostrar o ruído na
-// posição do ponto em espaço de OBJETO e deixá-lo derivar no tempo: a
-// textura não está pintada no ponto, está atravessando a árvore, e cada ponto
-// mostra o pedaço dela que passa por ele agora. Fica ancorada no objeto, e não
-// na tela — o que importa em estéreo, porque textura presa à tela é
-// interpretada pelos dois olhos como coisas diferentes e embrulha.
-//
-// NÃO BALANÇA: não há "sway" nenhum neste vertex.
+// NÃO BALANÇA: não há "sway" neste vertex.
 // ---------------------------------------------------------------------------
 export const arvoreMaeMaterial = make('arvore-mae', {
-  // OPACA, e é o que a faz existir.
-  //
-  // Toda a vegetação daqui é aditiva, e funciona porque é rala: um capim tem
-  // catorze pontos. Esta árvore tem quarenta e seis mil, e somar quarenta e
-  // seis mil pontos dá branco — a primeira versão era uma mancha luminosa com
-  // formato de nuvem, sem tronco, sem galho, sem sólido.
-  //
-  // Sem mistura e ESCREVENDO PROFUNDIDADE, o ponto da frente tapa o de trás.
-  // É isso, e só isso, que faz um monte de pontos ler como um corpo: o tronco
-  // esconde a copa que está atrás dele, e a silhueta aparece. De quebra, em
-  // passthrough a árvore ocupa o lugar dela de verdade, como um objeto sólido
-  // deve ocupar.
-  transparent: false,
-  depthWrite: true,
-  uniforms: { uTamanho: { value: 13.0 } },
+  side: DoubleSide,   // folha e vinha são superfícies de um lado só no modelo
+  uniforms: {
+    uMapa: { value: null },
+    uTemMapa: { value: 0 },   // 0 até a textura chegar; evita o preto inicial
+  },
   vert: /* glsl */ `
-    attribute vec3 iPos;
-    attribute vec4 iQuat;
-    attribute vec3 iEsc;
-    attribute float iSemente;
-    attribute float aPonto;
-    attribute vec3 aCor;
-    uniform float uTamanho;
-    varying float vPonto;
-    varying vec3 vCor;
+    varying vec2 vUv;
     varying vec3 vObj;
-
-    vec3 rotQ(vec4 q, vec3 v){
-      return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-    }
-
     void main(){
-      vSeed = iSemente;
-      vPonto = aPonto;
-      vCor = aCor;
-      // A posição em espaço de OBJETO, antes de qualquer transformação: é
-      // nela que o ruído da textura é amostrado, para o desenho ficar preso à
-      // árvore mesmo quando o cômodo inteiro é reposicionado.
+      vSeed = 0.37;
+      vUv = uv;
       vObj = position;
-
-      vec3 local = rotQ(iQuat, position * iEsc) + iPos;
-      vec4 mundo = modelMatrix * vec4(local, 1.0);
-      vWorld = mundo.xyz;
-      vLocal = local;
-      vNormalW = normalize(mat3(modelMatrix)
-        * normalize(position + vec3(0.0, 0.001, 0.0)));
-
-      vec4 mv = viewMatrix * mundo;
-      vFade = clamp(1.0 - (-mv.z - 6.0) / 10.0, 0.0, 1.0);
-      // Teto no tamanho do ponto. Sem ele, encostar o rosto no tronco enche a
-      // vista de bolas de trinta centímetros: o tamanho cresce com o inverso
-      // da distância, e de perto isso não tem fim. Com teto, chegar perto
-      // revela a granulação em vez de destruí-la.
-      gl_PointSize = clamp(
-        uTamanho * (0.6 + aPonto * 0.7) * max(iEsc.y, 0.05) / max(-mv.z, 0.3),
-        1.1, 34.0);
-      gl_Position = projectionMatrix * mv;
+      emit(position, normal);
     }
   `,
   frag: /* glsl */ `
-    varying float vPonto;
-    varying vec3 vCor;
+    uniform sampler2D uMapa;
+    uniform float uTemMapa;
+    varying vec2 vUv;
     varying vec3 vObj;
 
     void main(){
-      vec2 uv = gl_PointCoord - 0.5;
-      float d = dot(uv, uv);
-      if (d > 0.25) discard;
-      // Corte redondo e duro: o ponto é uma pastilha, não um halo. Halo em
-      // material opaco vira quadrado escuro na borda, porque não há mistura
-      // para dissolvê-lo.
-      if (d > 0.22) discard;
+      ${FRAG_FADE}
 
-      float copa = smoothstep(0.28, 0.60, vObj.y);
-      float s = vSeed + vPonto * 0.5;
+      // A cor fotografada. Enquanto a textura não chegou, uma casca neutra —
+      // sem isto a árvore aparece PRETA no primeiro segundo, que é o pior
+      // primeiro segundo possível para o objeto central da cena.
+      vec3 crua = mix(vec3(0.24, 0.22, 0.16), texture2D(uMapa, vUv).rgb, uTemMapa);
 
-      // A COR FOTOGRAFADA, levantada e com o matiz devolvido.
-      //
-      // Só multiplicar clareia e lava: a captura à sombra comprimiu os três
-      // canais para perto uns dos outros, e a média medida (0,236 · 0,228 ·
-      // 0,163) é um marrom fraco que, aberto, vira cinza. Afastar cada canal
-      // da própria luminância antes de abrir devolve o pardo da casca sem
-      // inventar cor nenhuma: o matiz é o que a fotografia já tinha, só que
-      // audível.
-      vec3 crua = max(vCor, vec3(0.0));
+      // Levante com o matiz devolvido. O albedo foi capturado à sombra e a
+      // média medida dá luminância 0,22: fiel, e escuro demais para um cômodo
+      // à noite. Só multiplicar clareia e LAVA, porque os três canais estão
+      // comprimidos perto uns dos outros. Afastar cada canal da própria
+      // luminância antes de abrir devolve o pardo da casca sem inventar cor.
       float lum = dot(crua, vec3(0.2126, 0.7152, 0.0722));
-      vec3 col = mix(vec3(lum), crua, 1.9) * 2.3;
+      vec3 col = mix(vec3(lum), crua, 1.55) * 1.9;
 
-      // A TEXTURA ANIMADA, por cima e de leve. Duas escalas de ruído
-      // atravessando a árvore em sentidos diferentes, devagar. É deslocamento
-      // do desenho, não variação de brilho: nada aqui pisca. E ela modula o
-      // que a fotografia já traz, em vez de inventar um desenho concorrente.
-      float fibra = fbm3(vObj * 9.0 + vec3(0.0, uTime * 0.035, uTime * 0.02));
-      float veio  = fbm2(vObj * 22.0 - vec3(uTime * 0.028, 0.0, 0.0));
-      col *= 0.86 + 0.20 * fibra + 0.10 * veio;
+      // A TEXTURA ANIMADA, por cima. Duas escalas de ruído atravessando a
+      // árvore em sentidos diferentes, devagar, amostradas em espaço de
+      // OBJETO — assim o desenho fica preso à árvore e não à tela, que é o
+      // que importa em estéreo.
+      float fibra = fbm3(vObj * 7.0 + vec3(0.0, uTime * 0.030, uTime * 0.018));
+      float veio  = fbm2(vObj * 19.0 - vec3(uTime * 0.024, 0.0, 0.0));
+      col *= 0.90 + 0.14 * fibra + 0.07 * veio;
 
-      // O encanto entra fraco: a graça desta árvore é ser a coisa real.
-      col = enchant(col, s + uTime * 0.03, 0.12);
-      col *= 0.62 + 0.55 * wrapLight(vNormalW);
+      vec3 N = normalize(vNormalW);
+      // Dupla face: a folha vista por trás tem a normal invertida, e sem isto
+      // metade da copa fica preta.
+      if (!gl_FrontFacing) N = -N;
+
+      col = enchant(col, 0.37 + uTime * 0.03, 0.10);
+      col *= 0.55 + 0.60 * wrapLight(N);
       col = nightBody(col);
 
-      // A vida acesa: a copa mais que o tronco, e a presença de alguém
-      // acendendo o que está perto.
-      col += bio(copa * 0.55 + 0.12, s + 0.3, 0.85);
-      col += bio(presenca(vWorld), s + 0.15, 1.5);
+      // A VIDA ACESA, muito de leve — e esta contenção é o ponto.
+      //
+      // A primeira versão somava bioluminescência como soma na vegetação
+      // gerada, e a árvore inteira ficou AZUL: a casca fotografada
+      // desaparecia debaixo do ciano e o objeto voltava a parecer desenhado.
+      // Medido com "uGlow" em zero, o mesmo enquadramento fica marrom-oliva,
+      // que é a cor que a fotografia de fato tem.
+      //
+      // A luz viva não some — ela é o vocabulário da cena e a árvore não pode
+      // ficar de fora dele. Mas aqui ela é um véu na ponta dos galhos, e não
+      // uma tinta.
+      float copa = smoothstep(0.20, 0.70, vObj.y);
+      col += bio(copa * 0.16, 0.37, 0.30);
+      col += bio(presenca(vWorld) * 0.45, 0.52, 0.45);
 
-      // Uma sombra de leve na borda da pastilha. Mais que isso e cada ponto
-      // vira uma bolinha com brilho próprio, e a casca lê como espuma.
-      col *= 1.0 - d * 0.9;
       gl_FragColor = vec4(filmic(col), 1.0);
     }
   `,

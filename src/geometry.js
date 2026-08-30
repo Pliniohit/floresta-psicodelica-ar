@@ -433,6 +433,88 @@ function suavizarNormais(geo) {
   return geo;
 }
 
+/**
+ * A RAIZ — a porta que leva para dentro, no pé da árvore.
+ *
+ * Ela é o espelho do casulo, e foi desenhada como tal: onde o casulo é um
+ * corpo fechado pendurado que se abre para CIMA, esta é uma boca aberta no
+ * chão que desce. O casulo afina para baixo; esta afina para cima e engorda
+ * ao encontrar a terra.
+ *
+ * A forma tem duas partes:
+ *
+ * O BULBO, revolucionado a partir de um perfil, como o casulo — largo na base
+ * e estrangulado no alto, o que faz o olho ler "isto entra no chão" em vez de
+ * "isto é uma pedra apoiada".
+ *
+ * Os BRAÇOS: seis raízes saindo do bulbo, arqueando para fora e mergulhando.
+ * Sem elas o bulbo é um caroço; com elas, o chão em volta passa a fazer parte
+ * do objeto, e é isso que diz que há um sistema inteiro embaixo.
+ *
+ * O centro fica ABERTO — o topo do bulbo não é tampado. É por esse buraco que
+ * a luz do magma sobe, e é ele que precisa ser reconhecido como passagem.
+ */
+export function raiz(raio = 0.26) {
+  const ANEIS = 18;
+  const LADOS = 18;
+  const ALTURA = raio * 1.15;
+
+  /** Raio do perfil na altura t (0 no chão, 1 no alto da boca). */
+  const perfil = (t) => {
+    // Larga embaixo, estrangulando no alto: um funil invertido, que é a forma
+    // de qualquer coisa que some na terra.
+    const base = Math.pow(1 - t, 0.55);
+    // Uma cintura no meio, para não virar um cone liso.
+    return base * (1 - 0.22 * Math.sin(t * Math.PI));
+  };
+
+  const pos = [];
+  const ponto = (t, i) => {
+    const ang = (i / LADOS) * Math.PI * 2;
+    // Seção ondulada: raiz não tem seção circular, tem gomo.
+    const gomo = 1 + 0.09 * Math.cos(ang * 5.0 + t * 2.0);
+    const r = perfil(t) * raio * gomo;
+    return [Math.cos(ang) * r, t * ALTURA, Math.sin(ang) * r];
+  };
+
+  for (let a = 0; a < ANEIS; a++) {
+    const t0 = a / ANEIS, t1 = (a + 1) / ANEIS;
+    for (let i = 0; i < LADOS; i++) {
+      const p00 = ponto(t0, i), p01 = ponto(t0, i + 1);
+      const p10 = ponto(t1, i), p11 = ponto(t1, i + 1);
+      pos.push(...p00, ...p10, ...p11);
+      pos.push(...p00, ...p11, ...p01);
+    }
+  }
+
+  const bulbo = new BufferGeometry();
+  bulbo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  bulbo.computeVertexNormals();
+
+  // Os braços. Cada um é um cone deitado, inclinado para fora e para baixo,
+  // com um giro próprio para nenhum ficar paralelo ao vizinho.
+  const bracos = [];
+  const N = 6;
+  for (let k = 0; k < N; k++) {
+    const ang = (k / N) * Math.PI * 2 + 0.4;
+    const comp = raio * (1.5 + (k % 3) * 0.35);
+    const cone = new ConeGeometry(raio * 0.20, comp, 6, 1, true);
+    // O cone nasce ao longo de +Y. Tombar em Z e depois girar em Y é a ordem
+    // que a Euler 'XYZ' do three aplica de dentro para fora — tombar primeiro,
+    // apontar depois. Fazer o contrário (tombar em X e girar em Y) empurra
+    // todos os braços para o mesmo lado, e o objeto sai torto.
+    bracos.push(place(cone, {
+      rz: -(Math.PI * 0.5 + 0.55),
+      ry: -ang,
+      x: Math.cos(ang) * comp * 0.42,
+      y: ALTURA * 0.16 - comp * 0.16,
+      z: Math.sin(ang) * comp * 0.42,
+    }));
+  }
+
+  return weld([bulbo, ...bracos]);
+}
+
 /** Anel plano usado como retículo de posicionamento. */
 export function reticleRing(radius = 0.2) {
   const g = new BufferGeometry();

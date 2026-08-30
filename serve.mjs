@@ -108,7 +108,7 @@ if (PLAIN) {
 const scheme = PLAIN ? 'http' : 'https';
 server.listen(PORT, '0.0.0.0', () => {
   const ips = lanAddresses();
-  console.log('\n  🦋  Universo Encantado\n');
+  console.log('\n  🌌  Raízes Cósmicas\n');
   console.log(`      neste Mac   ${scheme}://localhost:${PORT}`);
   for (const ip of ips) console.log(`      no Quest 3  ${scheme}://${ip}:${PORT}`);
   if (PLAIN) {

@@ -101,9 +101,9 @@ ok(quebrados.length === 0, 'nenhum import aponta para um export que não existe'
 {
   const orfas = [];
   for (const [arquivo, src] of fontes) {
-    // Os módulos de src/nuvens/ são GERADOS, e o que parece constante neles é
-    // pedaço de base64.
-    if (arquivo.includes('nuvens')) continue;
+    // Os módulos de src/nuvens/ e src/malhas/ são GERADOS, e o que parece
+    // constante neles é pedaço de base64.
+    if (arquivo.includes('nuvens') || arquivo.includes('malhas')) continue;
     // O que o arquivo declara ou importa.
     const conhecidas = new Set();
     for (const m of src.matchAll(/(?:const|let|var)\s+([A-Z][A-Z0-9_]{2,})\s*=/g)) {
