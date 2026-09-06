@@ -1262,8 +1262,14 @@ export const atmosferaMaterial = make('atmosfera', {
 
         // Faixas na latitude, quebradas por ruído — é o que faz gigante
         // gasoso em vez de neblina uniforme.
-        float faixa = 0.55 + 0.45 * sin(q.y * 7.0 + fbm2(q * 1.7) * 4.0);
-        float nuvem = fbm3(q * 2.6 + vSeed * 12.0);
+        //
+        // AGITAÇÃO NA MÃO. Quando você segura o planeta (uGrow sobe), as faixas
+        // passam a ondular no tempo — a atmosfera se mexe, como se o gás
+        // fervesse ao ser tocado. Em repouso (uGrow=0) o termo some e o desenho
+        // fica parado, como um gigante gasoso visto de longe.
+        float turbi = uGrow * uTime * 1.6;
+        float faixa = 0.55 + 0.45 * sin(q.y * 7.0 + fbm2(q * 1.7 + turbi) * 4.0);
+        float nuvem = fbm3(q * 2.6 + vSeed * 12.0 + turbi * 0.5);
         // A faixa clara precisa ser MUITO mais densa que o vão entre elas.
         // Com o mínimo alto o gás preenche tudo por igual e a casca vira uma
         // bolha leitosa em volta do planeta — que foi o primeiro resultado.

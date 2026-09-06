@@ -33,6 +33,7 @@ const _s2 = new Vector3();
 const _acc = new Vector3();
 const _d = new Vector3();
 const _p2 = new Vector3();
+const _pCorpo = new Vector3();
 /** Direção do planeta para o sol. Guardado à parte porque `_d` é reciclado
  * dentro do laço de pares, e amortecer na direção errada derrubava todo
  * mundo dentro da estrela. */
@@ -508,6 +509,19 @@ export class Space extends Group {
   }
 
   /**
+   * As paredes da sala, para os planetas quicarem nelas.
+   *
+   * `semiLado` é meia-largura do quadrado de jogo (o 3×3 dá 1,5). Um planeta
+   * arremessado bate nas quatro paredes e volta, em vez de sumir sala afora —
+   * é o que faz "jogar o planeta" ser um gesto com consequência. Guardado em
+   * coordenadas locais do space, que é onde a física roda.
+   */
+  setSala(semiLado) {
+    this.semiLado = semiLado;
+    return this;
+  }
+
+  /**
    * A FÍSICA DO ENXAME.
    *
    * Deixou de ser uma órbita escrita à mão e virou força. São três:
@@ -523,7 +537,7 @@ export class Space extends Group {
    * que a gravidade na distância em que as superfícies se encostam, senão
    * dois planetas pesados se atravessariam.
    */
-  update(t, dt) {
+  update(t, dt, alvoCorpo) {
     if (!this.visible) return;
 
     this.#moverCinturao(t, dt);
@@ -543,11 +557,34 @@ export class Space extends Group {
     // com dt de um quadro perdido lançaria o planeta para fora da sala.
     const passo = Math.min(dt, 1 / 45);
 
+    // QUEM ORBITA O QUÊ.
+    //
+    // A coreografia: no repouso, todos os planetas orbitam VOCÊ, ao alcance do
+    // braço. Quando você segura um, os OUTROS voltam a orbitar o SOL lá no alto
+    // — se afastam, e o escolhido fica só seu. Soltou, todos voltam a te
+    // orbitar. Cada planeta guarda para onde vai (`orbita`) e um alvo suave
+    // (`centro`) que persegue o ponto certo, para a troca ser uma migração e
+    // não um salto.
+    const algumPreso = this.planets.some((g) => g.userData.preso);
+    // Você, em coordenadas locais do space (o peito, na altura do sistema).
+    if (alvoCorpo) this.worldToLocal(_pCorpo.copy(alvoCorpo));
+    else _pCorpo.set(0, CENTRO_Y, 0);
+    _pCorpo.y = CENTRO_Y;
+    const solLocal = this.sol.position;
+
     for (let i = 0; i < this.planets.length; i++) {
       const a = this.planets[i];
       a.userData.corpo.rotation.y = t * a.userData.giro;
       const pa = a.position;
       const ra = a.userData.raio * a.scale.x;
+
+      // Destino de órbita deste planeta: o sol se ele está livre enquanto outro
+      // está preso; senão, você. O centro real persegue esse destino devagar.
+      const querSol = algumPreso && !a.userData.preso;
+      const destino = querSol ? solLocal : _pCorpo;
+      const centro = (a.userData.centro ??= destino.clone());
+      centro.lerp(destino, Math.min(1, dt * 0.6));
+      a.userData.orbitaSol = querSol;
 
       // NA MÃO: a mola substitui as forças do enxame, mas a integração é a
       // mesma — ele continua sendo um corpo com velocidade, e é por isso que
@@ -584,17 +621,21 @@ export class Space extends Group {
         }
         continue;
       }
-      // A ESTRELA. Amaciada em R_MIN para a aceleração não disparar se
-      // alguém for jogado direto contra ela pela mão.
-      _d.set(-pa.x, CENTRO_Y - pa.y, -pa.z);
+      // A ATRAÇÃO CENTRAL, para o centro deste planeta (você, ou o sol quando
+      // outro está preso). Amaciada em R_MIN para a aceleração não disparar se
+      // alguém for jogado direto contra o centro pela mão.
+      const cx = centro.x, cy = centro.y, cz = centro.z;
+      _d.set(cx - pa.x, cy - pa.y, cz - pa.z);
       const rSol = Math.max(_d.length(), 1e-3);
       _rad.copy(_d).divideScalar(rSol);
       _acc.copy(_d).multiplyScalar(GM / (rSol * Math.max(rSol * rSol, R_MIN * R_MIN)));
 
-      // As duas cercas: não cair no sol, não sumir sala afora. Só agem fora
-      // da faixa, então dentro dela a órbita é kepleriana pura.
+      // As duas cercas: não cair no centro, não sumir sala afora. Só agem fora
+      // da faixa, então dentro dela a órbita é kepleriana pura. Quem orbita o
+      // sol pode ir mais longe (ele está no alto, fora do alcance do braço).
+      const rMax = a.userData.orbitaSol ? R_MAX * 1.7 : R_MAX;
       if (rSol < R_MIN) _acc.addScaledVector(_d, -(R_MIN - rSol) * CERCA / rSol);
-      if (rSol > R_MAX) _acc.addScaledVector(_d, (rSol - R_MAX) * CERCA / rSol);
+      if (rSol > rMax) _acc.addScaledVector(_d, (rSol - rMax) * CERCA / rSol);
 
       for (let j = 0; j < this.planets.length; j++) {
         if (i === j) continue;
@@ -621,8 +662,23 @@ export class Space extends Group {
 
       // Nunca abaixo do joelho nem acima do alcance: o enxame é para ser
       // pego com a mão, e um planeta no chão ou no teto sai do jogo.
+      // Quem te orbita fica ao alcance (joelho a alcance do braço). Quem
+      // orbita o sol pode subir para perto dele, no alto do céu virtual.
+      const tetoP = a.userData.orbitaSol ? SOL_ALTURA + 0.6 : 2.30;
       if (pa.y < 0.42) { pa.y = 0.42; v.y = Math.abs(v.y) * 0.5; }
-      if (pa.y > 2.30) { pa.y = 2.30; v.y = -Math.abs(v.y) * 0.5; }
+      if (pa.y > tetoP) { pa.y = tetoP; v.y = -Math.abs(v.y) * 0.5; }
+
+      // AS PAREDES. Um planeta arremessado quica nas quatro paredes da sala e
+      // volta, em vez de sumir. Só age em quem está livre e te orbitando — quem
+      // subiu para o sol está acima das paredes. O quique perde um pouco de
+      // energia, então ele não fica batendo para sempre.
+      if (this.semiLado && !a.userData.preso && !a.userData.orbitaSol) {
+        const lim = this.semiLado - ra;
+        if (pa.x > lim) { pa.x = lim; v.x = -Math.abs(v.x) * 0.7; }
+        if (pa.x < -lim) { pa.x = -lim; v.x = Math.abs(v.x) * 0.7; }
+        if (pa.z > lim) { pa.z = lim; v.z = -Math.abs(v.z) * 0.7; }
+        if (pa.z < -lim) { pa.z = -lim; v.z = Math.abs(v.z) * 0.7; }
+      }
 
       this.#atravessar(a, ra);
     }

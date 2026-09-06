@@ -678,6 +678,8 @@ function commitRoom() {
   // Os dois buracos viram o par de portais dos planetas: quem entra num sai
   // pelo outro. Sem dois, ninguém atravessa nada.
   space.setPortais(buracos.portais());
+  // As paredes da sala para os planetas quicarem: meia-largura da área de jogo.
+  space.setSala(AREA_JOGO / 2);
 
   // O portal escolhe a parede mais longa que esteja LONGE dos buracos —
   // dividir parede com um buraco negro faria os dois brigarem pelo mesmo
@@ -2032,7 +2034,7 @@ function frame(time, xrFrame) {
     // quem contorna a escultura, como faria com uma peça física.
     if (noHub()) space.empurrar('corpo', shared.uPresenca.value, 0.28, dt);
 
-    space.update(t, dt);
+    space.update(t, dt, shared.uPresenca.value);
     portal.update(dt, t);
   }
 
