@@ -2024,6 +2024,14 @@ function frame(time, xrFrame) {
     if (aquatico) cardume.update(t);
     else butterflies.update(t);
     seeds.update(dt, t, hands);
+
+    // NADA ATRAVESSA O CORPO. Além das mãos, o TORSO empurra os planetas: se um
+    // corpo vem orbitando na sua direção, ele desvia de você em vez de passar
+    // através do seu peito. Um raio generoso (28 cm) cobre o volume do tronco.
+    // A árvore não entra nisso de propósito — ela é sólida e imóvel, e é você
+    // quem contorna a escultura, como faria com uma peça física.
+    if (noHub()) space.empurrar('corpo', shared.uPresenca.value, 0.28, dt);
+
     space.update(t, dt);
     portal.update(dt, t);
   }
