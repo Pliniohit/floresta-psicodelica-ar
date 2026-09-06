@@ -516,6 +516,64 @@ function apagarLuz() {
   return true;
 }
 
+/**
+ * ÂNCORA DO MUNDO.
+ *
+ * O `local-floor` não é fixo no cômodo: quando o headset dorme e acorda, o
+ * rastreamento se restabelece e o referencial se recentra. Tudo o que foi
+ * posicionado nele anda junto — que é o motivo de a obra mudar de lugar ao
+ * tirar e recolocar o capacete.
+ *
+ * Uma âncora é o oposto: ela é presa ao MUNDO, e o runtime a mantém no mesmo
+ * ponto físico mesmo quando o referencial escorrega. Então guardamos onde a
+ * obra nasceu, criamos uma âncora ali, e a cada quadro corrigimos a diferença
+ * entre onde a âncora está agora e onde ela estava.
+ *
+ * Cinco objetos dividem a mesma origem — floresta, buracos, portal, casca e
+ * maré —, então a correção vale para os cinco de uma vez.
+ */
+let ancora = null;
+let ancoraPedida = false;
+let origemAncorada = null;
+const _deltaAncora = new Vector3();
+
+function pedirAncora() {
+  origemAncorada = forest.position.clone();
+  ancora = null;
+  ancoraPedida = true;
+}
+
+/** Cria a âncora no primeiro quadro possível e depois só corrige a deriva. */
+function seguirAncora(xrFrame) {
+  if (!xrFrame || !xr.refSpace || !origemAncorada) return;
+
+  if (ancoraPedida && !ancora && typeof xrFrame.createAnchor === 'function') {
+    ancoraPedida = false;
+    const t = new XRRigidTransform(
+      { x: origemAncorada.x, y: origemAncorada.y, z: origemAncorada.z },
+      { x: 0, y: 0, z: 0, w: 1 },
+    );
+    xrFrame.createAnchor(t, xr.refSpace)
+      .then((a) => { ancora = a; })
+      .catch(() => { ancora = null; });   // sem âncoras, seguimos como antes
+    return;
+  }
+  if (!ancora) return;
+
+  const pose = xrFrame.getPose(ancora.anchorSpace, xr.refSpace);
+  if (!pose) return;
+  const p = pose.transform.position;
+  _deltaAncora.set(p.x - origemAncorada.x, p.y - origemAncorada.y, p.z - origemAncorada.z);
+  if (_deltaAncora.lengthSq() < 1e-8) return;   // nada escorregou
+
+  // A correção é a mesma para todos: eles nasceram na mesma origem.
+  for (const obj of [forest, buracos, portal, shell, tide]) {
+    obj.position.add(_deltaAncora);
+  }
+  origemAncorada.add(_deltaAncora);
+  shared.uOrigin.value.copy(forest.position);
+}
+
 function commitRoom() {
   // ÁREA DE JOGO. A obra ocupa sempre o mesmo quadrado, centrado no piso lido
   // e recortado contra o polígono real — nunca chão que não existe.
@@ -588,6 +646,9 @@ function commitRoom() {
   auraFireflies.visible = true;
   bodyGrowth.visible = true;
   bodyGrowth.setBlooming(state.bloomOn);
+  // A obra nasceu: prender ao mundo, para não escorregar com o referencial.
+  pedirAncora();
+
   state.phase = 'growing';
   state.intro = 0;
   interaction.enabled = true;
@@ -1680,6 +1741,7 @@ function frame(time, xrFrame) {
   // A cena inteira é perseguida aqui: cor de folha, de casca, de parede, de
   // céu. Trocar de cenário virou interpolação de uniforms, e não recompilação.
   seguirCena(dt);
+  seguirAncora(xrFrame);
   astro.update(dt, camera);
 
   if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
@@ -1944,6 +2006,7 @@ window.floresta = {
   toggleCalm, cycleGlow, togglePaint, bless, rescan, hatch, backToForest, enterWorld, GLOW,
   CENAS, cenaPor, montarCena, trocarCena, aplicarCena,
   marcarLuz, apagarLuz,
+  get ancora() { return ancora; },
 };
 
 window.addEventListener('beforeunload', () => {
