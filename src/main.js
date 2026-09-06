@@ -1,6 +1,6 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Vector2, Vector3,
-  Raycaster, Plane, Clock, MathUtils, Matrix4,
+  Raycaster, Plane, Clock, MathUtils, Matrix4, Quaternion,
 } from '../vendor/three/three.module.min.js';
 import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
@@ -471,6 +471,49 @@ function ajustarAreaDeJogo() {
   if (!recorte || recorte.length < 3 || polygonArea(recorte) < 0.5) return;
   room.footprint = recorte;
   room.areaDeJogo = AREA_JOGO;
+}
+
+/**
+ * Marca à mão onde está a luz da sala.
+ *
+ * O Space Setup do Quest tem um tipo para lâmpada, mas ele nem sempre existe:
+ * numa leitura de 26 planos aqui, nenhum veio com esse rótulo. Numa ativação
+ * não dá para depender disso — então há este caminho, que sempre funciona.
+ *
+ * Quem está com o headset OLHA para a luminária e alguém chama isto (pelo
+ * estúdio, ou por atalho). O raio do olhar encontra a malha do cômodo e o
+ * astro pousa no ponto exato; sem malha, ele fica a dois metros na direção do
+ * olhar, que já é o bastante para uma luminária de teto.
+ */
+function marcarLuz() {
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  cam.updateMatrixWorld();
+  const origem = new Vector3().setFromMatrixPosition(cam.matrixWorld);
+  const direcao = new Vector3(0, 0, -1)
+    .applyQuaternion(cam.getWorldQuaternion(new Quaternion())).normalize();
+
+  let ponto = null;
+  const malha = roomMesh?.mesh ?? roomMesh?.children?.[0];
+  if (malha?.geometry) {
+    const rc = new Raycaster(origem, direcao, 0.2, 8);
+    const hits = rc.intersectObject(malha, true);
+    if (hits.length) ponto = hits[0].point.clone();
+  }
+  if (!ponto) ponto = origem.clone().addScaledVector(direcao, 2.0);
+
+  room.lamp = { x: ponto.x, y: ponto.y, z: ponto.z, fonte: 'marcada à mão' };
+  room.lampManual = true;
+  astro.colocar(room.lamp, forest.position);
+  toast('Astro na luz da sala', CENAS[state.cena]?.swatch);
+  return { x: +ponto.x.toFixed(2), y: +ponto.y.toFixed(2), z: +ponto.z.toFixed(2) };
+}
+
+/** Tira o astro, se a marcação tiver saído errada. */
+function apagarLuz() {
+  room.lamp = null;
+  room.lampManual = false;
+  astro.visible = false;
+  return true;
 }
 
 function commitRoom() {
@@ -1900,6 +1943,7 @@ window.floresta = {
   cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
   toggleCalm, cycleGlow, togglePaint, bless, rescan, hatch, backToForest, enterWorld, GLOW,
   CENAS, cenaPor, montarCena, trocarCena, aplicarCena,
+  marcarLuz, apagarLuz,
 };
 
 window.addEventListener('beforeunload', () => {
