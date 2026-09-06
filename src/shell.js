@@ -62,6 +62,17 @@ export class Shell extends Group {
     this.visible = false;
     this.walls = [];
     this.amount = 0;
+
+    // PAREDES LIMPAS.
+    //
+    // A casca vestia as paredes reais com padrões ornamentais — as "grades",
+    // registros, ondas, filigranas de cada cena. Elas competiam com o próprio
+    // cômodo e com o vídeo pendurado na parede, e para uma experiência de
+    // apreciação a parede tem de ficar como está: a sua sala, e sobre ela só
+    // o portal com a animação. A casca não é mais desenhada. Religável com
+    // `?paredes=1`.
+    this.desenhar = typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('paredes') === '1';
   }
 
   /**
@@ -116,7 +127,8 @@ export class Shell extends Group {
   /** 0 esconde a casca, 1 mostra por inteiro. */
   setAmount(v) {
     this.amount = v;
-    this.visible = v > 0.01 && this.walls.length > 0;
+    // Só aparece se explicitamente ligada; por padrão a parede fica limpa.
+    this.visible = this.desenhar && v > 0.01 && this.walls.length > 0;
     wallMaterial.uniforms.uShell.value = v;
     return v;
   }
