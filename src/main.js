@@ -534,12 +534,17 @@ function apagarLuz() {
  */
 let ancora = null;
 let ancoraPedida = false;
-let origemAncorada = null;
+let ancoraPose0 = null;              // onde a âncora estava quando nasceu
+let basesAncoradas = null;           // posição de cada objeto naquele momento
 const _deltaAncora = new Vector3();
 
+/** Objetos que dividem a origem do cômodo e andam juntos. */
+const ANCORADOS = () => [forest, buracos, portal, shell, tide];
+
 function pedirAncora() {
-  origemAncorada = forest.position.clone();
   ancora = null;
+  ancoraPose0 = null;
+  basesAncoradas = ANCORADOS().map((o) => o.position.clone());
   ancoraPedida = true;
 }
 
@@ -549,28 +554,41 @@ function seguirAncora(xrFrame) {
 
   if (ancoraPedida && !ancora && typeof xrFrame.createAnchor === 'function') {
     ancoraPedida = false;
+    const base = basesAncoradas?.[0] ?? forest.position;
     const t = new XRRigidTransform(
-      { x: origemAncorada.x, y: origemAncorada.y, z: origemAncorada.z },
+      { x: base.x, y: base.y, z: base.z },
       { x: 0, y: 0, z: 0, w: 1 },
     );
     xrFrame.createAnchor(t, xr.refSpace)
-      .then((a) => { ancora = a; })
+      .then((a) => {
+        ancora = a;
+        const p0 = xrFrame.getPose?.(a.anchorSpace, xr.refSpace);
+        ancoraPose0 = p0
+          ? new Vector3(p0.transform.position.x, p0.transform.position.y, p0.transform.position.z)
+          : base.clone();
+      })
       .catch(() => { ancora = null; });   // sem âncoras, seguimos como antes
     return;
   }
-  if (!ancora) return;
+  if (!ancora || !ancoraPose0 || !basesAncoradas) return;
 
   const pose = xrFrame.getPose(ancora.anchorSpace, xr.refSpace);
   if (!pose) return;
   const p = pose.transform.position;
-  _deltaAncora.set(p.x - origemAncorada.x, p.y - origemAncorada.y, p.z - origemAncorada.z);
-  if (_deltaAncora.lengthSq() < 1e-8) return;   // nada escorregou
 
-  // A correção é a mesma para todos: eles nasceram na mesma origem.
-  for (const obj of [forest, buracos, portal, shell, tide]) {
-    obj.position.add(_deltaAncora);
+  // ABSOLUTO, não incremental. Somar a diferença quadro a quadro faz o ruído
+  // do rastreamento virar caminhada aleatória: a cena escorregaria sozinha,
+  // um milímetro de cada vez. Aqui cada objeto é reposto na sua base mais o
+  // deslocamento total da âncora desde que ela nasceu — ruído não acumula.
+  _deltaAncora.set(p.x - ancoraPose0.x, p.y - ancoraPose0.y, p.z - ancoraPose0.z);
+
+  const objetos = ANCORADOS();
+  for (let i = 0; i < objetos.length; i++) {
+    const base = basesAncoradas[i];
+    if (!base) continue;
+    objetos[i].position.set(base.x + _deltaAncora.x, base.y + _deltaAncora.y,
+      base.z + _deltaAncora.z);
   }
-  origemAncorada.add(_deltaAncora);
   shared.uOrigin.value.copy(forest.position);
 }
 
