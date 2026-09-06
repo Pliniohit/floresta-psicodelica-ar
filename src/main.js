@@ -550,7 +550,7 @@ function pedirAncora() {
 
 /** Cria a âncora no primeiro quadro possível e depois só corrige a deriva. */
 function seguirAncora(xrFrame) {
-  if (!xrFrame || !xr.refSpace || !origemAncorada) return;
+  if (!xrFrame || !xr.refSpace || !basesAncoradas) return;
 
   if (ancoraPedida && !ancora && typeof xrFrame.createAnchor === 'function') {
     ancoraPedida = false;
