@@ -808,6 +808,19 @@ function atravessar(mundo, sentido) {
     cenaPor(state.cena).swatch);
 }
 
+/**
+ * Avança de cena com a travessia completa — a dissolução da borboleta —, a
+ * partir do centro da clareira. É o que o operador dispara à distância pelo
+ * estúdio: em vez de um corte seco (trocarCena cru, que deixava os dois mundos
+ * sobrepostos), a cena se desfaz e a seguinte se condensa, como quando alguém
+ * toca o casulo de verdade. Nunca deixa a travessia pela metade.
+ */
+function travessiaLimpa() {
+  if (state.subindo) return;                 // já atravessando
+  const centro = forest.localToWorld(new Vector3(0, 1.2, 0));
+  atravessar(centro, state.sentido >= 0 ? 1 : -1);
+}
+
 /** Tocar no casulo: para fora, até o universo profundo. */
 function hatch(indice) {
   const saidaLocal = forest.openCocoon(indice);
@@ -2065,6 +2078,7 @@ window.floresta = {
   abrirPortal,
   cyclePalette, toggleTrip, reseed, toggleSky, toggleOcclusion, toggleBloom,
   toggleCalm, cycleGlow, togglePaint, bless, rescan, hatch, backToForest, enterWorld, GLOW,
+  travessiaLimpa,
   CENAS, cenaPor, montarCena, trocarCena, aplicarCena,
   marcarLuz, apagarLuz,
   get ancora() { return ancora; },
