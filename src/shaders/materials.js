@@ -1025,8 +1025,26 @@ export const planetMaterial = make('planetas', {
                        smoothstep(0.38, 0.62, onda));
       pAgua = mix(pAgua, vec3(0.90, 0.94, 0.98), smoothstep(0.68, 0.84, onda));
 
+      // AR — céu pálido com faixas de vento e nuvens altas correndo.
+      float vento = fbm3(P * 2.2 + vec3(uTime * 0.05, 0.0, 0.0) + vSeed * 3.0);
+      float faixaAr = 0.5 + 0.5 * sin(P.y * 7.0 + vento * 3.0);
+      vec3 pAr = mix(vec3(0.62, 0.74, 0.86), vec3(0.93, 0.96, 1.00), faixaAr);
+      pAr = mix(pAr, vec3(0.80, 0.88, 0.98), smoothstep(0.4, 0.7, vento));
+
+      // AMOR — nácar rosado e magenta, um pulso quente que respira.
+      float tecido = fbm3(P * 3.0 + vSeed * 7.0);
+      float pulso = 0.55 + 0.45 * sin(uTime * 0.9 + vSeed * 5.0);
+      vec3 pAmor = mix(vec3(0.55, 0.10, 0.28), vec3(1.00, 0.48, 0.66),
+                       smoothstep(0.35, 0.65, tecido));
+      pAmor = mix(pAmor, vec3(1.00, 0.80, 0.90), smoothstep(0.66, 0.82, tecido));
+      pAmor += vec3(1.00, 0.30, 0.50) * pulso * 0.18;
+
       float el = uElement;
-      vec3 base = el < 0.5 ? pTerra : (el < 1.5 ? pFogo : pAgua);
+      vec3 base = el < 0.5 ? pTerra
+                : el < 1.5 ? pFogo
+                : el < 2.5 ? pAgua
+                : el < 3.5 ? pAr
+                : pAmor;
       // A cor do bioma reforça, mas já não precisa carregar a leitura sozinha.
       base = mix(base, base * 0.55 + uTint * 0.70, 0.34);
 

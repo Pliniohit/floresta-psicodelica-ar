@@ -42,9 +42,11 @@ const METEOROS = 14;
 const ATM = 1.26;
 /** A cor do ar por elemento: terra, fogo, água. */
 const AR = [
-  new Vector3(0.42, 0.66, 1.00),
-  new Vector3(1.00, 0.52, 0.22),
-  new Vector3(0.36, 0.86, 0.88),
+  new Vector3(0.42, 0.66, 1.00),   // terra
+  new Vector3(1.00, 0.52, 0.22),   // fogo
+  new Vector3(0.36, 0.86, 0.88),   // água
+  new Vector3(0.80, 0.90, 1.00),   // ar
+  new Vector3(1.00, 0.55, 0.72),   // amor
 ];
 
 /**

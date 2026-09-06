@@ -21,7 +21,21 @@ import { CENAS } from './cenas.js';
  * rosto. Andar tem que aproximar.
  */
 
-const PLANETS = 7;
+const PLANETS = 5;
+
+/**
+ * OS CINCO PLANETAS, nomeados. Cada um é um elemento com cor de corpo e de
+ * atmosfera próprias — antes o enxame era sorteado em `i % 3` e quase tudo
+ * lia como fogo. Agora são cinco identidades fixas: Terra, Fogo, Água, Ar e
+ * Amor, nessa ordem. `el` casa com o branch do shader (0 terra … 4 amor).
+ */
+const ELEMENTOS = [
+  { nome: 'terra', el: 0, corpo: new Vector3(0.22, 0.44, 0.20), ar: new Vector3(0.42, 0.66, 1.00), raio: 0.20 },
+  { nome: 'fogo',  el: 1, corpo: new Vector3(0.95, 0.38, 0.08), ar: new Vector3(1.00, 0.52, 0.22), raio: 0.17 },
+  { nome: 'agua',  el: 2, corpo: new Vector3(0.16, 0.50, 0.74), ar: new Vector3(0.36, 0.86, 0.88), raio: 0.22 },
+  { nome: 'ar',    el: 3, corpo: new Vector3(0.85, 0.92, 1.00), ar: new Vector3(0.80, 0.90, 1.00), raio: 0.15 },
+  { nome: 'amor',  el: 4, corpo: new Vector3(1.00, 0.48, 0.66), ar: new Vector3(1.00, 0.55, 0.72), raio: 0.18 },
+];
 /** Escala a partir da qual o planeta se abre e você atravessa para o mundo dele. */
 export const ENTER_SCALE = 3.4;
 const MIN_SCALE = 0.5;
@@ -96,8 +110,8 @@ const CENTRO_Y = 1.25;
  * cabe num cômodo — a alternativa honesta seria pôr os planetas a trinta
  * metros de altura, e aí não haveria nada para pegar com a mão.
  */
-const SOL_ALTURA = 3.6;   // acima do teto lido, dentro do céu virtual
-const SOL_LADO = 1.4;     // deslocado do eixo: sol a pino não faz sombra
+const SOL_ALTURA = 2.7;   // abaixado: 3,6 m ficava alto demais para achar num teto baixo
+const SOL_LADO = 1.0;     // deslocado do eixo, mas menos: perto o bastante para entrar no campo
 
 /**
  * OS DOIS PÓLOS.
@@ -113,8 +127,10 @@ const SOL_LADO = 1.4;     // deslocado do eixo: sol a pino não faz sombra
  * que muda tudo na leitura: sombra subindo em vez de descendo é a assinatura
  * de estar por cima de uma coisa acesa.
  */
+/** Meia-aresta da caixa onde os asteroides derivam soltos e reentram. */
+const CINT_R = 2.6;
 const NUCLEO_FUNDO = -1.9;   // abaixo do piso do cômodo
-const R_SOL = 0.30;       // maior, porque agora está longe
+const R_SOL = 0.30;       // tamanho original: aumentar cresce a esfera proibida e emperra o carregar
 const COROA = 2.8;        // a coroa vai até quase três raios solares
 const GM = 0.145;         // parâmetro gravitacional: v² = GM/r na órbita circular
 const R_MIN = 0.62;       // ninguém chega mais perto que isto do sol
@@ -185,15 +201,16 @@ export class Space extends Group {
       // Menores que bola de praia: sete planetas de meio metro num quarto
       // ficam ombro a ombro, e enxame apertado lê como aglomerado sólido por
       // mais que a física garanta que ninguém se toca.
-      const raio = 0.13 + r() * 0.25;
-      // Material por planeta: cada um carrega a cor do bioma que guarda. O
+      const elem = ELEMENTOS[i];
+      const raio = elem.raio;
+      // Material por planeta: cada um carrega a cor do elemento que guarda. O
       // programa de shader continua sendo um só, então o custo é de uniforms.
       // cloneMaterial e não clone(): o clone cru duplica também os uniforms
       // globais, e aí o planeta congela no tempo e não acompanha mais a cena.
       const cena = CENAS[i % CENAS.length];
       const mat = cloneMaterial(planetMaterial, {
-        uTint: cena.folha[1].clone(),
-        uElement: i % 3,
+        uTint: elem.corpo.clone(),
+        uElement: elem.el,
       });
       // Identidade fixa: é ela que decide se o planeta é gasoso, rochoso ou
       // gelado, e ela não pode mudar enquanto ele orbita.
@@ -211,14 +228,10 @@ export class Space extends Group {
       //
       // A cor vem do elemento, e é o que mais distingue um planeta do outro
       // de longe: o mundo de água tem céu azul e o de fogo, um ar sulfuroso.
-      const arCor = [
-        new Vector3(0.42, 0.66, 1.00),   // terra — o azul do espalhamento
-        new Vector3(1.00, 0.52, 0.22),   // fogo — poeira alta e enxofre
-        new Vector3(0.36, 0.86, 0.88),   // água — turquesa úmido
-      ][i % 3];
+      const arCor = elem.ar.clone();
       const matAr = cloneMaterial(atmosferaMaterial, {
         uTint: arCor,
-        uElement: i % 3,
+        uElement: elem.el,
         uRazao: 1 / ATM,
         // Gasoso denso, rochoso rarefeito: sem essa variação as sete cascas
         // ficam iguais e a atmosfera vira um verniz aplicado em série.
@@ -284,7 +297,8 @@ export class Space extends Group {
         // trocados por magma, e ao voltar para o Olho eles precisam existir
         // para serem devolvidos. Sem isto o enxame ia para o fogo e não
         // voltava mais.
-        elemento: i % 3, tintaOlho: arCor.clone(), tintaCorpo: cena.folha[1].clone(),
+        elemento: elem.el, nomeElemento: elem.nome,
+        tintaOlho: arCor.clone(), tintaCorpo: elem.corpo.clone(),
         corpo, ar, raio, mat, mats: [mat, matAr], vel, preso: false,
         alvo: null, bioma: cena.id,
         massa: raio * raio * raio,     // massa vai com o volume, como convém
@@ -363,19 +377,24 @@ export class Space extends Group {
     const _s = new Vector3();
 
     for (let i = 0; i < N; i++) {
-      // Dois anéis finos, para o cinturão ter borda em vez de virar uma nuvem
-      // uniforme: a maioria entre 1,5 e 2,0, alguns dispersos até 2,4.
-      const raio = (r() < 0.8 ? 1.5 + r() * 0.5 : 2.0 + r() * 0.4);
-      const fase = r() * Math.PI * 2;
-      const incl = (r() - 0.5) * 0.28;         // cinturão quase plano
-      const tam = 0.09 + r() * 0.05;           // do tamanho de bolas de futebol (~11 cm de raio)
-      const vel = Math.sqrt(GM / raio) * (0.85 + r() * 0.3);
+      // SOLTOS, não em anel. Cada asteroide é um corpo à deriva: nasce num
+      // ponto qualquer do volume e cruza o espaço em linha reta, numa direção
+      // sua. Quando sai da caixa, reentra pelo lado oposto — um fluxo contínuo
+      // de cascalho passando, em vez de um cinturão coreografado.
+      const tam = 0.03 + r() * 0.03;           // cascalho miúdo (3–6 cm)
+      const pos = new Vector3(
+        (r() - 0.5) * 2 * CINT_R,
+        CENTRO_Y + (r() - 0.5) * 2 * CINT_R,
+        (r() - 0.5) * 2 * CINT_R,
+      );
+      // Direção aleatória na esfera, velocidade lenta para dar tempo de ver.
+      const dir = new Vector3(r() - 0.5, r() - 0.5, r() - 0.5);
+      if (dir.lengthSq() < 1e-4) dir.set(1, 0, 0);
+      dir.normalize().multiplyScalar(0.06 + r() * 0.10);
       const giro = new Vector3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.6);
-      this.asteroides.push({ raio, fase, incl, tam, vel, giro, rot: new Euler() });
-      // posição inicial (a órbita real é aplicada no update)
-      _p.set(Math.cos(fase) * raio, CENTRO_Y + Math.sin(incl) * raio, Math.sin(fase) * raio);
+      this.asteroides.push({ pos, vel: dir, tam, giro, rot: new Euler() });
       _s.setScalar(tam);
-      _m.compose(_p, _q, _s);
+      _m.compose(pos, _q, _s);
       malha.setMatrixAt(i, _m);
     }
     malha.instanceMatrix.needsUpdate = true;
@@ -392,12 +411,17 @@ export class Space extends Group {
     const _s = new Vector3();
     for (let i = 0; i < this.asteroides.length; i++) {
       const a = this.asteroides[i];
-      const ang = a.fase + t * a.vel * 0.25;
-      _p.set(Math.cos(ang) * a.raio, CENTRO_Y + Math.sin(a.incl) * a.raio, Math.sin(ang) * a.raio);
+      // Deriva reta e reentrada: quando ultrapassa a borda da caixa em qualquer
+      // eixo, volta para o lado oposto, então o fluxo nunca esvazia.
+      a.pos.addScaledVector(a.vel, dt);
+      const cy = a.pos.y - CENTRO_Y;
+      if (a.pos.x >  CINT_R) a.pos.x = -CINT_R; else if (a.pos.x < -CINT_R) a.pos.x = CINT_R;
+      if (cy >  CINT_R) a.pos.y = CENTRO_Y - CINT_R; else if (cy < -CINT_R) a.pos.y = CENTRO_Y + CINT_R;
+      if (a.pos.z >  CINT_R) a.pos.z = -CINT_R; else if (a.pos.z < -CINT_R) a.pos.z = CINT_R;
       a.rot.x += a.giro.x * dt; a.rot.y += a.giro.y * dt; a.rot.z += a.giro.z * dt;
       _q.setFromEuler(a.rot);
       _s.setScalar(a.tam);
-      _m.compose(_p, _q, _s);
+      _m.compose(a.pos, _q, _s);
       this.cinturao.setMatrixAt(i, _m);
     }
     this.cinturao.instanceMatrix.needsUpdate = true;
