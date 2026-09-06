@@ -330,8 +330,30 @@ const toastEl = el('toast'), toastText = el('toast-text');
 const scanEl = el('scan'), scanTitle = el('scan-title'), scanInfo = el('scan-info');
 let toastTimer = 0;
 
-function toast(msg, swatch = '#c07bff') {
+/**
+ * MODO GALERIA.
+ *
+ * A obra é uma experiência artística, não uma demo com legendas. A maioria dos
+ * avisos narra o gesto que a pessoa acabou de fazer — "Encanto intenso",
+ * "Aquarela sobre papel" — e ler o rótulo de uma mudança quebra justamente a
+ * imersão que a mudança deveria causar. No modo galeria esses avisos ficam
+ * mudos; sobram só os que orientam de verdade (escanear, "não coube ali") e as
+ * saudações de cada cena, que são texto de autor, não de interface.
+ *
+ * Ligado por padrão. `?ui=1` traz todos os avisos de volta, para depurar.
+ */
+const MODO_GALERIA = typeof location === 'undefined'
+  || new URLSearchParams(location.search).get('ui') !== '1';
+
+/**
+ * Avisa. `tipo` decide o que sobrevive ao modo galeria:
+ *   'guia'  — orientação necessária (sempre aparece)
+ *   'cena'  — a saudação poética de uma cena (sempre aparece)
+ *   'gesto' — narração do que a pessoa fez (mudo na galeria) — o padrão
+ */
+function toast(msg, swatch = '#c07bff', tipo = 'gesto') {
   if (!toastEl) return;
+  if (MODO_GALERIA && tipo === 'gesto') return;
   toastText.textContent = msg;
   const dot = toastEl.querySelector('.sw');
   dot.style.color = swatch; dot.style.background = swatch;
@@ -460,7 +482,7 @@ function confirmarEspaco() {
   // Há hit-test e o anel está no chão: aí sim o toque vale.
   if (room.commitFromReticle()) { commitRoom(); return true; }
 
-  toast('Aponte para o chão até o anel aparecer');
+  toast('Aponte para o chão até o anel aparecer', '#c07bff', 'guia');
   return false;
 }
 
@@ -678,7 +700,7 @@ function commitRoom() {
   // tela ainda para atravessar.
   aplicarCena(0, { imediato: true });
   const c = montarCena(0);
-  toast(`${c.nome} — ${c.saudacao}`, c.swatch);
+  toast(`${c.nome} — ${c.saudacao}`, c.swatch, 'cena');
 }
 
 /**
@@ -692,7 +714,7 @@ function commitRoom() {
  */
 async function freshScan({ automatico = false } = {}) {
   if (!xr.canCapture) {
-    if (!automatico) toast('Este aparelho não permite escanear pelo app');
+    if (!automatico) toast('Este aparelho não permite escanear pelo app', '#c07bff', 'guia');
     return false;
   }
   if (scanning) return false;
@@ -709,9 +731,9 @@ async function freshScan({ automatico = false } = {}) {
 
   if (ok) {
     // A leitura nova chega assíncrona; o painel acompanha sozinho.
-    toast('Espaço escaneado — olhe ao redor');
+    toast('Espaço escaneado — olhe ao redor', '#c07bff', 'guia');
   } else if (!automatico) {
-    toast('O sistema recusou escanear agora');
+    toast('O sistema recusou escanear agora', '#c07bff', 'guia');
   }
   updateScanPanel();
   return ok;
@@ -843,7 +865,7 @@ function montarCena(i) {
   _ultimoPasso.set(1e9, 0, 1e9);
   ping(1);
   audio.chime(12, 0.3);
-  toast(`${c.nome} — ${c.saudacao}`, c.swatch);
+  toast(`${c.nome} — ${c.saudacao}`, c.swatch, 'cena');
   return c;
 }
 
@@ -993,7 +1015,7 @@ function plantAt(worldPoint, kind = 'normal') {
     ping(0.55);
     audio.chime([0, 4, 7, 11, 14][Math.floor(Math.random() * 5)], 0.14);
   } else {
-    toast(PLANT_MESSAGE[result]);
+    toast(PLANT_MESSAGE[result], '#c07bff', 'guia');
   }
   return result;
 }
@@ -1032,7 +1054,7 @@ const interaction = new Interaction(renderer, scene, camera, {
     puxando.delete(controller);
     if (alca.espaco) { space.drop(alca.planeta); audio.chime(9, 0.12); return; }
     const r = forest.drop(alca, forest.worldToLocal(alca.ponto.clone()));
-    if (r === 'devolvido') toast('Não coube ali — voltou para o lugar');
+    if (r === 'devolvido') toast('Não coube ali — voltou para o lugar', '#c07bff', 'guia');
     audio.chime(r === 'plantado' ? 7 : -7, 0.14);
   },
 
@@ -1353,7 +1375,7 @@ async function enterXR(mode) {
     if (xr.canCapture) {
       await freshScan({ automatico: true });
     } else {
-      toast('Este navegador não abre o escaneamento — usando o espaço já mapeado');
+      toast('Este navegador não abre o escaneamento — usando o espaço já mapeado', '#c07bff', 'guia');
     }
   } catch (err) {
     btn.disabled = false;
@@ -1597,7 +1619,7 @@ const hands = new Hands(renderer, {
     const result = forest.drop(handle, toLocal(ondeCai));
     ping(0.5);
     audio.chime(result === 'plantado' ? 7 : -7, 0.14);
-    if (result === 'devolvido') toast('Não coube ali — voltou para o lugar');
+    if (result === 'devolvido') toast('Não coube ali — voltou para o lugar', '#c07bff', 'guia');
   },
 });
 scene.add(hands);
