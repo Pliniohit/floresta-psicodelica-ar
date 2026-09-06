@@ -133,6 +133,20 @@ export class Hands extends Group {
       m.count = 0;
       this.add(m);
     }
+
+    // O ESQUELETO DAS MÃOS É SÓ DEPURAÇÃO.
+    //
+    // As bolinhas nas juntas e os cilindros nos ossos ajudavam a conferir o
+    // rastreamento durante o desenvolvimento, mas na obra são ruído: a mão de
+    // verdade já aparece no passthrough, e um esqueleto desenhado por cima
+    // dela compete com a própria mão. O rastreamento continua — pinça,
+    // abertura, normal da palma —, só o desenho fica escondido.
+    //
+    // Ligável com `?maos=1` para depurar de novo.
+    const querMaos = typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('maos') === '1';
+    this.mostrarEsqueleto = querMaos;
+    for (const m of [this.jointMesh, this.tipMesh, this.boneMesh]) m.visible = querMaos;
   }
 
   /** Alguma mão sendo rastreada agora? */
@@ -214,11 +228,13 @@ export class Hands extends Group {
       }
     }
 
-    this.jointMesh.count = joints;
-    this.tipMesh.count = tips;
-    this.jointMesh.instanceMatrix.needsUpdate = true;
-    this.tipMesh.instanceMatrix.needsUpdate = true;
-    this.#ossos();
+    if (this.mostrarEsqueleto) {
+      this.jointMesh.count = joints;
+      this.tipMesh.count = tips;
+      this.jointMesh.instanceMatrix.needsUpdate = true;
+      this.tipMesh.instanceMatrix.needsUpdate = true;
+      this.#ossos();
+    }
   }
 
   /** Estica um cilindro de cada junta até a seguinte, em toda cadeia. */

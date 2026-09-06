@@ -759,6 +759,20 @@ function atravessar(mundo, sentido) {
   // O hub nasce em volta de onde você está AGORA e fica parado ali: é o que
   // permite dar a volta nos corpos caminhando quando ele chegar.
   space.position.set(_head.x, forest.position.y, _head.z);
+
+  // O SOL EM CIMA DA LÂMPADA. Se a sala tem uma luminária mapeada, a estrela
+  // do Olho nasce exatamente nela: a luz física e o astro da obra viram o
+  // mesmo ponto. `room.lamp` está em mundo; o space guarda em coordenadas
+  // locais (mundo menos a própria origem).
+  if (room.lamp) {
+    space.fixarSolEm(new Vector3(
+      room.lamp.x - space.position.x,
+      room.lamp.y - space.position.y,
+      room.lamp.z - space.position.z,
+    ));
+  } else {
+    space.fixarSolEm(null);
+  }
   ping(1);
 
   // Subindo, o acorde abre; descendo, ele fecha. É a mesma informação que a

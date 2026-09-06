@@ -83,6 +83,7 @@ export const cenas = [
     nome: 'A Crisálida',
     palette: 0,
     swatch: '#587f87',
+    corLuz: '#1f6bff',   // cor da luminária física nesta cena
     saudacao: 'Só um casulo pendurado num fio. Toque nele.',
     // O primeiro é quase vazio de propósito: é o quadro de abertura da
     // animação, e ali não há nada além do casulo e dos anéis que saem dele.
@@ -105,6 +106,7 @@ export const cenas = [
     aquatico: true,   // aqui não há borboleta: há cardume
     palette: 0,
     swatch: '#3fc8ff',
+    corLuz: '#2f9fe0',   // cor da luminária física nesta cena
     saudacao: 'A gota caiu. Da onda sobe uma árvore de água.',
     folha: ['#22405c', '#44677c', '#122645'],
     casca: ['#122645', '#22405c', '#b0836e'],
@@ -124,6 +126,7 @@ export const cenas = [
     nome: 'A Montanha',
     palette: 3,
     swatch: '#8d523b',
+    corLuz: '#d2691e',   // cor da luminária física nesta cena
     saudacao: 'Terracota e mar de ouro. A semente da vida coroa o cume.',
     folha: ['#8d523b', '#be9478', '#4d6b79'],
     casca: ['#782413', '#8d523b', '#2a4656'],
@@ -144,6 +147,7 @@ export const cenas = [
     aquatico: true,   // aqui não há borboleta: há cardume
     palette: 0,
     swatch: '#98bad7',
+    corLuz: '#18b0b0',   // cor da luminária física nesta cena
     saudacao: 'O fundo. Aqui toda luz vem de dentro dos bichos.',
     // O ato mais claro da animação: o breu cai para 42% do quadro e os azuis
     // sobem. É o cenário onde a bioluminescência manda.
@@ -165,6 +169,7 @@ export const cenas = [
     nome: 'A Dançarina',
     palette: 5,
     swatch: '#a23731',
+    corLuz: '#d02c22',   // cor da luminária física nesta cena
     saudacao: 'Tinta vermelha e fio de ouro. O chão é de vitórias-régias.',
     folha: ['#a23731', '#724d3c', '#53251e'],
     casca: ['#53251e', '#8c091c', '#724d3c'],
@@ -184,6 +189,7 @@ export const cenas = [
     nome: 'O Olho',
     palette: 4,
     swatch: '#897ca0',
+    corLuz: '#ffcc33',   // cor da luminária física nesta cena
     saudacao: 'O olho se abriu. Os planetas estão ao alcance da mão.',
     // O cenário do cosmos: é aqui que os planetas vivem, e é o único com
     // buracos abertos nas paredes.
@@ -206,6 +212,7 @@ export const cenas = [
     nome: 'O Palco',
     palette: 5,
     swatch: '#cfa6a9',
+    corLuz: '#e0a050',   // cor da luminária física nesta cena
     saudacao: 'A sala era o palco desde o começo. Puxe a lanterna.',
     // O último plano da animação: tudo aquilo estava dentro de um proscênio.
     // Em realidade mista isso não precisa ser encenado — o cômodo JÁ é o palco.
@@ -228,6 +235,7 @@ export const cenas = [
     nome: 'O Núcleo',
     palette: 2,
     swatch: '#e2662a',
+    corLuz: '#ff3a10',   // cor da luminária física nesta cena
     saudacao: 'Você desceu até o magma. As sementes estão ao alcance da mão.',
     // O PÓLO DE DENTRO — o espelho de O Olho.
     //

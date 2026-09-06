@@ -368,7 +368,24 @@ export class Space extends Group {
     return this.polo;
   }
 
+  /**
+   * Fixa o sol num ponto do mundo — a luminária física da sala.
+   *
+   * A ideia de Raízes Cósmicas é que a luz de verdade e o astro da obra sejam
+   * a mesma coisa. No pólo do Olho a estrela normalmente fica num canto do céu
+   * virtual; quando a sala tem uma lâmpada mapeada, ela vira ESSE canto — o
+   * sol nasce em cima da luz real, e a lâmpada acesa em amarelo é a própria
+   * estrela. `p` vem em coordenadas locais do space (mundo menos space.position).
+   */
+  fixarSolEm(p) {
+    this.solFixo = p ? p.clone() : null;
+  }
+
   #porSol() {
+    if (this.solFixo && this.polo > 0) {
+      this.sol.position.copy(this.solFixo);
+      return;
+    }
     if (this.polo > 0) {
       this.sol.position.set(SOL_LADO, SOL_ALTURA, -SOL_LADO * 0.7);
     } else {
