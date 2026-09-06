@@ -4,8 +4,61 @@ import {
 import { reticleRing } from './geometry.js';
 import { reticleMaterial } from './shaders/materials.js';
 
+/**
+ * Lado da ÁREA DE JOGO, em metros.
+ *
+ * A obra se distribui dentro de um quadrado deste tamanho, centrado no piso
+ * lido. O espaço da ativação é 3×3 m, e sem esta trava a floresta se espalhava
+ * por todo o polígono escaneado — o que muda de sala para sala e faz a mesma
+ * obra nascer com outra forma a cada leitura.
+ *
+ * Ajustável pela URL, para ensaiar em salas de outro tamanho: `?area=4`.
+ */
+export const AREA_JOGO = (() => {
+  // Os testes rodam estes módulos no Node, onde não existe `location`.
+  const busca = typeof location === 'undefined' ? '' : location.search;
+  const v = Number(new URLSearchParams(busca).get('area'));
+  return Number.isFinite(v) && v > 0.5 ? v : 3.0;
+})();
+
 /** Lado da área quadrada criada quando o espaço vem de um toque no chão. */
-const TAP_AREA = 3.5;
+const TAP_AREA = AREA_JOGO;
+
+/**
+ * Recorta um polígono contra um quadrado alinhado aos eixos (Sutherland-
+ * Hodgman). É o que mantém a obra dentro da área de jogo sem inventar chão:
+ * o resultado é a interseção entre o piso realmente lido e o quadrado.
+ */
+export function clipToSquare(poly, cx, cz, lado) {
+  const h = lado / 2;
+  const interp = (a, b, t) => new Vector2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+  const bordas = [
+    { dentro: (p) => p.x >= cx - h, corta: (a, b) => interp(a, b, (cx - h - a.x) / (b.x - a.x)) },
+    { dentro: (p) => p.x <= cx + h, corta: (a, b) => interp(a, b, (cx + h - a.x) / (b.x - a.x)) },
+    { dentro: (p) => p.y >= cz - h, corta: (a, b) => interp(a, b, (cz - h - a.y) / (b.y - a.y)) },
+    { dentro: (p) => p.y <= cz + h, corta: (a, b) => interp(a, b, (cz + h - a.y) / (b.y - a.y)) },
+  ];
+
+  let saida = poly.map((p) => new Vector2(p.x, p.y));
+  for (const borda of bordas) {
+    const entrada = saida;
+    saida = [];
+    for (let i = 0; i < entrada.length; i++) {
+      const atual = entrada[i];
+      const anterior = entrada[(i + entrada.length - 1) % entrada.length];
+      const dentroAtual = borda.dentro(atual);
+      const dentroAnterior = borda.dentro(anterior);
+      if (dentroAtual) {
+        if (!dentroAnterior) saida.push(borda.corta(anterior, atual));
+        saida.push(atual);
+      } else if (dentroAnterior) {
+        saida.push(borda.corta(anterior, atual));
+      }
+    }
+    if (!saida.length) return null;   // nada em comum: quem chama decide
+  }
+  return saida;
+}
 
 // ---------------------------------------------------------------------------
 // Geometria de polígono (tudo no plano XZ, em metros)
@@ -334,7 +387,7 @@ export class RoomScan {
 
   /** Último recurso, quando nada foi detectado e o usuário quis começar mesmo assim. */
   useFallback(center) {
-    this.footprint = fallbackRoom(center, 4.0, 4.0);
+    this.footprint = fallbackRoom(center, AREA_JOGO, AREA_JOGO);
     this.floorY = 0;
     this.obstacles = [];
     this.surfaces = [];

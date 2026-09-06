@@ -4,7 +4,9 @@ import {
 } from '../vendor/three/three.module.min.js';
 import { Forest } from './forest.js';
 import { XRStage, detect } from './xr.js';
-import { RoomScan, fallbackRoom, polygonArea } from './room.js';
+import {
+  RoomScan, fallbackRoom, polygonArea, polygonCentroid, clipToSquare, AREA_JOGO,
+} from './room.js';
 import { Interaction } from './interaction.js';
 import { Hands } from './hands.js';
 import { WristMenu } from './menu.js';
@@ -422,7 +424,66 @@ function abrirPortal() {
 }
 
 /** Fecha o mapeamento e faz a floresta brotar dentro do cômodo lido. */
+/**
+ * Recorta o piso lido para a área de jogo e guarda o quadrado usado.
+ *
+ * Só encolhe: se o cômodo já for menor que a área, ele fica como está. Se o
+ * recorte não sobrar nada de útil (leitura torta, polígono minúsculo), mantém
+ * o piso original — é melhor uma sala inteira do que nenhuma.
+ */
+/**
+ * Confirma o espaço onde a obra vai nascer.
+ *
+ * A ORDEM É A REGRA. O que manda é sempre a leitura real da sala; o toque no
+ * chão vem só quando não há leitura nenhuma e o runtime não deixa escanear.
+ *
+ * Antes, tanto o gatilho quanto a pinça tentavam `commitFromReticle()` logo
+ * depois de `room.ready` — e como esse recorte nasce onde a mira estiver, cada
+ * aperto ancorava a obra num lugar diferente. Era o que fazia a estrutura
+ * mudar de forma a cada tentativa.
+ *
+ * Devolve true quando o espaço foi confirmado.
+ */
+function confirmarEspaco() {
+  if (room.ready) { commitRoom(); return true; }
+
+  // Sem leitura boa, mas dá para escanear: pedir a varredura é sempre melhor
+  // do que inventar um chão.
+  if (xr.canCapture) { rescan(); return false; }
+
+  // Sem hit-test não há para onde mirar: a sala padrão nasce sob os pés de
+  // quem está usando, e não à frente do olhar — assim ela cai no mesmo lugar
+  // independentemente de para onde a pessoa estava olhando.
+  if (!room.hasHitTest) { room.useFallback(sobOsPes()); commitRoom(); return true; }
+
+  // Há hit-test e o anel está no chão: aí sim o toque vale.
+  if (room.commitFromReticle()) { commitRoom(); return true; }
+
+  toast('Aponte para o chão até o anel aparecer');
+  return false;
+}
+
+function ajustarAreaDeJogo() {
+  if (!room.footprint || room.footprint.length < 3) return;
+  const centro = polygonCentroid(room.footprint);
+  const recorte = clipToSquare(room.footprint, centro.x, centro.y, AREA_JOGO);
+  if (!recorte || recorte.length < 3 || polygonArea(recorte) < 0.5) return;
+  room.footprint = recorte;
+  room.areaDeJogo = AREA_JOGO;
+}
+
 function commitRoom() {
+  // ÁREA DE JOGO. A obra ocupa sempre o mesmo quadrado, centrado no piso lido
+  // e recortado contra o polígono real — nunca chão que não existe.
+  //
+  // Sem isso, a distribuição seguia o cômodo inteiro: cada leitura de sala
+  // dava outra forma, e apertar a pinça antes de o Space Setup estar pronto
+  // ancorava a obra onde o olhar estivesse naquele instante. Numa ativação com
+  // espaço definido, a estrutura precisa cair sempre do mesmo jeito.
+  //
+  // A política mora aqui, e não em `forest.applyRoom`: aquele método continua
+  // fiel ao polígono que recebe, que é o que os testes verificam.
+  ajustarAreaDeJogo();
   forest.applyRoom(room);
   // Descampado: a floresta é obra de quem planta, não da geração.
   forest.seedBare(state.seed);
@@ -787,14 +848,15 @@ function plantAt(worldPoint, kind = 'normal') {
   return result;
 }
 
-/** Ponto no chão a 2 m à frente de quem está olhando. */
-function aheadOfCamera(distance = 2.0) {
-  const fwd = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  fwd.y = 0;
-  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
-  fwd.normalize().multiplyScalar(distance);
-  const p = camera.position.clone().add(fwd);
-  return new Vector2(p.x, p.z);
+/**
+ * Ponto no chão sob quem está usando o headset.
+ *
+ * É o centro estável da área de jogo quando não há sala lida: não depende de
+ * para onde a pessoa olha, então apertar duas vezes dá exatamente o mesmo
+ * resultado — que é o ponto de toda a regra da área de jogo.
+ */
+function sobOsPes() {
+  return new Vector2(camera.position.x, camera.position.z);
 }
 
 // ---------------------------------------------------------------------------
@@ -825,21 +887,7 @@ const interaction = new Interaction(renderer, scene, camera, {
     // nesse caso é a lógica de mãos, senão a pinça planta e pega ao mesmo tempo.
     if (controller?.userData?.source?.hand) return;
     if (state.phase === 'mapping') {
-      if (room.ready || room.commitFromReticle()) {
-        commitRoom();
-      } else if (xr.canCapture) {
-        // Nada conhecido e o runtime deixa escanear: é a hora exata de pedir.
-        rescan();
-        return;
-      } else if (!room.hasHitTest) {
-        room.useFallback(aheadOfCamera());
-        commitRoom();
-      } else {
-        // Há hit-test, mas o chão ainda não foi achado: insistir é melhor do
-        // que largar a floresta num lugar arbitrário.
-        toast('Aponte para o chão até o anel aparecer');
-        return;
-      }
+      if (!confirmarEspaco()) return;
       interaction.pulse(controller, 0.8, 60);
     } else if (state.phase === 'growing' && portalSobMira(controller)) {
       abrirPortal();
@@ -1270,9 +1318,7 @@ function chaoDoRaio(origem, direcao, alcance = 9) {
 const hands = new Hands(renderer, {
   onPinchStart: (hand) => {
     if (state.phase === 'mapping') {
-      if (room.ready || room.commitFromReticle()) commitRoom();
-      else if (!room.hasHitTest) { room.useFallback(aheadOfCamera()); commitRoom(); }
-      else toast('Aponte para o chão até o anel aparecer');
+      confirmarEspaco();
       return;
     }
     if (state.phase !== 'growing') return;
