@@ -1997,6 +1997,18 @@ function frame(time, xrFrame) {
     // que a vegetação tem de sentir, e quem se agacha continua sendo notado.
     shared.uPresenca.value.copy(body.joints.chest ?? _head);
 
+    // OS DEDOS NA PAREDE LÍQUIDA. As pontas de indicador de cada mão viram
+    // pontos de toque no cristal líquido; a força sobe quando o dedo está
+    // rastreado e decai devagar quando ele sai, para o afundamento relaxar em
+    // vez de sumir de golpe. Sem mãos (controles), a ponta do raio faz o toque.
+    const dedos = shared.uDedos.value;
+    for (let i = 0; i < dedos.length; i++) {
+      const st = hands.states[i];
+      let tocou = false;
+      if (st?.tracked) { dedos[i].set(st.indexTip.x, st.indexTip.y, st.indexTip.z, 1); tocou = true; }
+      if (!tocou) dedos[i].w = Math.max(0, dedos[i].w - dt * 2.2);
+    }
+
     // Corpo inferido de cabeça + punhos, e o que floresce nele.
     body.update(camera, hands);
     bodyGrowth.update(body, t, dt);

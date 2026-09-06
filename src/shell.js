@@ -63,16 +63,14 @@ export class Shell extends Group {
     this.walls = [];
     this.amount = 0;
 
-    // PAREDES LIMPAS.
-    //
-    // A casca vestia as paredes reais com padrões ornamentais — as "grades",
-    // registros, ondas, filigranas de cada cena. Elas competiam com o próprio
-    // cômodo e com o vídeo pendurado na parede, e para uma experiência de
-    // apreciação a parede tem de ficar como está: a sua sala, e sobre ela só
-    // o portal com a animação. A casca não é mais desenhada. Religável com
-    // `?paredes=1`.
-    this.desenhar = typeof location !== 'undefined'
-      && new URLSearchParams(location.search).get('paredes') === '1';
+    // A casca não veste mais as paredes com padrões ornamentais — as "grades",
+    // registros, filigranas de cada cena, que competiam com o cômodo e com o
+    // vídeo. Em vez disso ela é agora uma única camada de CRISTAL LÍQUIDO
+    // IRIDESCENTE (ver wallMaterial): uma película que muda de cor conforme
+    // você anda e afunda como gelatina onde os dedos tocam. `?paredes=0`
+    // esconde tudo, deixando a parede real nua.
+    this.desenhar = typeof location === 'undefined'
+      || new URLSearchParams(location.search).get('paredes') !== '0';
   }
 
   /**

@@ -1,5 +1,5 @@
 import {
-  ShaderMaterial, Vector3, DoubleSide, FrontSide, BackSide,
+  ShaderMaterial, Vector3, Vector4, DoubleSide, FrontSide, BackSide,
   AdditiveBlending, NormalBlending,
 } from '../../vendor/three/three.module.min.js';
 import {
@@ -45,6 +45,10 @@ export const shared = {
   uSteps:  { value: Array.from({ length: 12 }, () => new Vector3(0, 0, 0)) },
   uPresenca:  { value: new Vector3(0, -100, 0) },   // longe até alguém chegar
   uPresencaR: { value: 1.15 },
+  // As quatro pontas de dedo que tocam a parede líquida: xyz é a posição em
+  // mundo, w a força do toque (decai depois que o dedo sai). Longe até alguém
+  // encostar. É o que faz a camada de cristal líquido reagir como gelatina.
+  uDedos:  { value: Array.from({ length: 4 }, () => new Vector4(0, -100, 0, 0)) },
   uSway:   { value: 0.010 },
   uPulse:  { value: 0 },
   uGlow:   { value: 0.80 },   // bioluminescência: 0 mata apagada, 1 tudo aceso
@@ -1716,7 +1720,7 @@ export const wallMaterial = make('paredes', {
   transparent: true,
   depthWrite: false,
   side: DoubleSide,
-  blending: AdditiveBlending,
+  blending: NormalBlending,
   uniforms: { uShell: { value: 0 } },
   vert: /* glsl */ `
     void main(){
@@ -1727,91 +1731,25 @@ export const wallMaterial = make('paredes', {
   frag: /* glsl */ `
     uniform float uShell;
 
-    // Cada padrão devolve vec2(corpo, realce): a massa do desenho e a linha
-    // acesa por cima dela. A COR não mora aqui — vem da cena, por uniform.
-    // Assim um padrão serve a qualquer paleta, e trocar de cenário não exige
-    // reescrever desenho nenhum.
+    // CRISTAL LÍQUIDO IRIDESCENTE.
+    //
+    // A parede vira uma película fina de cristal líquido — como óleo sobre
+    // água, ou a superfície de uma bolha de sabão. A cor não é pintada: é
+    // INTERFERÊNCIA, o mesmo fenômeno da asa de besouro e da madrepérola. A
+    // espessura ótica varia com o ângulo de visão e com um ondular lento, e
+    // cada espessura devolve uma cor diferente do espectro. Por isso a mesma
+    // parede muda de tom conforme você anda diante dela.
+    //
+    // E é GELATINOSA: onde um dedo toca, a película afunda e as ondas de
+    // interferência se adensam em anéis em volta do ponto, como a superfície
+    // de um líquido cutucado. As quatro pontas de dedo chegam em uDedos (xyz =
+    // posição em mundo, w = força do toque, que decai depois que o dedo sai).
 
-    /** FAIXAS — registros ornamentais horizontais, como a borda de um têxtil. */
-    vec2 padFaixas(vec3 w, float h){
-      float y = fract(h * 0.85);
-      float dentro = smoothstep(0.04, 0.12, y) * smoothstep(0.46, 0.34, y);
-      float u = w.x * 1.9 + w.z * 1.5;
-      // Grega de degraus: quantizar u e y e alternar dá o zigue-zague sem
-      // desenhar um único segmento.
-      float degrau = step(0.5, fract(floor(u * 7.0) * 0.5 + floor(y * 6.0) * 0.5));
-      float conta = smoothstep(0.40, 0.50, abs(fract(u * 11.0) - 0.5));
-      float fio = smoothstep(0.030, 0.0, abs(y - 0.045))
-                + smoothstep(0.030, 0.0, abs(y - 0.455));
-      return vec2(dentro * mix(0.18, 1.0, degrau) * conta, fio);
-    }
-
-    /** ONDAS — cristas atravessando a alvenaria, subindo devagar. */
-    vec2 padOndas(vec3 w, float h){
-      float onda = sin((w.y - uTime * 0.20) * 5.0
-                     + fbm2(vec3(w.xz * 1.5, uTime * 0.045)) * 3.6);
-      float crista = pow(max(onda, 0.0), 3.0);
-      return vec2(0.28 + crista * 1.05, crista * crista);
-    }
-
-    /** BRASA — a parede racha e o que está atrás dela brilha. */
-    vec2 padBrasa(vec3 w, float h){
-      float veia = fbm2(vec3(w.xz * 3.1, w.y * 1.2 - uTime * 0.035));
-      float fenda = pow(max(0.0, 1.0 - abs(veia - 0.5) * 2.4), 6.0);
-      float vivo = damp(0.78 + 0.22 * sin(uTime * 0.55 + w.y * 1.6), 0.86);
-      return vec2(fenda * vivo * (0.55 + exp(-h * 0.34)), fenda * fenda * vivo);
-    }
-
-    /** DENDRITO — a ramificação que é coral, raiz e raio ao mesmo tempo. */
-    vec2 padDendrito(vec3 w, float h){
-      float n = fbm2(vec3(w.xz * 2.2, w.y * 1.4 + uTime * 0.02));
-      float m = fbm2(vec3(w.xz * 4.7 + 31.0, w.y * 2.1 - uTime * 0.03));
-      // O ramo é onde dois ruídos de escalas diferentes se cruzam. Traçar
-      // galho por galho custaria caro e ficaria regular demais.
-      float ramo = pow(max(0.0, 1.0 - abs(n - m) * 7.0), 4.0);
-      return vec2(ramo * (0.5 + exp(-h * 0.22)), ramo * ramo * 1.6);
-    }
-
-    /** FILIGRANA — volutas encadeadas, o arabesco vermelho e ouro. */
-    vec2 padFiligrana(vec3 w, float h){
-      // Duas ondas moduladas uma pela outra: o encadeamento nasce do
-      // cruzamento delas, sem desenhar voluta nenhuma.
-      vec2 p = vec2(w.x * 2.3 + w.z * 1.1, w.y * 2.0);
-      float a = sin(p.x * 3.1 + sin(p.y * 2.3) * 2.2);
-      float b = sin(p.y * 3.7 - sin(p.x * 1.9) * 2.6);
-      float laco = pow(max(0.0, 1.0 - abs(a - b) * 2.4), 5.0);
-      float fino = smoothstep(0.46, 0.5, abs(fract(p.x * 2.0 + p.y) - 0.5));
-      return vec2(laco * 1.2 + fino * 0.09, laco * laco * 1.8);
-    }
-
-    /** MÁRMORE — tinta sobre água, com domain warping. */
-    vec2 padMarmore(vec3 w, float h){
-      vec3 q = vec3(w.xz * 1.2, w.y * 0.7 + uTime * 0.012);
-      float warp = vnoise(q * 0.9);
-      float v = fbm3(q + warp * 2.0);
-      float veio = 1.0 - smoothstep(0.0, 0.05, abs(fract(v * 3.0) - 0.5));
-      return vec2(0.18 + v * 0.50, veio);
-    }
-
-    /** ROCHA — a moldura de rocha pintada do proscênio. */
-    vec2 padRocha(vec3 w, float h){
-      float estria = fbm2(vec3(w.xz * 5.5, w.y * 0.35));
-      float sulco = smoothstep(0.40, 0.5, abs(fract(estria * 4.0 + w.y * 0.5) - 0.5));
-      // A moldura vive no rodapé e perto do teto; o meio da parede é a boca
-      // do palco e fica limpo para a cena aparecer nela.
-      float moldura = exp(-h * 1.7) + smoothstep(1.75, 2.35, h);
-      return vec2((0.22 + sulco * 0.70) * (0.35 + moldura), moldura * sulco);
-    }
-
-    vec2 padraoPor(float qual, vec3 w, float h){
-      int i = int(qual + 0.5);
-      if (i == 0) return padFaixas(w, h);
-      if (i == 1) return padOndas(w, h);
-      if (i == 2) return padBrasa(w, h);
-      if (i == 3) return padDendrito(w, h);
-      if (i == 4) return padFiligrana(w, h);
-      if (i == 5) return padMarmore(w, h);
-      return padRocha(w, h);
+    // Cor de interferência de película fina: a fase (proporcional à espessura
+    // ótica) percorre o espectro. Três cossenos defasados dão o arco-íris sem
+    // tabela de cores.
+    vec3 iridescencia(float fase){
+      return 0.55 + 0.45 * cos(6.2831853 * (fase + vec3(0.0, 0.33, 0.66)));
     }
 
     void main(){
@@ -1823,21 +1761,39 @@ export const wallMaterial = make('paredes', {
       float borda = smoothstep(0.5, 0.34, q.x) * smoothstep(0.5, 0.26, q.y);
       if (borda <= 0.004) discard;
 
-      float h = max(vWorld.y - uOrigin.y, 0.0);
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(cameraPosition - vWorld);
+      float fresnel = pow(1.0 - abs(dot(N, V)), 2.5);   // a borda acende, como bolha
 
-      // Dois padrões vivos ao mesmo tempo durante a travessia: o que sai e o
-      // que entra. Fora dela os dois são o mesmo e o mix não custa nada.
-      vec2 pa = padraoPor(uPadA, vWorld, h);
-      vec2 pb = padraoPor(uPadB, vWorld, h);
-      vec2 pd = mix(pa, pb, uPadMix);
+      // Espessura ótica base: ondas lentas cruzando a parede em duas escalas,
+      // para o padrão nunca repetir de forma óbvia.
+      float esp = 0.5
+        + 0.25 * sin(vWorld.y * 5.0 + uTime * 0.35)
+        + 0.20 * fbm2(vec3(vWorld.xz * 2.2, uTime * 0.05));
 
-      vec3 col = uParedeCor * pd.x
-               + mix(uParedeCor, vec3(1.0), 0.55) * pd.y;
-      col *= uParedeForca;
+      // O TOQUE. Cada dedo próximo afunda a película e adensa os anéis.
+      float deformacao = 0.0;
+      for (int i = 0; i < 4; i++){
+        vec4 d = uDedos[i];
+        if (d.w < 0.01) continue;
+        float dist = distance(vWorld, d.xyz);
+        float perto = smoothstep(0.34, 0.0, dist) * d.w;   // 34 cm de alcance
+        // Anéis concêntricos saindo do ponto tocado — a assinatura do líquido.
+        esp += perto * 0.9 * sin(dist * 42.0 - uTime * 3.0);
+        deformacao = max(deformacao, perto);
+      }
 
-      float a = borda * uShell;
-      if (a <= 0.004) discard;
-      gl_FragColor = aditivo(filmic(col) * a);
+      // A cor da cena tinge de leve a iridescência, para a parede pertencer ao
+      // mundo em que você está sem perder o brilho de interferência.
+      vec3 iris = iridescencia(esp + fresnel * 0.3);
+      iris = mix(iris, iris * (0.4 + uParedeCor * 1.2), 0.35);
+
+      // Onde o dedo toca, o brilho sobe — a gota reagindo.
+      iris += deformacao * 0.6;
+
+      float alfa = borda * (0.10 + fresnel * 0.5 + deformacao * 0.5) * uShell;
+      if (alfa <= 0.004) discard;
+      gl_FragColor = vec4(filmic(iris), clamp(alfa, 0.0, 0.92));
     }
   `,
 });
