@@ -550,6 +550,12 @@ uniform float uTrample;
 uniform vec3 uPresenca;
 uniform float uPresencaR;
 
+// As quatro pontas de dedo que tocam a parede de cristal líquido. xyz é a
+// posição em mundo, w a força do toque (decai quando o dedo sai). Declarado
+// aqui no cabeçalho global porque o material das paredes o consome e sem esta
+// linha o shader nem compila.
+uniform vec4 uDedos[4];
+
 /**
  * Quanto deste ponto está sob a sua presença, de 0 a 1.
  *
