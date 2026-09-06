@@ -32,6 +32,17 @@ export class BlackHoles extends Group {
     this.frustumCulled = false;
     this.visible = false;
     this.holes = [];
+
+    // O DISCO DE ACREÇÃO SAIU.
+    //
+    // O buraco negro na parede confundia: lido como um segundo portal, ou como
+    // um rombo na sala, competia com a porta de verdade (a árvore) e com os
+    // planetas ao alcance do braço, que são o que a cena do Olho pede que se
+    // olhe. Os buracos continuam EXISTINDO como pontos de travessia dos
+    // planetas — é por eles que um corpo entra numa parede e sai pela outra —,
+    // só não são mais desenhados. Religável com `?buracos=1`.
+    this.desenhar = typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('buracos') === '1';
   }
 
   /**
@@ -122,7 +133,8 @@ export class BlackHoles extends Group {
 
   /** Acompanha a travessia: 0 na floresta, 1 no espaço. */
   setProgress(v) {
-    this.visible = v > 0.02 && this.holes.length > 0;
+    // Só aparece se explicitamente ligado; os portais funcionam de qualquer jeito.
+    this.visible = this.desenhar && v > 0.02 && this.holes.length > 0;
     blackHoleMaterial.uniforms.uOpen.value = v;
     return v;
   }
