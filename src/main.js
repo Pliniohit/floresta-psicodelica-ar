@@ -604,6 +604,16 @@ function seguirAncora(xrFrame) {
   // deslocamento total da âncora desde que ela nasceu — ruído não acumula.
   _deltaAncora.set(p.x - ancoraPose0.x, p.y - ancoraPose0.y, p.z - ancoraPose0.z);
 
+  // TRAVA CONTRA SALTO. Se o runtime reposicionar a âncora de golpe — o que
+  // acontece quando ele reconcilia o mapa depois de um relocalize —, o delta
+  // dispara e a cena inteira "escorrega" de uma vez. Acima de meio metro num
+  // quadro isso não é a pessoa andando: é o mapa pulando. Rebaseamos a âncora
+  // em silêncio em vez de arrastar a obra atrás dela.
+  if (_deltaAncora.lengthSq() > 0.25) {
+    ancoraPose0.set(p.x, p.y, p.z);
+    return;
+  }
+
   const objetos = ANCORADOS();
   for (let i = 0; i < objetos.length; i++) {
     const base = basesAncoradas[i];

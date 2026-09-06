@@ -46,24 +46,24 @@ const WALK = {
 /** Densidades por metro quadrado de piso livre. */
 const PER_M2 = {
   tree: 0.16,       // eram 0,42 — mata rala, não bosque fechado
-  mushroom: 0.42,   // eram 1,1 — viraram acento, não tapete
+  mushroom: 0,      // removidos: menos elementos, cena mais limpa
   crystal: 0.40,
-  grass: 70,
-  fern: 1.5,
-  shrub: 0.55,
-  flower: 1.9,
-  reed: 1.1,
-  orb: 1.1,
+  grass: 48,        // menos lâminas, cada uma mais encorpada
+  fern: 0.9,
+  shrub: 0.4,
+  flower: 1.1,
+  reed: 0.7,
+  orb: 0.7,        // menos vaga-lumes de chão: brilho mais raro, mais precioso
 };
 /** Densidades sobre móveis: bem mais altas, são superfícies pequenas. */
-const ON_SURFACE = { mushroom: 2.5, moss: 320 };
+const ON_SURFACE = { mushroom: 0, moss: 220 };   // sem cogumelos; menos musgo
 /** Trepadeiras por metro linear de parede. */
 const VINES_PER_M = 3.2;
 const CAPACITY = {
   tree: 26, mushroom: 60, crystal: 32, grass: 2600,
   fern: 90, shrub: 40, flower: 120, reed: 70, cocoon: 14, orb: 40,
 };
-const SPORES = 900;
+const SPORES = 480;   // metade: atmosfera, não confete
 
 /** Quanto uma árvore leva para crescer depois de plantada. */
 export const GROW_SECONDS = 10;

@@ -234,7 +234,7 @@ export function crystal() {
 }
 
 /** Lâmina de capim: 3 triângulos afunilando até a ponta, base em y = 0. */
-export function blade(height = 0.42, width = 0.028) {
+export function blade(height = 0.26, width = 0.045) {
   const h = height;
   const v = [
     [-width, 0, 0], [width, 0, 0], [-width * 0.62, h * 0.5, 0.01],
