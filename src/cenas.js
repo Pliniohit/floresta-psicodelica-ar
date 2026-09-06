@@ -189,7 +189,7 @@ export const cenas = [
     nome: 'O Olho',
     palette: 4,
     swatch: '#897ca0',
-    corLuz: '#ffcc33',   // cor da luminária física nesta cena
+    corLuz: '#ff7a10',   // cor da luminária física nesta cena — laranja incandescente (a estrela)
     saudacao: 'O olho se abriu. Os planetas estão ao alcance da mão.',
     // O cenário do cosmos: é aqui que os planetas vivem, e é o único com
     // buracos abertos nas paredes.

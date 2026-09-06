@@ -810,6 +810,13 @@ function enraizar() {
  */
 function montarCena(i) {
   const c = aplicarCena(i);
+
+  // NORMALIZA A TRAVESSIA. Sem isto, trocar de cena com uma subida pela metade
+  // deixava warp preso num valor intermediário — e floresta e espaço
+  // renderizavam sobrepostos, "os mapas se misturando". Uma cena montada
+  // sempre nasce num extremo: espaço puro num pólo, floresta pura fora dele.
+  state.subindo = false;
+  state.warp = (c.cosmos || c.nucleo) ? 1 : 0;
   state.seed = (state.seed * 1103515245 + 12345) >>> 0;
   forest.setDensidade(c.populacao);
   forest.seed(state.seed);
