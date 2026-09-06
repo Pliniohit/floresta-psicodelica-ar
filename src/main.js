@@ -7,6 +7,7 @@ import { XRStage, detect } from './xr.js';
 import {
   RoomScan, fallbackRoom, polygonArea, polygonCentroid, clipToSquare, AREA_JOGO,
 } from './room.js';
+import { Astro } from './astro.js';
 import { Interaction } from './interaction.js';
 import { Hands } from './hands.js';
 import { WristMenu } from './menu.js';
@@ -485,6 +486,12 @@ function commitRoom() {
   // fiel ao polígono que recebe, que é o que os testes verificam.
   ajustarAreaDeJogo();
   forest.applyRoom(room);
+
+  // O astro nasce onde a luminária está. Se o Space Setup não marcou nenhuma,
+  // ele simplesmente não aparece — a obra segue igual, sem buraco nenhum.
+  if (astro.colocar(room.lamp, forest.position)) {
+    toast('A luz da sala virou um astro', CENAS[state.cena]?.swatch);
+  }
   // Descampado: a floresta é obra de quem planta, não da geração.
   forest.seedBare(state.seed);
   shared.uOrigin.value.copy(forest.position);
@@ -870,6 +877,10 @@ const puxando = new Map();
 const _origem = new Vector3();
 const _direcao = new Vector3();
 const _invForest = new Matrix4();
+
+/** O corpo luminoso que pousa onde a luminária da sala foi lida. */
+const astro = new Astro();
+forest.add(astro);
 
 const interaction = new Interaction(renderer, scene, camera, {
   onSelectEnd: (controller) => {
@@ -1626,6 +1637,7 @@ function frame(time, xrFrame) {
   // A cena inteira é perseguida aqui: cor de folha, de casca, de parede, de
   // céu. Trocar de cenário virou interpolação de uniforms, e não recompilação.
   seguirCena(dt);
+  astro.update(dt, camera);
 
   if (state.phase === 'mapping' && renderer.xr.isPresenting && !scanning) {
     // Durante a captura a tela é do sistema, e ler os planos antigos aqui só
@@ -1877,7 +1889,7 @@ detect().then((res) => {
 // `floresta.state.tripTarget = 1` ou `floresta.forest.seed(99)`.
 window.floresta = {
   // cena
-  forest, arvoreMae, room, roomMesh, sky, constelacao, space, portal, emergence, buracos, shell, tide,
+  forest, arvoreMae, room, roomMesh, sky, constelacao, space, portal, emergence, buracos, shell, tide, astro,
   pirilampos, cardume,
   butterflies, auraFireflies, blessedFireflies, body, bodyGrowth, seeds,
   hands, wristMenu, magic,
@@ -1909,6 +1921,7 @@ window.addEventListener('beforeunload', () => {
   buracos.dispose();
   hands.dispose();
   wristMenu.dispose();
+  astro.dispose();
   forest.dispose();
   room.dispose();
   interaction.dispose();

@@ -178,6 +178,19 @@ const OBSTACLE_LABELS = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'scre
 const COLONIZABLE = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'cabinet', 'other']);
 
 /**
+ * Rótulos que valem por LUMINÁRIA.
+ *
+ * O Space Setup do Quest tem um tipo próprio para lâmpada, e é ele que diz
+ * onde a luz da sala está. Quando existe, a obra pousa um astro ali: o ponto
+ * que já é luminoso no cômodo real vira luminoso também na obra, e as duas
+ * luzes passam a ser a mesma.
+ *
+ * `light` e `lighting` entram porque o vocabulário varia entre versões do
+ * Horizon OS, e errar para mais aqui não custa nada.
+ */
+const LAMP_LABELS = new Set(['lamp', 'light', 'lighting']);
+
+/**
  * Lê as superfícies que o usuário já mapeou no Space Setup do Quest e monta:
  *   - `footprint`  polígono caminhável do chão, em Vector2(x, z)
  *   - `obstacles`  polígonos de móveis, para não plantar dentro do sofá
@@ -190,6 +203,10 @@ const COLONIZABLE = new Set(['table', 'couch', 'bed', 'desk', 'shelf', 'cabinet'
 export class RoomScan {
   constructor() {
     this.footprint = null;
+    /** Onde está a luminária da sala, quando o Space Setup a marcou. */
+    this.lamp = null;
+    /** true quando a posição da luz foi apontada à mão, e não lida. */
+    this.lampManual = false;
     this.obstacles = [];
     this.surfaces = [];    // tampos de móveis, para colonizar por cima
     this.wallBases = [];   // linha pé-de-parede, para trepadeiras
@@ -329,6 +346,19 @@ export class RoomScan {
     this.floorY = floor.y;
     this.footprint = floor.poly;
     this.source = labelled.length ? 'Space Setup' : 'planos detectados';
+
+    // A LUMINÁRIA. Um abajur aparece no Space Setup como um volume; do lado do
+    // WebXR chega o plano do topo dele, com o rótulo. Guardamos o centro e a
+    // altura — é onde o astro vai nascer.
+    const luminaria = [...horizontals, ...verticals]
+      .filter((h) => LAMP_LABELS.has(h.label))
+      .sort((a, b) => b.area - a.area)[0];
+    if (luminaria) {
+      const c = polygonCentroid(luminaria.poly);
+      this.lamp = { x: c.x, y: luminaria.y, z: c.y, fonte: luminaria.label };
+    } else if (!this.lampManual) {
+      this.lamp = null;
+    }
 
     const ceil = horizontals.filter((h) => h.y > this.floorY + 1.7)
       .sort((a, b) => a.y - b.y)[0];
