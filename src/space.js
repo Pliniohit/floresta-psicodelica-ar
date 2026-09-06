@@ -1,6 +1,6 @@
 import {
   Group, Mesh, InstancedMesh, Points, BufferGeometry, BufferAttribute,
-  SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, Euler,
+  SphereGeometry, TorusGeometry, IcosahedronGeometry, Matrix4, Vector3, Quaternion, Euler,
 } from '../vendor/three/three.module.min.js';
 import {
   planetMaterial, atmosferaMaterial, solMaterial, trailMaterial, cloneMaterial,
@@ -326,10 +326,80 @@ export class Space extends Group {
     this.sol.add(coroa);
     this.add(this.sol);
 
+    this.#criarCinturao(r);
+
     // Sem campo de estrelas em Points aqui: pontos de um pixel numa casca
     // distante serrilham a cada movimento de cabeça, e era isso que fazia o
     // espaço piscar. As estrelas do espaço vêm do shader do céu, onde nascem
     // no centro de uma célula e somem suavemente na borda.
+  }
+
+  /**
+   * CINTURÃO DE ASTEROIDES.
+   *
+   * Rochas pequenas orbitando entre os planetas, num anel largo. Não entram na
+   * física de contato dos planetas — seriam centenas de corpos e o passo de
+   * integração não aguentaria —; giram numa órbita cinemática simples em torno
+   * do centro do sistema, cada uma no seu raio e fase. É atmosfera e escala:
+   * dão ao espaço a profundidade de um sistema povoado, sem custar simulação.
+   *
+   * Tudo num InstancedMesh só: uma chamada de desenho para o cinturão inteiro.
+   */
+  #criarCinturao(r) {
+    const N = 90;
+    const geo = new IcosahedronGeometry(1, 0);   // pedra facetada, escala por instância
+    const mat = cloneMaterial(planetMaterial, { uElement: 1 });   // rochoso
+    mat.uniforms.uSeed.value = r();
+    const malha = new InstancedMesh(geo, mat, N);
+    malha.frustumCulled = false;
+    malha.renderOrder = 6;
+
+    this.asteroides = [];
+    const _m = new Matrix4();
+    const _q = new Quaternion();
+    const _e = new Euler();
+    const _p = new Vector3();
+    const _s = new Vector3();
+
+    for (let i = 0; i < N; i++) {
+      // Dois anéis finos, para o cinturão ter borda em vez de virar uma nuvem
+      // uniforme: a maioria entre 1,5 e 2,0, alguns dispersos até 2,4.
+      const raio = (r() < 0.8 ? 1.5 + r() * 0.5 : 2.0 + r() * 0.4);
+      const fase = r() * Math.PI * 2;
+      const incl = (r() - 0.5) * 0.28;         // cinturão quase plano
+      const tam = 0.09 + r() * 0.05;           // do tamanho de bolas de futebol (~11 cm de raio)
+      const vel = Math.sqrt(GM / raio) * (0.85 + r() * 0.3);
+      const giro = new Vector3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.6);
+      this.asteroides.push({ raio, fase, incl, tam, vel, giro, rot: new Euler() });
+      // posição inicial (a órbita real é aplicada no update)
+      _p.set(Math.cos(fase) * raio, CENTRO_Y + Math.sin(incl) * raio, Math.sin(fase) * raio);
+      _s.setScalar(tam);
+      _m.compose(_p, _q, _s);
+      malha.setMatrixAt(i, _m);
+    }
+    malha.instanceMatrix.needsUpdate = true;
+    this.cinturao = malha;
+    this.add(malha);
+  }
+
+  /** Move o cinturão: cada rocha avança na sua órbita e roda sobre si mesma. */
+  #moverCinturao(t, dt) {
+    if (!this.cinturao || !this.asteroides) return;
+    const _m = new Matrix4();
+    const _q = new Quaternion();
+    const _p = new Vector3();
+    const _s = new Vector3();
+    for (let i = 0; i < this.asteroides.length; i++) {
+      const a = this.asteroides[i];
+      const ang = a.fase + t * a.vel * 0.25;
+      _p.set(Math.cos(ang) * a.raio, CENTRO_Y + Math.sin(a.incl) * a.raio, Math.sin(ang) * a.raio);
+      a.rot.x += a.giro.x * dt; a.rot.y += a.giro.y * dt; a.rot.z += a.giro.z * dt;
+      _q.setFromEuler(a.rot);
+      _s.setScalar(a.tam);
+      _m.compose(_p, _q, _s);
+      this.cinturao.setMatrixAt(i, _m);
+    }
+    this.cinturao.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -455,6 +525,8 @@ export class Space extends Group {
    */
   update(t, dt) {
     if (!this.visible) return;
+
+    this.#moverCinturao(t, dt);
 
     // Onde a estrela está EM MUNDO. Os shaders iluminam a partir daqui, e o
     // grupo inteiro nasce onde o usuário estava — então isto muda de sessão
@@ -810,6 +882,7 @@ export class Space extends Group {
     }
     this.sol.traverse((o) => o.isMesh && o.geometry.dispose());
     this.matCoroa.dispose();
+    if (this.cinturao) { this.cinturao.geometry.dispose(); this.cinturao.material.dispose(); }
     SFERA_AR.dispose();
     this.clear();
   }
