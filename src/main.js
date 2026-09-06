@@ -778,9 +778,15 @@ function atravessar(mundo, sentido) {
   virouLuz = false;
   state.subindo = true;
   state.sentido = sentido;
-  // O hub nasce em volta de onde você está AGORA e fica parado ali: é o que
-  // permite dar a volta nos corpos caminhando quando ele chegar.
-  space.position.set(_head.x, forest.position.y, _head.z);
+  // O hub nasce no CENTRO DA ÁREA DE JOGO, não em volta da sua cabeça.
+  //
+  // Antes ele nascia onde a cabeça estava no instante da travessia — e assim
+  // os planetas, o casulo e a raiz apareciam em lugar diferente a cada vez,
+  // e resetar a posição os deslocava. Numa instalação fixa de 3×3 os pontos
+  // de interação têm de cair sempre no mesmo lugar físico, e `forest.position`
+  // é exatamente o centro estável do quadrado mapeado. A pessoa ainda dá a
+  // volta neles caminhando; eles é que não se mexem.
+  space.position.set(forest.position.x, forest.position.y, forest.position.z);
 
   // O SOL EM CIMA DA LÂMPADA. Se a sala tem uma luminária mapeada, a estrela
   // do Olho nasce exatamente nela: a luz física e o astro da obra viram o
