@@ -113,7 +113,12 @@ export const barkMaterial = make('casca', {
       //
       // A normal derrete conforme o pincel entra: mesma malha, outro
       // sombreamento. É o que separa facetado de pintado, e não o triângulo.
-      emit(trample(position, root), mix(normal, aSmoothN, uPaint * 0.22));
+      //
+      // SEM TRAMPLE. A árvore-mãe é a escultura central — o eixo da obra. Ela
+      // não pode se curvar quando alguém se aproxima: uma árvore de sete metros
+      // que deita ao passo de uma pessoa perde toda a presença. Chegar perto
+      // dela é o gesto da obra; ela fica de pé para ser apreciada.
+      emit(position, mix(normal, aSmoothN, uPaint * 0.22));
     }
   `,
   frag: /* glsl */ `

@@ -1653,6 +1653,16 @@ const hands = new Hands(renderer, {
 });
 scene.add(hands);
 
+// MENU DE PULSO REMOVIDO.
+//
+// Eram seis poliedros flutuando sobre o pulso — formas geométricas soltas que
+// pareciam controles de jogo, não obra. A navegação de Raízes Cósmicas é por
+// ELEMENTOS-CHAVE: tocar no casulo para subir, na raiz para descer, ampliar um
+// planeta com as duas mãos para entrar nele. A mão serve para plantar, pegar e
+// atravessar — não para abrir um menu.
+//
+// As mesmas ações seguem disponíveis pelos botões físicos do controle e pelo
+// estúdio, para a operação. Religável com ?menu=1.
 const wristMenu = new WristMenu({
   onPalette: () => { cyclePalette(); },
   onTrip: () => { toggleTrip(); },
@@ -1661,7 +1671,9 @@ const wristMenu = new WristMenu({
   onBloom: () => { toggleBloom(); },
   onGlow: () => { cycleGlow(); },
 });
-scene.add(wristMenu);
+const menuLigado = typeof location !== 'undefined'
+  && new URLSearchParams(location.search).get('menu') === '1';
+if (menuLigado) scene.add(wristMenu);
 
 /** Roda a cada frame: carregar o que está na mão e realçar o que está ao alcance. */
 function updateHands(dt) {
@@ -1744,7 +1756,7 @@ function updateHands(dt) {
     }
   }
 
-  wristMenu.update(dt, hands.byHandedness('left'), hands.byHandedness('right'));
+  if (menuLigado) wristMenu.update(dt, hands.byHandedness('left'), hands.byHandedness('right'));
 }
 
 // Quem pediu menos movimento no sistema recebe a cena sem oscilação nenhuma,
